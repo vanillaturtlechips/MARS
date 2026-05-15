@@ -1,0 +1,16 @@
+[project]
+name = "mars"
+version = "0.1.0"
+description = "Multi-Agent Robot System — 물류 창고 자율 멀티 로봇"
+requires-python = ">=3.11"
+
+[tool.uv]
+dev-dependencies = []
+
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["envs*", "training*", "agents*", "deploy*"]
