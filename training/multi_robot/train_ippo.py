@@ -18,7 +18,6 @@ from pathlib import Path
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Phase 3 IPPO 베이스라인 훈련")
-parser.add_argument("--headless",  action="store_true", default=False)
 parser.add_argument("--num_envs",  type=int,   default=128)
 parser.add_argument("--max_iter",  type=int,   default=3000)
 parser.add_argument("--checkpoint", type=str, default=None, help="이어서 훈련할 체크포인트")

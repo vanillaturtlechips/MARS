@@ -21,7 +21,6 @@ from pathlib import Path
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Phase 2 Pick & Place 훈련")
-parser.add_argument("--headless",     action="store_true", default=False)
 parser.add_argument("--num_envs",     type=int,   default=256)
 parser.add_argument("--max_iter",     type=int,   default=3000)
 parser.add_argument("--student",      action="store_true", default=False)
