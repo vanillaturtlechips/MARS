@@ -111,15 +111,21 @@ class IPPOReshapeWrapper:
 
     # ── 내부 유틸 ─────────────────────────────────────────────────
     def _split_obs(self, obs):
-        """(E, N×obs_per_robot) → (E×N, obs_per_robot).
+        """(E, N×feature_dim) → (E×N, feature_dim).
 
-        dict / TensorDict(Mapping) / Tensor 모두 처리.
-        rsl_rl 3.x는 TensorDict를 반환하므로 Mapping으로 체크.
+        rsl_rl 3.x는 get_observations() 결과에 .to(device)를 호출하므로
+        TensorDict였으면 TensorDict로 복원해야 함 (plain dict는 .to() 없음).
         """
+        E_N = self._E * self.n
         if isinstance(obs, torch.Tensor):
-            return obs.reshape(-1, self.obs_per_robot)
+            return obs.reshape(E_N, -1)
         if isinstance(obs, collections.abc.Mapping):
-            return {k: v.reshape(-1, self.obs_per_robot) for k, v in obs.items()}
+            new_dict = {k: v.reshape(E_N, -1) for k, v in obs.items()}
+            if type(obs).__name__ == "TensorDict" or hasattr(obs, "batch_size"):
+                from tensordict import TensorDict
+                device = getattr(obs, "device", self.device)
+                return TensorDict(new_dict, batch_size=[E_N], device=device)
+            return new_dict
         return obs
 
     def _expand_extras(self, extras) -> dict:
