@@ -13,7 +13,7 @@
 │   Claude API ──→ LangChain ──→ Task Planner         │
 │        │                           │                │
 │      RAG                      Sub-Agents            │
-│   (벡터DB)                  A/B/C/D/E               │
+│   (pgvector)                A/B/C/D/E               │
 │   - 창고 맵                                          │
 │   - 임무 기억                                        │
 │   - 행동 라이브러리                                   │
@@ -22,7 +22,7 @@
 ┌──────────────────────────▼──────────────────────────┐
 │               LAYER 2 — 현장 두뇌 (Jetson Nano Super) │
 │                                                     │
-│   소형 LLM (Llama 3.2 3B)                           │
+│   소형 LLM (Llama 3.2 3B / Qwen2.5 3B, INT4 양자화) │
 │        │                                            │
 │   ┌────┴─────────────────────────────────┐          │
 │   │  A2A 통신 (ROS2 토픽)                │          │
@@ -44,29 +44,56 @@
 
 ## 2. 핵심 알고리즘
 
-### 2-1. 단일 로봇 — PPO + Domain Randomization
+### 2-1. 단일 로봇 — PPO + Domain Randomization + Teacher-Student
 
 ```
 목적함수:
   J(π) = 𝔼_τ~π [ Σ γᵗ r(sₜ, aₜ) ]
 
-Sim-to-Real 해결:
-  훈련 중 매 에피소드마다 랜덤화
-  - 바닥 마찰:    μ ~ Uniform(0.3, 1.2)
-  - 페이로드:     m ~ Uniform(0, 30kg)
-  - 모터 지연:    d ~ Uniform(0, 20ms)
-  - 센서 노이즈:  ε ~ N(0, 0.05)
+Sim-to-Real 파이프라인 (3단계):
+
+  [Step 1] System Identification
+    배포 전 실제 하드웨어 측정:
+    - 바닥 마찰 실측 → DR 범위 기준점 설정
+    - 모터 지연/데드밴드 측정
+    - 측정값 기반으로 DR 범위 설정 (추정 아닌 실측)
+
+  [Step 2] Domain Randomization (DR)
+    훈련 중 매 에피소드마다 랜덤화
+    - 바닥 마찰:    μ ~ Uniform(0.3, 1.2)
+    - 페이로드:     m ~ Uniform(0, 30kg)
+    - 모터 지연:    d ~ Uniform(0, 20ms)
+    - 센서 노이즈:  ε ~ N(0, 0.05)
+    주의: 실측값 기준 3배 이상 넓은 범위는 과도한 랜덤화 위험
+
+  [Step 3] Teacher-Student Distillation (Phase 2 이상 필수)
+    교사 (시뮬 전용):
+      특권 정보 접근 — 박스 정확한 위치/무게, 지형 실제값
+    학생 (배포용):
+      카메라 + LiDAR 센서 관측만 사용
+      교사 궤적으로부터 증류(distillation)
+    → 학생이 실제 센서로 특권 정보를 추론하도록 학습
 
 Asymmetric Actor-Critic:
   훈련 시  Critic: 전체 상태 (위치, 속도, 힘 등) 사용
   배포 시  Actor:  카메라 + LiDAR 센서만 사용
+
+하드웨어 안전 범위 (배포 필수):
+  - 최대 속도 제한 (소프트/하드 이중)
+  - 토크 제한
+  - 비상 정지 백업 컨트롤러 (비학습 레이어)
 ```
 
-### 2-2. 멀티 로봇 — MAPPO + Markov Potential Game
+### 2-2. 멀티 로봇 — IPPO 베이스라인 → MAPPO + Markov Potential Game
 
 ```
 참고 논문: Yan & Liu, "Markov Potential Game Construction and MARL
            with Applications to Autonomous Driving" (arXiv 2503.22867, 2025)
+
+훈련 순서:
+  1단계: IPPO 베이스라인 먼저 실행 (Yu et al. 2022 — 단순 IPPO도 강력)
+  2단계: MAPPO와 수렴 속도/성능 비교
+  3단계: 개선이 유의미할 때만 MAPPO 채택
 
 Theorem 5 기반 보상 설계 (MPG 보장):
   rᵢ = α * rᵢ^self(sᵢ, aᵢ) + β * Σⱼ≠ᵢ rᵢⱼ(sᵢ, sⱼ, aᵢ, aⱼ)
@@ -94,14 +121,45 @@ Theorem 5 기반 보상 설계 (MPG 보장):
 
   α, β 튜닝:
     α = 1.0  (효율 가중치)
-    β = 0.5  (안전 가중치, 창고는 안전 우선이므로 높게 설정)
+    β = 1.5  (안전 가중치, 창고는 안전 우선)
+
+탐색 중복 방지:
+  - 에이전트별 엔트로피 보너스 적용
+  - 역할 조건화(role-conditioning) 검토
+
+고정 시나리오 평가 (필수):
+  - 셀프플레이 수치 단독 신뢰 금지
+  - 5가지 고정 시나리오로 별도 평가 (좁은 통로, 교착, 배터리 등)
+  - rᵢⱼ 쌍 수 = N(N-1)/2 → 로봇 수 증가 시 스케일링 모니터링
 
 CTDE (Centralized Training, Decentralized Execution):
   훈련: 전체 로봇 상태 + Φ 함께 학습
   실행: 각 로봇은 자기 센서만 보고 독립 실행
 ```
 
-### 2-3. World Model (Phase 4 이후 선택)
+### 2-3. LLM 양자화 (Jetson 엣지 배포)
+
+```
+제약: Jetson Orin Nano Super 8GB (CPU/GPU 공유 메모리)
+      RL 정책 + ROS2 + LLM 동시 실행 → LLM에 가용 메모리 ~4GB
+
+양자화 방식 (ollama / llama.cpp GGUF):
+  FP16 3B 모델: ~6.0 GB  → Jetson 불가
+  INT8 3B 모델: ~3.5 GB  → 가능하지만 빠듯
+  INT4 Q4_K_M:  ~2.0 GB  → 권장 (품질 손실 최소화)
+
+ollama 모델 태그:
+  llama3.2:3b-instruct-q4_K_M
+  qwen2.5:3b-instruct-q4_K_M
+
+벤치마킹 지표:
+  - tokens/sec (목표: > 15 tok/s — 실시간 명령 생성 기준)
+  - 구조화 JSON 출력 성공률 (로봇 명령 파싱 필수)
+  - 첫 토큰 레이턴시 (< 500ms 목표)
+  - 메모리 점유 (jtop으로 측정)
+```
+
+### 2-4. World Model (Phase 5 이후 선택)
 
 ```
 DreamerV3 방식:
@@ -119,7 +177,7 @@ DreamerV3 방식:
 
 | 에이전트 | 역할 | 핵심 도구 |
 |---------|------|---------|
-| A. 재고 관리자 | 상품 위치 검색, 선반 현황 | RAG 벡터DB |
+| A. 재고 관리자 | 상품 위치 검색, 선반 현황 | pgvector RAG |
 | B. 경로 계획자 | 충돌 없는 경로 생성, 임무 배정 | pathfinder, task_allocator |
 | C/D/E. 로봇 담당 | goal → RL 정책 트리거, 상태 모니터링 | robot.set_goal(), ROS2 |
 | F. 이상 감지자 | 타임아웃, 센서 이상, 안전 구역 침입 | 브로드캐스트 긴급 정지 |
@@ -137,11 +195,37 @@ DreamerV3 방식:
   - 로그 / 보고
 ```
 
+### 자율 시스템 안전 패턴
+```
+명령 파이프라인:
+  오케스트레이터 제안 → 검증 → 실행 → 체크포인트
+        ↑ Propose-then-Commit          ↑ Rollback 지점
+
+Cost Governor:
+  - Claude API 호출당 최대 토큰 제한
+  - 세션당 비용 상한 (무한 루프 방지)
+  - 예산 초과 시 자동 중단
+
+Kill Switch & Canary:
+  - F 에이전트(이상 감지자)가 전체 정지 브로드캐스트
+  - 카나리 토큰: 무음 오작동 감지용 주기적 헬스체크
+  - 레이턴시 임계값 초과 시 자동 알림
+
+Propose-then-Commit:
+  - 로봇 이동 명령은 경로 검증 후 실행
+  - 충돌 위험 경로는 재계획 요청
+```
+
 ---
 
 ## 4. 개발 단계 (Phases)
 
+---
+
 ### Phase 0 — 기반 환경 구축 ✅ 완료
+
+**내용:** Isaac Lab 설치 및 기본 RL 동작 확인
+
 - [x] Isaac Sim 5.1.0 + Isaac Lab 2.3.2 설치
 - [x] NVIDIA Driver 580.142, CUDA 13.0
 - [x] Cartpole PPO 훈련 (보상 0.10 → 4.38)
@@ -149,127 +233,310 @@ DreamerV3 방식:
 
 ---
 
-### Phase 1 — 단일 로봇 이동
-**목표:** 창고 환경에서 로봇 한 대가 목표 지점까지 자율 이동
+### Phase 1 — 단일 로봇 이동 ✅ 완료
 
+**목표:** 창고 환경에서 로봇 한 대가 지정 좌표로 자율 이동
+
+**결과:**
 ```
-Isaac Lab 커스텀 환경:
-  - 선반 배치된 창고 맵
-  - 휠 로봇 (4륜, Anymal 또는 커스텀)
-  - 장애물 회피 포함
-
-보상 설계:
-  r = +10 (도착) - 0.01t (시간) - 5 (충돌)
-
-Domain Randomization:
-  바닥 마찰, 로봇 무게, 센서 노이즈
+Phase 1   (장애물 없음): 골 도달률 100%, 평균 24.9 스텝
+Phase 1.5 (선반 장애물): 골 도달률 94.4%, 평균 41.2 스텝
+           실패 5.6% — 선반 모서리 끼임, 좁은 통로 타임아웃
 ```
 
-체크포인트:
-- [ ] 창고 환경 USD 파일 제작
-- [ ] 단일 로봇 PPO 훈련 (1024 병렬 env)
-- [ ] 헤드리스 검증 → GUI 시각 확인
+**구현 상세:**
+
+```
+환경: DirectRLEnv 서브클래스 (warehouse_env.py / warehouse_obstacle_env.py)
+
+관측 공간:
+  Phase 1   6차원: [goal_x_body, goal_y_body, goal_dist, vx_body, vy_body, omega_z]
+  Phase 1.5 7차원: 위 6개 + min_obstacle_dist (AABB 최소 거리)
+
+행동 공간: 3차원 [cmd_vx, cmd_vy, cmd_omega], body frame, [-1,1] 정규화
+  → max_vx=1.5 m/s, max_vy=1.0 m/s, max_omega=2.0 rad/s 스케일링
+
+보상:
+  rew_dist = -0.3 × dist_to_goal       (매 스텝, 연속)
+  rew_goal = +10.0                      (골 도달 시)
+  rew_time = -0.001                     (매 스텝 시간 패널티)
+  Phase 1.5 추가:
+    rew_prox_warn = -0.1  (선반까지 < 0.8m)
+    rew_prox_crit = -1.0  (선반까지 < 0.4m)
+
+에피소드: 20초 (300 스텝 @ 15Hz), 골 반경 0.35m, 골 범위 1~4m
+
+네트워크: MLP [256, 128, 64], ELU, lr=3e-4 adaptive (desired_kl=0.01)
+env 수: 1024 (훈련) / 256 (검증)
+iterations: Phase 1 — 1000, Phase 1.5 — 100 (lr 폭주로 조기 선택)
+
+훈련 이슈:
+  VF loss 폭발: rew_prox_crit=-5.0 → -1.0으로 축소
+  noise std 폭주: adaptive schedule이 KL 낮을 때 lr 무한 증가
+  → iter=100 체크포인트 (noise std ≈ 0.92)를 Phase 1.5 기준 모델로 채택
+```
+
+모델 위치:
+- `logs/warehouse_nav/model_999.pt`          (Phase 1)
+- `logs/warehouse_obstacle_nav/model_100.pt` (Phase 1.5)
+
+잔여 과제: 5.6% 실패율 → Phase 3 멀티로봇 적용 시 증폭 가능. Phase 2 전 원인 분석 권장.
+
+- [x] 창고 환경 USD 파일 제작
+- [x] 단일 로봇 PPO 훈련 (1024 병렬 env)
+- [x] 헤드리스 검증 → GUI 시각 확인
 
 ---
 
 ### Phase 2 — 단일 로봇 조작 (Pick & Place)
+
 **목표:** 로봇이 박스를 집어서 지정 위치에 내려놓기
 
+**구현 상세:**
+
 ```
-Isaac Lab 환경 확장:
-  - 그리퍼 달린 로봇 암
-  - 다양한 크기/무게 박스
-  - 목표 선반 위치
+1단계 — 그리퍼 로봇 환경 구성
+  파일: envs/warehouse/warehouse_manipulation_env.py
+  로봇: 6-DOF 암 + 평행 그리퍼 (Isaac Lab articulation)
+  박스: 다양한 크기(0.2~0.4m) / 무게(0.5~5kg) DR 적용
+  목표 선반: 고정 4위치 → 후반부 랜덤 확장
 
-보상 설계:
-  r = +20 (박스 올바른 위치에 놓음)
-    + 0.1 (박스 접근 중)
-    - 10  (박스 낙하)
+2단계 — 관측 공간 (Teacher / Student 분리)
+  Teacher 관측 (시뮬 전용, 특권 정보):
+    [박스_xyz, 박스_quat, 박스_무게, end_effector_xyz, gripper_width,
+     goal_xyz, joint_pos×6, joint_vel×6]  → ~28차원
 
-Asymmetric Actor-Critic:
-  훈련 Critic: 박스 정확한 위치, 무게 알고 있음
-  배포 Actor:  카메라로 추정만 가능
+  Student 관측 (배포용, 실제 센서):
+    [rgb_d_feature×64(CNN 출력), end_effector_xyz, gripper_width,
+     goal_xyz_approx, joint_pos×6, joint_vel×6]  → ~82차원
+
+3단계 — 보상 설계 (4단계 커리큘럼)
+  Phase A (접근): rew = 0.1 × (1 / dist_to_box)          박스까지 접근
+  Phase B (파지): rew = +5.0 × grasp_success              파지 성공
+  Phase C (이송): rew = 0.1 × (1 / dist_box_to_goal)     목표로 이동
+  Phase D (거치): rew = +20.0 × place_success             최종 거치 성공
+                  rew = -10.0 × box_drop                  낙하 패널티
+
+  → 커리큘럼: Phase A 수렴 → B 추가 → C 추가 → D 추가
+    각 Phase에서 성공률 > 80% 되면 다음 단계 추가
+
+4단계 — Teacher-Student 증류
+  (a) Teacher 정책 먼저 훈련 (PPO, 특권 정보 사용)
+      목표: place_success_rate > 90%
+  (b) Teacher 궤적 데이터 수집 (10만+ 에피소드)
+  (c) Student가 Teacher 행동을 모방학습 (DAgger 또는 BC+fine-tuning)
+  (d) Student 단독 평가: 시뮬 내 seen/unseen 박스 크기
+
+5단계 — Asymmetric Actor-Critic
+  훈련 Critic: Teacher 관측 (박스 정확한 위치, 무게)
+  배포 Actor:  Student 관측 (RGB-D 추정)
+
+6단계 — TorchScript export → Jetson 배포 테스트
+  deploy/export_model.py 확장 (manipulation actor)
+  Jetson에서 deploy/jetson/inference.py로 단독 실행 확인
+
+네트워크: MLP [512, 256, 128], ELU (Teacher) / CNN+MLP (Student)
+env 수: 256 (Phase 2는 접촉 시뮬로 FPS 감소)
+예상 훈련 시간: ~4.5시간 (RTX 2070)
 ```
 
 체크포인트:
-- [ ] 그리퍼 로봇 Isaac Lab 환경
-- [ ] Pick & Place PPO 훈련
-- [ ] TorchScript export → Jetson 배포 테스트
+- [ ] 그리퍼 로봇 Isaac Lab 환경 (`warehouse_manipulation_env.py`)
+- [ ] Teacher PPO 훈련 (place_success_rate > 90%)
+- [ ] Teacher 궤적 데이터 수집 (10만 에피소드)
+- [ ] Student 모방학습 + 단독 평가
+- [ ] Unseen 박스 크기 zero-shot 평가
+- [ ] TorchScript export → Jetson inference 확인
 
 ---
 
 ### Phase 3 — 멀티 로봇 협력
+
 **목표:** 로봇 3대가 동시에 서로 방해 없이 임무 수행
 
+**구현 상세:**
+
 ```
-MARL 알고리즘: MAPPO (Multi-Agent PPO)
-  - 공유 Critic (전체 상태)
-  - 독립 Actor (각 로봇 자기 관측만)
+1단계 — 멀티 로봇 Isaac Lab 환경
+  파일: training/multi_robot/train_ippo.py
+  로봇 3대를 동일 창고 환경에 동시 스폰
+  각 로봇 독립 관측 (Phase 1.5 기준 7차원 × 3 → 분리 실행)
+  충돌 감지: 로봇 간 거리 < 0.5m → episode terminated
 
-Markov Potential Game 보상:
-  위 2-2항 참조
+2단계 — IPPO 베이스라인
+  각 로봇이 완전 독립 PPO로 학습 (공유 없음)
+  동일 네트워크 구조, Parameter Sharing (가중치 공유)
+  → VRAM 절감: 로봇 3대를 모델 1개로
 
-훈련 환경:
-  - 로봇 3대 동시 운용
-  - 같은 통로 진입 시나리오 포함
-  - 배터리 부족 시나리오 포함
+  보상 (IPPO 단계):
+    rᵢ^self만 사용 (-||pos-goal||² + 10·reached - 0.01·t)
+    충돌 패널티: -5.0 (단순 이진)
+
+  수렴 확인 기준 (100 iter 조기 진단):
+    30 iter 안에 평균 보상 상승세 확인
+    → 없으면 보상 재설계
+
+3단계 — MPG 보상 구현 (potential_reward.py)
+  rᵢ = α * rᵢ^self + β * Σⱼ≠ᵢ rᵢⱼ
+  α = 1.0, β = 1.5
+
+  rᵢⱼ = -1 / sqrt((xᵢ-xⱼ)² + (yᵢ-yⱼ)² + 1e-5)
+  → 이진 페널티 → 연속 반발력으로 교체
+
+4단계 — MAPPO 전환 (train_marl.py)
+  공유 Critic: 전체 로봇 상태 concatenation 입력
+  독립 Actor:  각 로봇 자기 관측만 (CTDE)
+  IPPO 체크포인트에서 fine-tuning (학습 안정화)
+
+5단계 — IPPO vs MAPPO 비교
+  동일 환경, 동일 시나리오 5종에서 측정:
+  - 교착 발생률 (목표: < 1%)
+  - 평균 임무 완료 시간
+  - 충돌 발생률 (목표: < 1%)
+  → 유의미한 차이 없으면 IPPO 유지 (단순한 게 낫다)
+
+6단계 — 고정 시나리오 5종 평가
+  시나리오 1: 정면 충돌 (좁은 통로 양방향 진입)
+  시나리오 2: 3-way 교착 (세 로봇 삼각 대치)
+  시나리오 3: 배터리 우선순위 (배터리 낮은 로봇 우선 통과)
+  시나리오 4: 동일 목표 경쟁 (두 로봇이 같은 선반 목표)
+  시나리오 5: 장애물 + 다중 로봇 혼합
+
+VRAM 관리 (RTX 2070 8GB 기준):
+  Parameter Sharing + FP16 → 3대 × 128 env ≈ 6.5GB
 ```
 
 체크포인트:
-- [ ] MAPPO 환경 구성 (multi-agent Isaac Lab)
-- [ ] 포텐셜 함수 보상 설계 및 검증
-- [ ] 교착 상태 발생률 측정 (목표: < 1%)
+- [ ] 멀티 로봇 Isaac Lab 환경 구성 (3대 동시 스폰, 충돌 감지)
+- [ ] IPPO 베이스라인 수렴 확인 (100 iter 조기 진단)
+- [ ] MPG 보상 구현 (`potential_reward.py`)
+- [ ] MAPPO 환경 구성 + IPPO 체크포인트 fine-tuning
+- [ ] IPPO vs MAPPO 5종 시나리오 비교
+- [ ] 교착 발생률 < 1% 달성 확인
 - [ ] A2A 충돌 협상 프로토콜 구현
 
 ---
 
 ### Phase 4 — 에이전트 레이어 구축
+
 **목표:** Claude API + 서브 에이전트가 임무를 자율 분해하고 로봇에게 전달
 
-```
-스택:
-  오케스트레이터:  Claude API (claude-sonnet-4-6)
-  프레임워크:      LangChain (프로토타입)
-  RAG:            ChromaDB + 창고 지식베이스
-  Jetson LLM:     Llama 3.2 3B (GGUF, 4-bit 양자화)
-  통신:            ROS2 토픽
+**구현 상세:**
 
-RAG 지식베이스:
-  - 창고 선반 맵 (좌표 → 상품)
-  - 임무 기록 (성공/실패 패턴)
-  - 로봇 매뉴얼 (능력, 제한)
-  - 행동 라이브러리 (검증된 시퀀스)
+```
+1단계 — pgvector RAG 구축
+  DB: PostgreSQL + pgvector extension
+  테이블:
+    warehouse_map: shelf_id, location_xyz, product_id, embedding
+    task_history:  task_id, success, robot_id, duration, embedding
+    action_library: action_name, description, embedding, json_template
+
+  임베딩: text-embedding-3-small (OpenAI) or nomic-embed-text (로컬)
+  검색: 코사인 유사도, top-k=5
+
+2단계 — LLM 양자화 및 벤치마킹
+  ollama로 두 모델 Q4_K_M 로드:
+    ollama pull llama3.2:3b-instruct-q4_K_M
+    ollama pull qwen2.5:3b-instruct-q4_K_M
+
+  벤치마킹 스크립트 (benchmark_llm.py):
+    프롬프트: "로봇 A에게 선반 B3 → 게이트 G1 이동 명령을 JSON으로 생성"
+    측정: tokens/sec, 첫 토큰 레이턴시, JSON 파싱 성공률 (100회)
+    jtop으로 VRAM 점유 측정
+
+  선택 기준:
+    tokens/sec > 15 AND JSON 성공률 > 95% AND 메모리 < 3.5GB
+
+3단계 — Claude API 오케스트레이터
+  파일: agents/orchestrator/orchestrator.py
+  claude-sonnet-4-6 사용
+  임무 입력 → 서브 에이전트 A~F 호출 → 결과 집계
+
+  Cost Governor (cost_governor.py):
+    max_tokens_per_call = 4096
+    max_cost_per_session = $2.0  (무한 루프 방지)
+    예산 초과 시 → 임무 중단 + 알림
+
+4단계 — Propose-then-Commit 패턴
+  모든 로봇 이동 명령은 2단계:
+    (1) B에이전트(경로 계획자)가 경로 검증
+    (2) 충돌 없음 확인 후 C/D/E 에이전트에 실행 전달
+  검증 실패 시 → 재계획 요청 (최대 3회 재시도)
+
+5단계 — 서브 에이전트 A~F 구현
+  A. inventory_agent.py: pgvector 검색으로 상품 위치 반환
+  B. path_agent.py: A* + 로봇 3대 경로 충돌 사전 검사
+  C/D/E. robot_agent.py: ROS2 /goal_pose 퍼블리시
+  F. safety_agent.py: 타임아웃 감시 + Kill Switch 브로드캐스트
+
+6단계 — Jetson LLM 연동
+  ros2_bridge.py가 /task_command 토픽 수신
+  → ollama API (localhost:11434) 호출
+  → JSON 파싱 → /goal_pose 퍼블리시
+  레이턴시 목표: /task_command 수신 → /goal_pose 발행 < 1초
 ```
 
 체크포인트:
-- [ ] ChromaDB 창고 맵 구축
-- [ ] LangChain 임무 분해 파이프라인
+- [ ] PostgreSQL + pgvector 구축 (`knowledge_base.py`)
+- [ ] 창고 맵 / 임무 기록 / 행동 라이브러리 임베딩 적재
+- [ ] LLM 벤치마킹 스크립트 작성 및 Jetson 실행
+- [ ] 모델 선택 확정 (llama3.2 vs qwen2.5)
+- [ ] Claude API 오케스트레이터 + Cost Governor
+- [ ] Propose-then-Commit 경로 검증 구현
 - [ ] 서브 에이전트 A~F 구현
-- [ ] Jetson에서 Llama 3.2 3B 실행 확인
+- [ ] Jetson LLM → ROS2 브릿지 end-to-end 확인
 
 ---
 
 ### Phase 5 — 통합 및 시뮬 검증
+
 **목표:** 전체 파이프라인이 Isaac Sim 안에서 end-to-end 동작
 
-```
-시나리오 테스트:
-  1. 입고: "박스 10개 3구역에 배치"
-  2. 출고: "상품 A 5박스 → 2번 게이트"
-  3. 장애: "Robot 2 배터리 부족 → 재배정"
-  4. 안전: "5구역 사람 감지 → 전체 정지"
-  5. 교착: "좁은 통로 동시 진입 → 자동 해소"
+**구현 상세:**
 
-측정 지표:
-  - 임무 완료율 (목표: > 95%)
-  - 교착 발생률 (목표: < 1%)
-  - 평균 임무 시간
-  - Sim-to-Real 성능 갭 (Jetson 배포 후)
+```
+1단계 — 시나리오 통합 테스트 5종
+  시나리오 1 입고:
+    "박스 10개를 3구역 선반에 배치"
+    Claude → 경로 계획 → 로봇 3대 동시 작업
+    측정: 완료 시간, 충돌 없음 여부
+
+  시나리오 2 출고:
+    "상품 A 5박스를 2번 게이트로"
+    재고 에이전트 RAG 검색 → 위치 파악 → 로봇 배정
+
+  시나리오 3 장애:
+    "Robot 2 배터리 부족 → 자동 재배정"
+    F 에이전트 감지 → B 에이전트 재계획 → 나머지 로봇 인수
+
+  시나리오 4 안전:
+    "5구역 사람 감지 → 전체 정지"
+    F 에이전트 Kill Switch → 전 로봇 즉시 정지
+    레이턴시 측정: 감지 → 정지 < 100ms
+
+  시나리오 5 교착:
+    "좁은 통로 로봇 2대 동시 진입 → 자동 해소"
+    MPG 보상으로 NE 수렴 확인
+
+2단계 — Sim-to-Real 갭 측정
+  Jetson 실배포 전 시뮬 vs 실제 비교:
+  - DR 범위 내 랜덤 물리값 시뮬: 성능 저하 없음 확인
+  - 미관측 변형(unseen DR)에서 zero-shot 평가
+
+3단계 — 레이턴시 프로파일링
+  Claude API → Jetson LLM: ≤ 500ms
+  Jetson LLM → /goal_pose 발행: ≤ 500ms
+  /goal_pose → 로봇 도달: 환경 의존 (측정 값으로 기록)
+  /odom → /cmd_vel (RL policy): ≤ 10ms (15Hz 기준)
 ```
 
 체크포인트:
-- [ ] 5가지 시나리오 전부 통과
-- [ ] 오케스트레이터 → Jetson → 로봇 레이턴시 측정
+- [ ] 시나리오 5종 전부 통과
+- [ ] 임무 완료율 > 95%
+- [ ] 교착 발생률 < 1%
+- [ ] Kill Switch 레이턴시 < 100ms 확인
+- [ ] Unseen DR zero-shot 평가
+- [ ] 레이턴시 전 구간 측정 기록
 - [ ] 최종 시뮬 영상 기록
 
 ---
@@ -281,15 +548,16 @@ RAG 지식베이스:
 | 시뮬레이터 | Isaac Sim | 5.1.0 |
 | RL 프레임워크 | Isaac Lab | 2.3.2 |
 | 단일 로봇 RL | rsl_rl (PPO) | 3.0.1 |
-| 멀티 로봇 RL | MAPPO (커스텀) | - |
-| 딥러닝 | PyTorch | 2.7.0+cu128 |
+| 멀티 로봇 RL | IPPO → MAPPO (커스텀) | - |
+| 딥러닝 (훈련 PC) | PyTorch | 2.7.0+cu128 |
+| 딥러닝 (Jetson) | PyTorch | 2.8.0 (JetPack 6.2) |
 | 오케스트레이터 | Claude API | claude-sonnet-4-6 |
 | 에이전트 프레임워크 | LangChain | 프로토타입 |
-| RAG | ChromaDB | - |
-| Jetson LLM | Llama 3.2 3B (GGUF) | - |
+| RAG | pgvector (PostgreSQL) | - |
+| Jetson LLM | Llama 3.2 3B / Qwen2.5 3B | INT4 Q4_K_M (ollama) |
 | 통신 | ROS2 Humble | - |
-| 모델 배포 | TorchScript / ONNX | - |
-| 엣지 디바이스 | Jetson Nano Super | 8GB |
+| 모델 배포 | TorchScript | - |
+| 엣지 디바이스 | Jetson Orin Nano Super | 8GB |
 | 훈련 하드웨어 | RTX 2070 Mobile | 8GB VRAM |
 
 ---
@@ -301,68 +569,104 @@ RAG 지식베이스:
 │
 ├── envs/
 │   └── warehouse/
-│       ├── warehouse_env.py       # Isaac Lab 창고 환경
-│       ├── warehouse_env_cfg.py   # 환경 설정
-│       └── assets/                # USD 파일 (선반, 박스, 로봇)
+│       ├── warehouse_env.py              # Phase 1 환경 ✅
+│       ├── warehouse_obstacle_env.py     # Phase 1.5 환경 ✅
+│       ├── warehouse_manipulation_env.py # Phase 2 환경
+│       └── assets/                       # USD 파일 (선반, 박스, 로봇)
 │
 ├── training/
 │   ├── single_robot/
-│   │   ├── train_navigation.py
-│   │   └── train_manipulation.py
+│   │   ├── train_navigation.py           # Phase 1 ✅
+│   │   ├── train_navigation_obstacle.py  # Phase 1.5 ✅
+│   │   └── train_manipulation.py         # Phase 2
 │   └── multi_robot/
-│       ├── train_marl.py          # MAPPO 훈련
-│       └── potential_reward.py    # Markov Potential Game 보상
+│       ├── train_ippo.py                 # Phase 3 베이스라인
+│       ├── train_marl.py                 # Phase 3 MAPPO
+│       └── potential_reward.py           # Markov Potential Game 보상
 │
 ├── agents/
 │   ├── orchestrator/
-│   │   ├── orchestrator.py        # Claude API 오케스트레이터
-│   │   └── task_planner.py        # LangChain 임무 분해
+│   │   ├── orchestrator.py               # Claude API 오케스트레이터
+│   │   ├── task_planner.py               # LangChain 임무 분해
+│   │   └── cost_governor.py              # API 비용 제한
 │   ├── sub_agents/
-│   │   ├── inventory_agent.py     # 재고 관리
-│   │   ├── path_agent.py          # 경로 계획
-│   │   ├── robot_agent.py         # 로봇 담당
-│   │   └── safety_agent.py        # 이상 감지
+│   │   ├── inventory_agent.py            # 재고 관리 (pgvector 검색)
+│   │   ├── path_agent.py                 # 경로 계획 + 충돌 사전 검사
+│   │   ├── robot_agent.py                # 로봇 담당 (ROS2 goal 발행)
+│   │   └── safety_agent.py               # 이상 감지 + Kill Switch
 │   └── rag/
-│       ├── knowledge_base.py      # ChromaDB 구축
-│       └── warehouse_docs/        # 창고 지식 원본
+│       ├── knowledge_base.py             # pgvector DB 구축 및 검색
+│       └── warehouse_docs/               # 창고 지식 원본
 │
 ├── deploy/
-│   ├── export_model.py            # TorchScript/ONNX export
+│   ├── export_model.py                   # TorchScript export (훈련 PC)
 │   └── jetson/
-│       ├── inference.py           # Jetson 추론 엔진
-│       └── ros2_bridge.py         # ROS2 연결
+│       ├── inference.py                  # Jetson 추론 엔진 + latency 측정
+│       └── ros2_bridge.py               # ROS2 /odom + /goal_pose → /cmd_vel
 │
 ├── logs/
-│   └── cartpole_ppo/              # ✅ 완료 (~/ai-engineering-from-scratch/logs/)
+│   ├── warehouse_nav/model_999.pt        # Phase 1 최종 모델 ✅
+│   └── warehouse_obstacle_nav/model_100.pt # Phase 1.5 기준 모델 ✅
 │
-├── test_cartpole_headless.py      # ✅ 완료
-├── train_cartpole_ppo.py          # ✅ 완료
-├── view_cartpole.py               # ✅ 완료
-└── ~/docs/PROJECT_DESIGN.md       # 이 파일
+└── docs/
+    ├── PROJECT_DESIGN.md
+    ├── PHASE1_PROGRESS.md
+    ├── MARL_MPG_DECISION.md
+    └── TRAINING_TIME_ESTIMATION.md
 ```
 
 ---
 
-## 7. 다음 세션 시작점
+## 7. Jetson 환경 현황
+
+```
+하드웨어: Jetson Orin Nano Super Developer Kit (8GB)
+OS: Ubuntu 22.04 (JetPack 6.2, L4T R36.4.7)
+
+설치 완료:
+  ✅ PyTorch 2.8.0 + CUDA (cuSPARSELt 0.7.0, cuDSS 0.7.1.4)
+  ✅ torchvision 0.23.0
+  ✅ ROS2 Humble (ros-humble-ros-base)
+  ✅ Python 3.10.12
+
+진행 예정:
+  [ ] ollama 설치
+  [ ] Llama 3.2 3B-instruct-q4_K_M + Qwen2.5 3B-instruct-q4_K_M 벤치마킹
+  [ ] actor_phase15.pt 복사 후 inference.py latency 측정
+  [ ] ros2_bridge.py 연동 테스트
+
+접속:
+  ssh nvidia@192.168.55.1  (USB-C 연결 시)
+  또는 공유기 IP로 SSH
+```
+
+---
+
+## 8. 다음 세션 시작점
 
 ```bash
-# 환경 활성화
-export PATH="$HOME/.local/bin:$PATH"
+# 훈련 PC — Phase 2 시작
 source ~/ai-engineering-from-scratch/.venv-isaac/bin/activate
-
-# 현재 완료 확인
-python -c "import isaaclab; print('OK')"
-
-# Phase 1 시작 — 창고 환경 제작
 cd ~/MARS
-# → envs/warehouse/warehouse_env.py 부터
+
+# 1. Phase 1.5 모델 export
+python deploy/export_model.py
+
+# 2. Phase 2 환경 제작
+# → envs/warehouse/warehouse_manipulation_env.py
+
+# Jetson — LLM 벤치마킹
+ssh nvidia@192.168.55.1
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2:3b-instruct-q4_K_M
+ollama pull qwen2.5:3b-instruct-q4_K_M
 ```
 
-**Jetson 조립 후 먼저 할 것:**
-1. `deploy/export_model.py` — Cartpole 모델 ONNX export
-2. Jetson에서 inference 동작 확인
-3. Phase 1 병렬 진행
+**현재 우선순위:**
+1. 훈련 PC: `deploy/export_model.py` 실행 → `actor_phase15.pt` Jetson으로 scp
+2. Jetson: ollama + Q4_K_M 모델 2종 설치 → 벤치마킹
+3. 훈련 PC: Phase 2 그리퍼 환경 제작
 
 ---
 
-*최종 업데이트: 2026-05-15*
+*최종 업데이트: 2026-05-16*
