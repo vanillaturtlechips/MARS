@@ -73,6 +73,7 @@ def main():
     runner_cfg = make_ippo_runner_cfg(args.num_envs, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
+    cfg_dict["algorithm"]["entropy_coef"] = 0.001  # 기본값 0.01 → noise std 발산 억제
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_ippo", device=env.device)
 
     if args.checkpoint:
