@@ -10,8 +10,20 @@ ISAACLAB_PATH="/workspace/IsaacLab"
 MARS_PATH="/workspace/MARS"
 ISAACLAB_VERSION="v2.3.2"
 
+# CUDA 런타임 버전 감지 → torch 변형 자동 선택
+# nvidia-smi는 드라이버가 지원하는 최대 CUDA를 표시 (실제 런타임 버전 아님)
+# nvcc 또는 CUDA_VERSION 환경변수로 실제 런타임 버전을 읽음
+_CUDA_RT="${CUDA_VERSION:-$(nvcc --version 2>/dev/null | grep -oP 'release \K[0-9]+\.[0-9]+' || echo '12.4')}"
+_CUDA_MM=$(echo "$_CUDA_RT" | cut -d. -f1,2)   # "12.4.1" → "12.4"
+_CUDA_TAG=$(echo "$_CUDA_MM" | tr -d '.')        # "12.4" → "124"
+TORCH_CUDA="cu${_CUDA_TAG}"   # "cu124"
+
+# TORCH_CUDA에 따라 whl 인덱스 URL 결정
+TORCH_WHL_URL="https://download.pytorch.org/whl/${TORCH_CUDA}"
+
 echo "════════════════════════════════════════════"
 echo " MARS RunPod 환경 설치"
+echo " CUDA 런타임: $_CUDA_MM  →  torch 변형: $TORCH_CUDA"
 echo "════════════════════════════════════════════"
 
 # ── 사전 확인: CUDA 접근 가능 여부 ─────────────────────────────
@@ -86,14 +98,23 @@ uv pip install \
     --extra-index-url https://pypi.nvidia.com \
     --index-strategy unsafe-best-match
 
-# PyTorch cu128 명시적 설치
-# unsafe-best-match 사용 시 cu126이 설치될 수 있으므로 +cu128 suffix 명시
+# PyTorch: CUDA 런타임에 맞는 버전 선택
+# cu124 → runpod/pytorch:2.4.0-py3.11-cuda12.4.1 (현재 사용 중)
+# cu128 → 최신 드라이버 환경
+case "$TORCH_CUDA" in
+    cu128) TORCH_VER="2.7.0"  ; TV_VER="0.22.0" ;;
+    cu126) TORCH_VER="2.6.0"  ; TV_VER="0.21.0" ;;
+    cu124) TORCH_VER="2.4.0"  ; TV_VER="0.19.0" ;;
+    *)     TORCH_VER="2.4.0"  ; TV_VER="0.19.0" ;;
+esac
+echo "  torch==${TORCH_VER}+${TORCH_CUDA} 설치..."
 uv pip install \
-    "torch==2.7.0+cu128" \
-    "torchvision==0.22.0+cu128" \
+    "torch==${TORCH_VER}" \
+    "torchvision==${TV_VER}" \
     "numpy==1.26.4" \
-    --extra-index-url https://download.pytorch.org/whl/cu128 \
-    --index-strategy unsafe-best-match
+    --index-url "${TORCH_WHL_URL}" \
+    --extra-index-url "https://pypi.org/simple" \
+    --reinstall
 
 # pxr 경로 .pth 등록 (sitecustomize.py 사용 금지 — import isaacsim이 CUDA 컨텍스트 오염)
 SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
