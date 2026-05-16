@@ -98,23 +98,18 @@ uv pip install \
     --extra-index-url https://pypi.nvidia.com \
     --index-strategy unsafe-best-match
 
-# PyTorch: CUDA 런타임에 맞는 버전 선택
-# cu124 → runpod/pytorch:2.4.0-py3.11-cuda12.4.1 (현재 사용 중)
-# cu128 → 최신 드라이버 환경
+# PyTorch 2.7.0 — IsaacLab v2.3.2 최소 요구사항 torch>=2.7
+# cu121 이하는 torch 2.7 빌드 없으므로 cu124로 올림 (CUDA 12.4 런타임에서 동작)
 case "$TORCH_CUDA" in
-    cu128) TORCH_VER="2.7.0"  ; TV_VER="0.22.0" ;;
-    cu126) TORCH_VER="2.6.0"  ; TV_VER="0.21.0" ;;
-    cu124) TORCH_VER="2.4.0"  ; TV_VER="0.19.0" ;;
-    *)     TORCH_VER="2.4.0"  ; TV_VER="0.19.0" ;;
+    cu128) TORCH_TAG="cu128" ;;
+    cu126) TORCH_TAG="cu126" ;;
+    *)     TORCH_TAG="cu124" ;;   # cu124 이하 모두 cu124 빌드 사용
 esac
-echo "  torch==${TORCH_VER}+${TORCH_CUDA} 설치..."
-uv pip install \
-    "torch==${TORCH_VER}" \
-    "torchvision==${TV_VER}" \
-    "numpy==1.26.4" \
-    --index-url "${TORCH_WHL_URL}" \
-    --extra-index-url "https://pypi.org/simple" \
-    --reinstall
+TORCH_WHL_URL_FINAL="https://download.pytorch.org/whl/${TORCH_TAG}"
+echo "  torch==2.7.0+${TORCH_TAG} 설치..."
+pip install "torch==2.7.0" "torchvision==0.22.0" "numpy==1.26.4" \
+    --index-url "${TORCH_WHL_URL_FINAL}" \
+    --extra-index-url "https://pypi.org/simple"
 
 # pxr 경로 .pth 등록 (sitecustomize.py 사용 금지 — import isaacsim이 CUDA 컨텍스트 오염)
 SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
@@ -150,8 +145,10 @@ uv pip install \
     --no-deps
 
 # isaaclab_rl 의존성 (--no-deps로 누락된 것들 수동 설치)
-uv pip install \
-    rsl-rl \
+# rsl-rl의 실제 PyPI 패키지명은 rsl-rl-lib
+pip install \
+    "rsl-rl-lib==3.1.2" \
+    onnxscript \
     warp-lang \
     tensorboard \
     "gymnasium>=0.29,<1.0" \
