@@ -4,6 +4,12 @@
 
 set -e  # 오류 시 즉시 중단
 
+# 캐시 전부 workspace로 (Container disk 절약)
+export UV_CACHE_DIR=/workspace/uv_cache
+export PIP_CACHE_DIR=/workspace/pip_cache
+export TMPDIR=/workspace/tmp
+mkdir -p /workspace/uv_cache /workspace/pip_cache /workspace/tmp
+
 VENV_PATH="/workspace/isaac_venv"
 ISAACLAB_PATH="/workspace/IsaacLab"
 MARS_PATH="/workspace/MARS"
