@@ -149,14 +149,14 @@ uv pip install \
     -e source/isaaclab_tasks \
     --no-deps
 
-# isaaclab_rl 의존성 (standalone rsl-rl 필수)
+# isaaclab_rl 의존성 (--no-deps로 누락된 것들 수동 설치)
 uv pip install \
     rsl-rl \
+    warp-lang \
     tensorboard \
     "gymnasium>=0.29,<1.0" \
     "onnx>=1.14.0" \
-    "onnxruntime>=1.16.0" \
-    2>/dev/null || true
+    "onnxruntime>=1.16.0"
 
 echo "  완료"
 
