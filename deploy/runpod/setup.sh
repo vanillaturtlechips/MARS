@@ -60,29 +60,23 @@ uv pip install "numpy==1.26.4" "torch==2.7.0" "torchvision==0.22.0" \
 echo "      완료"
 
 # 3b. pxr 경로 설정 (isaacsim 설치 직후 실행)
+# NOTE: sitecustomize.py 방식 금지 — import isaacsim이 CUDA 컨텍스트를 오염시킴
+#       AppLauncher() 호출 시 Isaac Sim이 sys.path에 pxr을 자동 추가하므로
+#       훈련 스크립트의 정상 흐름에서는 pxr이 자동으로 잡힘.
+#       단, find로 미리 pxr 경로를 .pth에 등록해두면 AppLauncher 전 import도 안전.
 echo "[3b/6] pxr 경로 설정..."
 SITE_PACKAGES="$VENV_PATH/lib/python3.11/site-packages"
 
-# isaacsim을 먼저 import해야 pxr이 sys.path에 추가됨 — sitecustomize.py로 자동화
-cat > "$SITE_PACKAGES/sitecustomize.py" << 'PYEOF'
-import sys, os
-try:
-    import isaacsim  # isaacsim.__init__ 이 pxr 경로를 sys.path에 추가함
-except Exception:
-    pass
-PYEOF
-
-# 추가 보험: 설치된 위치에서 pxr 폴더를 찾아 .pth 파일로 등록
-PXR_DIR=$(find "$VENV_PATH" -maxdepth 10 -name "pxr" -type d 2>/dev/null \
+PXR_DIR=$(find "$VENV_PATH" -maxdepth 12 -name "pxr" -type d 2>/dev/null \
            | grep -v "__pycache__" | head -1)
 if [ -n "$PXR_DIR" ]; then
     PXR_BASE=$(dirname "$PXR_DIR")
     echo "$PXR_BASE" > "$SITE_PACKAGES/pxr_path.pth"
-    echo "      pxr 발견: $PXR_BASE"
+    echo "      pxr 발견 → .pth 등록: $PXR_BASE"
 else
-    echo "      pxr 폴더 미발견 — sitecustomize.py 방식으로 런타임에 등록"
-    # 최후 수단: OpenUSD 공식 패키지 (isaacsim 버전과 다를 수 있으나 대부분 호환)
-    uv pip install usd-core 2>/dev/null || true
+    echo "      pxr 미발견 — AppLauncher 실행 시 자동 추가됨 (정상)"
+    # 필요 시 usd-core (isaacsim 내장 pxr과 다를 수 있으나 import는 가능)
+    # uv pip install usd-core 2>/dev/null || true
 fi
 echo "      완료"
 
