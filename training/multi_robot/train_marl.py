@@ -31,11 +31,11 @@ app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
 import torch
-from rsl_rl.runners import OnPolicyRunner
+from isaaclab_rl.rsl_rl.runners import OnPolicyRunner
+from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_marl_env import WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT
-from envs.warehouse.agents.rsl_rl_ppo_cfg import RslRlPpoActorCriticCfg, RslRlOnPolicyRunnerCfg
 
 # MAPPO Critic은 전체 상태를 봄
 ACTOR_OBS_DIM  = OBS_PER_ROBOT          # 9  (자기 관측만)

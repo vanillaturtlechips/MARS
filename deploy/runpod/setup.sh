@@ -4,6 +4,17 @@
 
 set -e  # 오류 시 즉시 중단
 
+# 1단계 전: 디스플레이/Vulkan 라이브러리 설치 (headless 렌더링 필수)
+echo "[0/6] 시스템 라이브러리 설치..."
+apt-get update -q && apt-get install -y --no-install-recommends \
+    libxt6 libxrandr2 libxcursor1 libxinerama1 \
+    libgl1-mesa-glx libgl1-mesa-dri libglu1-mesa \
+    libvulkan1 vulkan-tools \
+    libegl1 libgles2 \
+    libxkbcommon0 libdbus-1-3 \
+    2>/dev/null || true
+echo "      완료"
+
 # 캐시 전부 workspace로 (Container disk 절약)
 export UV_CACHE_DIR=/workspace/uv_cache
 export PIP_CACHE_DIR=/workspace/pip_cache
@@ -48,6 +59,33 @@ uv pip install "numpy==1.26.4" "torch==2.7.0" "torchvision==0.22.0" \
     --index-strategy unsafe-best-match
 echo "      완료"
 
+# 3b. pxr 경로 설정 (isaacsim 설치 직후 실행)
+echo "[3b/6] pxr 경로 설정..."
+SITE_PACKAGES="$VENV_PATH/lib/python3.11/site-packages"
+
+# isaacsim을 먼저 import해야 pxr이 sys.path에 추가됨 — sitecustomize.py로 자동화
+cat > "$SITE_PACKAGES/sitecustomize.py" << 'PYEOF'
+import sys, os
+try:
+    import isaacsim  # isaacsim.__init__ 이 pxr 경로를 sys.path에 추가함
+except Exception:
+    pass
+PYEOF
+
+# 추가 보험: 설치된 위치에서 pxr 폴더를 찾아 .pth 파일로 등록
+PXR_DIR=$(find "$VENV_PATH" -maxdepth 10 -name "pxr" -type d 2>/dev/null \
+           | grep -v "__pycache__" | head -1)
+if [ -n "$PXR_DIR" ]; then
+    PXR_BASE=$(dirname "$PXR_DIR")
+    echo "$PXR_BASE" > "$SITE_PACKAGES/pxr_path.pth"
+    echo "      pxr 발견: $PXR_BASE"
+else
+    echo "      pxr 폴더 미발견 — sitecustomize.py 방식으로 런타임에 등록"
+    # 최후 수단: OpenUSD 공식 패키지 (isaacsim 버전과 다를 수 있으나 대부분 호환)
+    uv pip install usd-core 2>/dev/null || true
+fi
+echo "      완료"
+
 # 4. Isaac Lab 설치
 echo "[4/6] Isaac Lab $ISAACLAB_VERSION 설치..."
 if [ ! -d "$ISAACLAB_PATH" ]; then
@@ -68,6 +106,14 @@ uv pip install \
     -e source/isaaclab_rl \
     -e source/isaaclab_tasks \
     --no-deps
+
+# isaaclab_rl이 번들하는 rsl_rl 의존성 수동 설치
+uv pip install \
+    tensorboard \
+    "gymnasium>=0.29,<1.0" \
+    "onnx>=1.14.0" \
+    "onnxruntime>=1.16.0" \
+    2>/dev/null || true
 echo "      완료"
 
 # 5. MARS 코드 클론
@@ -91,6 +137,16 @@ import numpy as np
 print(f'  numpy:       {np.__version__}')
 import isaacsim
 print(f'  isaacsim:    OK')
+try:
+    from pxr import Usd
+    print(f'  pxr(USD):    OK')
+except ImportError as e:
+    print(f'  pxr(USD):    FAIL — {e}')
+try:
+    from isaaclab_rl.rsl_rl.runners import OnPolicyRunner
+    print(f'  isaaclab_rl: OK')
+except ImportError as e:
+    print(f'  isaaclab_rl: FAIL — {e}')
 "
 
 echo ""

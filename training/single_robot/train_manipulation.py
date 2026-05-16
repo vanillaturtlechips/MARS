@@ -31,7 +31,8 @@ app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
 import torch
-from rsl_rl.runners import OnPolicyRunner
+from isaaclab_rl.rsl_rl.runners import OnPolicyRunner
+from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_manipulation_env import (
@@ -41,7 +42,6 @@ from envs.warehouse.warehouse_manipulation_env import (
     TEACHER_OBS_DIM,
     STUDENT_OBS_DIM,
 )
-from envs.warehouse.agents.rsl_rl_ppo_cfg import RslRlPpoActorCriticCfg, RslRlOnPolicyRunnerCfg
 
 
 def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunnerCfg:

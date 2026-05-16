@@ -27,11 +27,11 @@ app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
 import torch
-from rsl_rl.runners import OnPolicyRunner
+from isaaclab_rl.rsl_rl.runners import OnPolicyRunner
+from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_marl_env import WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS
-from envs.warehouse.agents.rsl_rl_ppo_cfg import RslRlPpoActorCriticCfg, RslRlOnPolicyRunnerCfg
 
 # IPPO: obs_dim = 로봇 1대 관측, act_dim = 로봇 1대 행동
 # Parameter Sharing: N 로봇이 동일 네트워크 공유

@@ -41,35 +41,43 @@
 
 ---
 
-## 현재 진행 중 — RunPod RTX 3090
+## RunPod RTX 3090 — 현재 상태
 
-### 상황
-setup.sh 실행 완료 (Isaac Sim 5.1.0 + Isaac Lab 2.3.2 + venv 설치됨)
+### setup.sh 수정 완료 (2026-05-16)
+- [0/6] apt-get: libxt6, libvulkan1, libgl1-mesa-glx 등 추가
+- [3b/6] pxr 경로 설정 3단계 추가:
+  1. sitecustomize.py → Python 시작 시 `import isaacsim` 자동 실행
+  2. find로 pxr 폴더 탐색 → pxr_path.pth 생성
+  3. 미발견 시 `usd-core` pip 설치 (fallback)
+- isaaclab_rl 의존성 추가: tensorboard, gymnasium, onnx
+- 검증 단계에 pxr / isaaclab_rl import 확인 추가
 
-### 남은 오류 (train_ippo.py 실행 시)
+### 훈련 스크립트 import 수정 완료
+```python
+# 이전 (잘못된 경로)
+from rsl_rl.runners import OnPolicyRunner
+from envs.warehouse.agents.rsl_rl_ppo_cfg import RslRlPpoActorCriticCfg, RslRlOnPolicyRunnerCfg
+
+# 수정 후
+from isaaclab_rl.rsl_rl.runners import OnPolicyRunner
+from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
 ```
-1. libXt.so.6 없음 → CUDA/Vulkan 초기화 실패
-2. rsl_rl 모듈 없음
-```
+- train_ippo.py ✅
+- train_marl.py ✅
+- train_manipulation.py ✅
 
-### 다음에 할 것 (RunPod)
+### 다음 RunPod 접속 시 할 것
 ```bash
-# 1. 시스템 라이브러리 설치
-apt-get update -q && apt-get install -y \
-    libxt6 libxrandr2 libgl1-mesa-glx libglu1-mesa \
-    libvulkan1 libegl1 libgles2
-
-# 2. rsl_rl 설치
-pip install rsl-rl
-
-# 3. 훈련 실행
-export CUDA_VISIBLE_DEVICES=0
+# venv가 이미 설치됐으면:
+source /workspace/isaac_venv/bin/activate
 cd /workspace/MARS
+git pull origin main   # 수정된 스크립트 가져오기
+export CUDA_VISIBLE_DEVICES=0
 python training/multi_robot/train_ippo.py --headless --num_envs 256
-```
 
-### setup.sh에 추가 필요
-위 apt-get + rsl-rl 설치를 setup.sh에 넣어야 함 (다음 세션에서).
+# 새 RunPod이면:
+bash deploy/runpod/setup.sh
+```
 
 ---
 
