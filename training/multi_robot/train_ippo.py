@@ -27,7 +27,7 @@ app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
 import torch
-from isaaclab_rl.rsl_rl.runners import OnPolicyRunner
+from rsl_rl.runners import OnPolicyRunner
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
