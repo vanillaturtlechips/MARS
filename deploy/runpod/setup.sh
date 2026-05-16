@@ -107,9 +107,11 @@ case "$TORCH_CUDA" in
 esac
 TORCH_WHL_URL_FINAL="https://download.pytorch.org/whl/${TORCH_TAG}"
 echo "  torch==2.7.0+${TORCH_TAG} 설치..."
-pip install "torch==2.7.0" "torchvision==0.22.0" "numpy==1.26.4" \
+# isaaclab이 torch>=2.7을 요구하지만 uv가 최신 버전으로 올려버리므로 2.7.0 고정
+uv pip install "torch==2.7.0" "torchvision==0.22.0" "numpy==1.26.4" \
     --index-url "${TORCH_WHL_URL_FINAL}" \
-    --extra-index-url "https://pypi.org/simple"
+    --extra-index-url "https://pypi.org/simple" \
+    --reinstall
 
 # pxr 경로 .pth 등록 (sitecustomize.py 사용 금지 — import isaacsim이 CUDA 컨텍스트 오염)
 SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
