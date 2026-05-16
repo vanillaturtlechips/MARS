@@ -32,12 +32,12 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
-from envs.warehouse.warehouse_marl_env import WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS
+from envs.warehouse.warehouse_marl_env import WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT
 
-# IPPO: obs_dim = 로봇 1대 관측, act_dim = 로봇 1대 행동
-# Parameter Sharing: N 로봇이 동일 네트워크 공유
-OBS_DIM = 7 + (N_ROBOTS - 1)   # 9
-ACT_DIM = 3
+# env가 joint obs/act를 반환하므로 joint 차원 사용
+# (true per-robot IPPO는 env를 N*num_envs 배치로 재구성해야 함 — 추후 과제)
+OBS_DIM = OBS_PER_ROBOT * N_ROBOTS   # 27
+ACT_DIM = 3 * N_ROBOTS               # 9
 
 
 def make_ippo_runner_cfg(num_envs: int, max_iter: int) -> RslRlOnPolicyRunnerCfg:
@@ -62,10 +62,9 @@ def make_ippo_runner_cfg(num_envs: int, max_iter: int) -> RslRlOnPolicyRunnerCfg
 def main():
     # 환경 설정
     env_cfg = WarehouseMARLEnvCfg()
-    env_cfg.scene.num_envs = args.num_envs
-    # IPPO: 각 로봇 독립 처리 → obs/act를 로봇 1대 기준으로 분할
-    env_cfg.observation_space = OBS_DIM
-    env_cfg.action_space      = ACT_DIM
+    env_cfg.scene.num_envs    = args.num_envs
+    env_cfg.observation_space = OBS_DIM   # 27
+    env_cfg.action_space      = ACT_DIM   # 9
 
     env = WarehouseMARLEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
