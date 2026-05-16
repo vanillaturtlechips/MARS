@@ -42,19 +42,25 @@ def self_reward(
     return r                                                # (N,)
 
 
+SAFE_DIST = 1.2   # m — 이 거리 밖에서는 pairwise 페널티 없음
+
+
 def pairwise_reward(
     pos_i: torch.Tensor,   # (N, 2) 로봇 i 위치
     pos_j: torch.Tensor,   # (N, 2) 로봇 j 위치
     eps: float = EPS,
 ) -> torch.Tensor:
-    """rᵢⱼ — 충돌 회피 쌍별 보상 (Theorem 4, 논문 수식 35).
+    """rᵢⱼ — 충돌 회피 쌍별 보상 (Danger Zone 마스킹 적용).
 
-    rᵢⱼ = -1 / sqrt((xᵢ-xⱼ)² + (yᵢ-yⱼ)² + ε)
-    성질: rᵢⱼ = rⱼᵢ (대칭), 가까울수록 큰 음수, 멀면 0 수렴
+    SAFE_DIST 이내일 때만 반발력 작동. 멀리 있으면 0으로 마스킹.
+    → 로봇이 먼 거리에서는 pairwise 노이즈 없이 goal만 따라감.
+    APF(Artificial Potential Field)의 표준 cutoff 기법.
     """
     dist_sq = ((pos_i - pos_j) ** 2).sum(dim=1)          # (N,)
-    r = -1.0 / (dist_sq + eps).sqrt()
-    return r.clamp(min=-5.0)                             # 충돌 시 -∞ 방지
+    dist    = (dist_sq + eps).sqrt()                      # (N,)
+    raw     = -1.0 / dist                                 # (N,)
+    in_danger = (dist < SAFE_DIST).float()
+    return (raw * in_danger).clamp(min=-5.0)              # 충돌 시 -∞ 방지
 
 
 def mpg_reward(

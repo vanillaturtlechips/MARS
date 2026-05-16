@@ -68,9 +68,10 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     goal_range: float = 4.0
     goal_min_dist: float = 1.0
 
-    # MPG 가중치 (beta 낮춰 self reward가 dominant하도록)
-    alpha: float = 1.0
-    beta: float = 0.3
+    # MPG 가중치 (SAFE_DIST 마스킹과 조합)
+    # alpha↑: goal tracking 강화 / beta: SAFE_DIST 내 반발력만 작동
+    alpha: float = 2.0
+    beta: float = 0.5
 
     rew_collision: float = -5.0   # 로봇 간 충돌 패널티 (IPPO 단계에서 사용)
 
