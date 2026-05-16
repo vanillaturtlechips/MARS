@@ -16,6 +16,9 @@ BETA  = 1.5   # 안전 가중치
 EPS   = 1e-5  # 분모 0 방지
 
 
+MAX_DIST = 4.0   # goal_range (m) — 정규화 기준 반경
+
+
 def self_reward(
     pos: torch.Tensor,          # (N, 2) 현재 위치
     goal: torch.Tensor,         # (N, 2) 목표 위치
@@ -26,15 +29,17 @@ def self_reward(
 ) -> torch.Tensor:
     """rᵢ^self — 개별 목표 추적 보상 (Theorem 3).
 
-    rᵢ^self = -||posᵢ - goalᵢ||² + 10·[reached] - 0.01·t
+    논문 공식 rᵢ^self = -||posᵢ - goalᵢ||² 를 MAX_DIST²로 정규화.
+    dist_sq_norm ∈ [0, 1] → Theorem 5 Nash Equilibrium 보장 유지.
     """
-    dist = ((pos - goal) ** 2).sum(dim=1).sqrt()       # (N,)
-    reached = (dist < goal_radius).float()
+    dist_sq      = ((pos - goal) ** 2).sum(dim=1)          # (N,)
+    dist_sq_norm = dist_sq / (MAX_DIST ** 2)               # [0, 1]
+    reached      = (dist_sq.sqrt() < goal_radius).float()
 
-    r = -dist + rew_goal * reached
+    r = -dist_sq_norm + rew_goal * reached
     if time_step is not None:
         r = r + rew_time * time_step.float()
-    return r                                            # (N,)
+    return r                                                # (N,)
 
 
 def pairwise_reward(
@@ -47,8 +52,9 @@ def pairwise_reward(
     rᵢⱼ = -1 / sqrt((xᵢ-xⱼ)² + (yᵢ-yⱼ)² + ε)
     성질: rᵢⱼ = rⱼᵢ (대칭), 가까울수록 큰 음수, 멀면 0 수렴
     """
-    dist_sq = ((pos_i - pos_j) ** 2).sum(dim=1)        # (N,)
-    return -1.0 / (dist_sq + eps).sqrt()                # (N,)
+    dist_sq = ((pos_i - pos_j) ** 2).sum(dim=1)          # (N,)
+    r = -1.0 / (dist_sq + eps).sqrt()
+    return r.clamp(min=-5.0)                             # 충돌 시 -∞ 방지
 
 
 def mpg_reward(
