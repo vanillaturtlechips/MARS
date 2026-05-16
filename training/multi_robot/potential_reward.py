@@ -28,10 +28,10 @@ def self_reward(
 
     rᵢ^self = -||posᵢ - goalᵢ||² + 10·[reached] - 0.01·t
     """
-    dist_sq = ((pos - goal) ** 2).sum(dim=1)          # (N,)
-    reached = (dist_sq.sqrt() < goal_radius).float()
+    dist = ((pos - goal) ** 2).sum(dim=1).sqrt()       # (N,)
+    reached = (dist < goal_radius).float()
 
-    r = -dist_sq + rew_goal * reached
+    r = -dist + rew_goal * reached
     if time_step is not None:
         r = r + rew_time * time_step.float()
     return r                                            # (N,)

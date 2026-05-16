@@ -221,7 +221,7 @@ class WarehouseMARLEnv(DirectRLEnv):
             time_step=self.episode_length_buf,
         )   # (N, N_ROBOTS)
 
-        return rewards_per_robot.sum(dim=1)   # (N,) — 평균 or 합산
+        return rewards_per_robot.mean(dim=1)   # (N,) — 로봇 수로 나눠 스케일 정규화
 
     # ------------------------------------------------------------------
     # Dones
