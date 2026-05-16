@@ -80,7 +80,9 @@ def main():
     env = RslRlVecEnvWrapper(env)
 
     runner_cfg = make_runner_cfg(obs_dim, mode, args.max_iter)
-    runner = OnPolicyRunner(env, runner_cfg.to_dict(), log_dir=log_dir, device=env.device)
+    cfg_dict = runner_cfg.to_dict()
+    cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
+    runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
 
     if args.student and args.teacher_ckpt:
         print(f"[Student] Teacher 체크포인트에서 Actor 초기화: {args.teacher_ckpt}")

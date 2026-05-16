@@ -76,7 +76,9 @@ def main():
     env = RslRlVecEnvWrapper(env)
 
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
-    runner = OnPolicyRunner(env, runner_cfg.to_dict(), log_dir="logs/warehouse_mappo", device=env.device)
+    cfg_dict = runner_cfg.to_dict()
+    cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
+    runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
 
     if args.ippo_ckpt and not args.from_scratch:
         print(f"[MAPPO] IPPO 체크포인트 로드: {args.ippo_ckpt}")
