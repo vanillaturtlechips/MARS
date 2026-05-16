@@ -44,7 +44,7 @@ def _load_actor_weights(checkpoint_path: Path, model: ActorMLP) -> None:
     for k, v in raw.items():
         # 'actor.net.0.weight' → 'net.0.weight'
         if k.startswith("actor."):
-            actor_sd[k[len("actor."):]] = v
+            actor_sd["net." + k[len("actor."):]] = v
 
     if not actor_sd:
         raise KeyError(
