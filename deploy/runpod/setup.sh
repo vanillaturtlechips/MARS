@@ -107,8 +107,9 @@ uv pip install \
     -e source/isaaclab_tasks \
     --no-deps
 
-# isaaclab_rl이 번들하는 rsl_rl 의존성 수동 설치
+# isaaclab_rl 의존성: standalone rsl_rl + 기타
 uv pip install \
+    rsl-rl \
     tensorboard \
     "gymnasium>=0.29,<1.0" \
     "onnx>=1.14.0" \
