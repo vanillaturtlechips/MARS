@@ -33,11 +33,10 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_marl_env import WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT
+from envs.warehouse.ippo_wrapper import IPPOReshapeWrapper
 
-# env가 joint obs/act를 반환하므로 joint 차원 사용
-# (true per-robot IPPO는 env를 N*num_envs 배치로 재구성해야 함 — 추후 과제)
-OBS_DIM = OBS_PER_ROBOT * N_ROBOTS   # 27
-ACT_DIM = 3 * N_ROBOTS               # 9
+# env는 joint (27/9), IPPOReshapeWrapper가 per-robot (9/3) 배치로 확장
+ACT_PER_ROBOT = 3
 
 
 def make_ippo_runner_cfg(num_envs: int, max_iter: int) -> RslRlOnPolicyRunnerCfg:
@@ -60,14 +59,16 @@ def make_ippo_runner_cfg(num_envs: int, max_iter: int) -> RslRlOnPolicyRunnerCfg
 
 
 def main():
-    # 환경 설정
     env_cfg = WarehouseMARLEnvCfg()
     env_cfg.scene.num_envs    = args.num_envs
-    env_cfg.observation_space = OBS_DIM   # 27
-    env_cfg.action_space      = ACT_DIM   # 9
+    # env 내부는 joint (27/9) — IPPOReshapeWrapper가 per-robot 뷰로 변환
+    env_cfg.observation_space = OBS_PER_ROBOT * N_ROBOTS   # 27
+    env_cfg.action_space      = ACT_PER_ROBOT * N_ROBOTS   # 9
 
     env = WarehouseMARLEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
+    env = IPPOReshapeWrapper(env, N_ROBOTS, OBS_PER_ROBOT)
+    # 이후 runner가 보는 배치: num_envs × N_ROBOTS, obs=9, act=3
 
     runner_cfg = make_ippo_runner_cfg(args.num_envs, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
@@ -77,9 +78,10 @@ def main():
     if args.checkpoint:
         runner.load(args.checkpoint)
 
-    print(f"\n[IPPO] 로봇 {N_ROBOTS}대, {args.num_envs} envs, {args.max_iter} iter")
-    print(f"[IPPO] 조기 진단: 30 iter 안에 mean_reward 상승세 확인")
-    print(f"[IPPO] 없으면 potential_reward.py 파라미터 재검토\n")
+    eff_batch = args.num_envs * N_ROBOTS
+    print(f"\n[IPPO] 로봇 {N_ROBOTS}대, {args.num_envs} envs (유효 배치 {eff_batch}), {args.max_iter} iter")
+    print(f"[IPPO] Actor obs=9, act=3 (per-robot) — true IPPO with parameter sharing")
+    print(f"[IPPO] 조기 진단: 30 iter 안에 mean_reward 상승세 확인\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()
