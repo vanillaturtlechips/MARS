@@ -33,6 +33,7 @@ simulation_app = app_launcher.app
 import torch
 from rsl_rl.runners import OnPolicyRunner
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
+from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_manipulation_env import (
@@ -76,6 +77,7 @@ def main():
 
     env_cfg.scene.num_envs = args.num_envs
     env = WarehouseManipulationEnv(env_cfg)
+    env = RslRlVecEnvWrapper(env)
 
     runner_cfg = make_runner_cfg(obs_dim, mode, args.max_iter)
     runner = OnPolicyRunner(env, runner_cfg.to_dict(), log_dir=log_dir, device=env.device)

@@ -33,6 +33,7 @@ simulation_app = app_launcher.app
 import torch
 from rsl_rl.runners import OnPolicyRunner
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
+from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_marl_env import WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT
@@ -72,6 +73,7 @@ def main():
     env_cfg.state_space       = CRITIC_OBS_DIM
 
     env = WarehouseMARLEnv(env_cfg)
+    env = RslRlVecEnvWrapper(env)
 
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
     runner = OnPolicyRunner(env, runner_cfg.to_dict(), log_dir="logs/warehouse_mappo", device=env.device)
