@@ -554,7 +554,7 @@ VRAM 관리 (RTX 2070 8GB 기준):
 | 오케스트레이터 | Claude API | claude-sonnet-4-6 |
 | 에이전트 프레임워크 | LangChain | 프로토타입 |
 | RAG | pgvector (PostgreSQL) | - |
-| Jetson LLM | Llama 3.2 3B / Qwen2.5 3B | INT4 Q4_K_M (ollama) |
+| Jetson LLM | Qwen2.5 3B (채택) | INT4 Q4_K_M (ollama), 21.5 tok/s |
 | 통신 | ROS2 Humble | - |
 | 모델 배포 | TorchScript | - |
 | 엣지 디바이스 | Jetson Orin Nano Super | 8GB |
@@ -629,11 +629,20 @@ OS: Ubuntu 22.04 (JetPack 6.2, L4T R36.4.7)
   ✅ ROS2 Humble (ros-humble-ros-base)
   ✅ Python 3.10.12
 
-진행 예정:
-  [ ] ollama 설치
-  [ ] Llama 3.2 3B-instruct-q4_K_M + Qwen2.5 3B-instruct-q4_K_M 벤치마킹
-  [ ] actor_phase15.pt 복사 후 inference.py latency 측정
-  [ ] ros2_bridge.py 연동 테스트
+벤치마킹 결과 (2026-05-16):
+  ┌──────────────────────────────┬────────────┬────────────┐
+  │ 항목                         │ llama3.2:3b│ qwen2.5:3b │
+  ├──────────────────────────────┼────────────┼────────────┤
+  │ tokens/sec                   │ 21.1       │ 21.5 ✅    │
+  │ 첫 토큰 레이턴시 (ms)        │ 663        │ 640 ✅     │
+  │ JSON 성공률 (%)              │ 100        │ 100        │
+  └──────────────────────────────┴────────────┴────────────┘
+  → qwen2.5:3b-instruct-q4_K_M 채택
+
+  ✅ ollama 설치 완료
+  ✅ qwen2.5:3b-instruct-q4_K_M 설치 완료
+  ✅ actor_phase15.pt inference latency: 0.33ms = 3034 Hz (목표 100Hz의 30배)
+  ✅ ros2_bridge.py: /goal_pose → RL actor → /cmd_vel 파이프라인 동작 확인
 
 접속:
   ssh nvidia@192.168.55.1  (USB-C 연결 시)
