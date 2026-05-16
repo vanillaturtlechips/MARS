@@ -141,8 +141,7 @@ uv pip install \
     -e source/isaaclab \
     -e source/isaaclab_assets \
     -e source/isaaclab_rl \
-    -e source/isaaclab_tasks \
-    --no-deps
+    -e source/isaaclab_tasks
 
 # isaaclab_rl 의존성 (--no-deps로 누락된 것들 수동 설치)
 # rsl-rl의 실제 PyPI 패키지명은 rsl-rl-lib
