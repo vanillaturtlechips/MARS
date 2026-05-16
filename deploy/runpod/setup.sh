@@ -1,48 +1,81 @@
 #!/bin/bash
-# RunPod Isaac Lab 환경 설치 스크립트
-# 사용법: bash setup.sh
+# MARS RunPod 원클릭 환경 설치
+# 사용법: bash deploy/runpod/setup.sh
+# 예상 시간: 약 20분 (Isaac Sim 다운로드 포함)
 
-set -e  # 오류 시 즉시 중단
-
-# 1단계 전: 디스플레이/Vulkan 라이브러리 설치 (headless 렌더링 필수)
-echo "[0/6] 시스템 라이브러리 설치..."
-apt-get update -q && apt-get install -y --no-install-recommends \
-    libxt6 libxrandr2 libxcursor1 libxinerama1 \
-    libgl1-mesa-glx libgl1-mesa-dri libglu1-mesa \
-    libvulkan1 vulkan-tools \
-    libegl1 libgles2 \
-    libxkbcommon0 libdbus-1-3 \
-    2>/dev/null || true
-echo "      완료"
-
-# 캐시 전부 workspace로 (Container disk 절약)
-export UV_CACHE_DIR=/workspace/uv_cache
-export PIP_CACHE_DIR=/workspace/pip_cache
-export TMPDIR=/workspace/tmp
-mkdir -p /workspace/uv_cache /workspace/pip_cache /workspace/tmp
+set -e
 
 VENV_PATH="/workspace/isaac_venv"
 ISAACLAB_PATH="/workspace/IsaacLab"
 MARS_PATH="/workspace/MARS"
 ISAACLAB_VERSION="v2.3.2"
 
-echo "========================================"
+echo "════════════════════════════════════════════"
 echo " MARS RunPod 환경 설치"
-echo "========================================"
+echo "════════════════════════════════════════════"
 
-# 1. uv 설치
-echo "[1/6] uv 설치..."
+# ── 사전 확인: CUDA 접근 가능 여부 ─────────────────────────────
+echo ""
+echo "▶ 사전 확인"
+nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null \
+    && echo "  GPU OK" || echo "  [경고] nvidia-smi 실패"
+
+CUDA_INIT=$(python3 -c "
+import ctypes
+try:
+    ret = ctypes.CDLL('libcuda.so.1').cuInit(0)
+    print(ret)
+except:
+    print(999)
+" 2>/dev/null)
+
+if [ "$CUDA_INIT" != "0" ]; then
+    echo ""
+    echo "  ╔══════════════════════════════════════════════╗"
+    echo "  ║  [경고] CUDA cuInit 실패 (error $CUDA_INIT)          ║"
+    echo "  ║  /dev/nvidia-caps/ 가 비어있는 컨테이너임.    ║"
+    echo "  ║  이 Pod를 삭제하고 RunPod 공식 PyTorch/CUDA   ║"
+    echo "  ║  템플릿으로 새 Pod를 생성해야 함.              ║"
+    echo "  ║  환경만 설치 후 종료함.                        ║"
+    echo "  ╚══════════════════════════════════════════════╝"
+    echo ""
+fi
+
+# ── 1. 시스템 라이브러리 ────────────────────────────────────────
+echo "[1/7] 시스템 라이브러리..."
+apt-get update -q 2>/dev/null
+apt-get install -y --no-install-recommends \
+    libxt6 libxrandr2 libxcursor1 libxinerama1 \
+    libgl1-mesa-glx libglu1-mesa \
+    libvulkan1 libegl1 libgles2 \
+    libxkbcommon0 libdbus-1-3 \
+    git curl 2>/dev/null || true
+echo "  완료"
+
+# ── 캐시 경로를 Volume disk로 ──────────────────────────────────
+export UV_CACHE_DIR=/workspace/uv_cache
+export PIP_CACHE_DIR=/workspace/pip_cache
+export TMPDIR=/workspace/tmp
+mkdir -p /workspace/uv_cache /workspace/pip_cache /workspace/tmp
+
+# ── 2. uv ──────────────────────────────────────────────────────
+echo "[2/7] uv 설치..."
 pip install uv -q
-echo "      완료"
+echo "  완료"
 
-# 2. venv 생성
-echo "[2/6] 가상환경 생성: $VENV_PATH"
-uv venv "$VENV_PATH"
+# ── 3. venv ────────────────────────────────────────────────────
+echo "[3/7] 가상환경: $VENV_PATH"
+if [ -d "$VENV_PATH" ]; then
+    echo "  기존 venv 재사용"
+else
+    uv venv "$VENV_PATH"
+fi
 source "$VENV_PATH/bin/activate"
-echo "      완료"
+echo "  완료"
 
-# 3. Isaac Sim 설치
-echo "[3/6] Isaac Sim 5.1.0 설치 (시간 걸림)..."
+# ── 4. Isaac Sim 5.1.0 + PyTorch ───────────────────────────────
+echo "[4/7] Isaac Sim 5.1.0 설치 (10~15분)..."
+
 uv pip install \
     isaacsim==5.1.0 \
     isaacsim-rl==5.1.0 \
@@ -53,44 +86,38 @@ uv pip install \
     --extra-index-url https://pypi.nvidia.com \
     --index-strategy unsafe-best-match
 
-# numpy 고정 (isaacsim 요구사항)
-uv pip install "numpy==1.26.4" "torch==2.7.0" "torchvision==0.22.0" \
+# PyTorch cu128 명시적 설치
+# unsafe-best-match 사용 시 cu126이 설치될 수 있으므로 +cu128 suffix 명시
+uv pip install \
+    "torch==2.7.0+cu128" \
+    "torchvision==0.22.0+cu128" \
+    "numpy==1.26.4" \
     --extra-index-url https://download.pytorch.org/whl/cu128 \
     --index-strategy unsafe-best-match
-echo "      완료"
 
-# 3b. pxr 경로 설정 (isaacsim 설치 직후 실행)
-# NOTE: sitecustomize.py 방식 금지 — import isaacsim이 CUDA 컨텍스트를 오염시킴
-#       AppLauncher() 호출 시 Isaac Sim이 sys.path에 pxr을 자동 추가하므로
-#       훈련 스크립트의 정상 흐름에서는 pxr이 자동으로 잡힘.
-#       단, find로 미리 pxr 경로를 .pth에 등록해두면 AppLauncher 전 import도 안전.
-echo "[3b/6] pxr 경로 설정..."
-SITE_PACKAGES="$VENV_PATH/lib/python3.11/site-packages"
-
+# pxr 경로 .pth 등록 (sitecustomize.py 사용 금지 — import isaacsim이 CUDA 컨텍스트 오염)
+SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
 PXR_DIR=$(find "$VENV_PATH" -maxdepth 12 -name "pxr" -type d 2>/dev/null \
-           | grep -v "__pycache__" | head -1)
+          | grep -v "__pycache__" | head -1)
 if [ -n "$PXR_DIR" ]; then
-    PXR_BASE=$(dirname "$PXR_DIR")
-    echo "$PXR_BASE" > "$SITE_PACKAGES/pxr_path.pth"
-    echo "      pxr 발견 → .pth 등록: $PXR_BASE"
+    dirname "$PXR_DIR" > "$SITE_PKG/pxr_path.pth"
+    echo "  pxr 경로 등록: $(dirname $PXR_DIR)"
 else
-    echo "      pxr 미발견 — AppLauncher 실행 시 자동 추가됨 (정상)"
-    # 필요 시 usd-core (isaacsim 내장 pxr과 다를 수 있으나 import는 가능)
-    # uv pip install usd-core 2>/dev/null || true
+    echo "  pxr: AppLauncher 실행 시 자동 추가됨"
 fi
-echo "      완료"
 
-# 4. Isaac Lab 설치
-echo "[4/6] Isaac Lab $ISAACLAB_VERSION 설치..."
+echo "  완료"
+
+# ── 5. Isaac Lab v2.3.2 ────────────────────────────────────────
+echo "[5/7] Isaac Lab $ISAACLAB_VERSION..."
 if [ ! -d "$ISAACLAB_PATH" ]; then
     git clone https://github.com/isaac-sim/IsaacLab.git \
-        --branch "$ISAACLAB_VERSION" \
-        --depth 1 \
-        "$ISAACLAB_PATH"
+        --branch "$ISAACLAB_VERSION" --depth 1 "$ISAACLAB_PATH"
+else
+    echo "  기존 클론 재사용"
 fi
 
 cd "$ISAACLAB_PATH"
-# isaaclab.sh 가 pip 을 찾을 수 있도록 symlink
 mkdir -p _isaac_sim
 ln -sf "$(which python)" _isaac_sim/python.sh 2>/dev/null || true
 
@@ -101,7 +128,7 @@ uv pip install \
     -e source/isaaclab_tasks \
     --no-deps
 
-# isaaclab_rl 의존성: standalone rsl_rl + 기타
+# isaaclab_rl 의존성 (standalone rsl-rl 필수)
 uv pip install \
     rsl-rl \
     tensorboard \
@@ -109,48 +136,68 @@ uv pip install \
     "onnx>=1.14.0" \
     "onnxruntime>=1.16.0" \
     2>/dev/null || true
-echo "      완료"
 
-# 5. MARS 코드 클론
-echo "[5/6] MARS 코드 클론..."
+echo "  완료"
+
+# ── 6. MARS 코드 ───────────────────────────────────────────────
+echo "[6/7] MARS 코드..."
 if [ ! -d "$MARS_PATH" ]; then
     git clone https://github.com/vanillaturtlechips/MARS.git "$MARS_PATH"
 else
     cd "$MARS_PATH" && git pull origin main
 fi
-echo "      완료"
+echo "  완료"
 
-# 6. 동작 확인
-echo "[6/6] 동작 확인..."
+# ── 7. 검증 ───────────────────────────────────────────────────
+echo "[7/7] 설치 확인..."
 cd "$MARS_PATH"
 python -c "
+import sys
+ok = True
+
 import torch
-print(f'  torch:       {torch.__version__}')
-print(f'  cuda:        {torch.cuda.is_available()}')
-print(f'  GPU:         {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"없음\"}')
+cuda_ok = torch.cuda.is_available()
+print(f'  torch         {torch.__version__}  (cuda={torch.version.cuda})')
+print(f'  CUDA 사용가능  {\"✓\" if cuda_ok else \"✗  [컨테이너 재생성 필요]\"}')
+if cuda_ok:
+    print(f'  GPU           {torch.cuda.get_device_name(0)}')
+
 import numpy as np
-print(f'  numpy:       {np.__version__}')
+print(f'  numpy         {np.__version__}')
+
 import isaacsim
-print(f'  isaacsim:    OK')
+print(f'  isaacsim      OK')
+
 try:
     from pxr import Usd
-    print(f'  pxr(USD):    OK')
+    print(f'  pxr           OK')
+except ImportError:
+    print(f'  pxr           (AppLauncher 실행 후 자동 로드)')
+
+try:
+    import rsl_rl
+    print(f'  rsl_rl        {rsl_rl.__version__}  ✓')
 except ImportError as e:
-    print(f'  pxr(USD):    FAIL — {e}')
+    print(f'  rsl_rl        FAIL: {e}')
+    ok = False
+
 try:
     from isaaclab_rl.rsl_rl.runners import OnPolicyRunner
-    print(f'  isaaclab_rl: OK')
+    print(f'  isaaclab_rl   OK  ✓')
 except ImportError as e:
-    print(f'  isaaclab_rl: FAIL — {e}')
+    print(f'  isaaclab_rl   FAIL: {e}')
+    ok = False
+
+sys.exit(0 if ok else 1)
 "
 
 echo ""
-echo "========================================"
+echo "════════════════════════════════════════════"
 echo " 설치 완료"
-echo "========================================"
+echo "════════════════════════════════════════════"
 echo ""
 echo "훈련 실행:"
 echo "  source $VENV_PATH/bin/activate"
 echo "  cd $MARS_PATH"
-echo "  python training/single_robot/train_manipulation.py --headless --num_envs 512"
 echo "  python training/multi_robot/train_ippo.py --headless --num_envs 256"
+echo "  python training/single_robot/train_manipulation.py --headless --num_envs 512"
