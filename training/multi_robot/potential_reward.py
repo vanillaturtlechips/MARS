@@ -38,7 +38,7 @@ def self_reward(
 
     r = -dist_sq_norm + rew_goal * reached
     if time_step is not None:
-        r = r + rew_time * time_step.float()
+        r = r + rew_time   # 스텝당 고정 패널티 (time_step 비례 시 2차 누적으로 VF loss 폭발)
     return r                                                # (N,)
 
 

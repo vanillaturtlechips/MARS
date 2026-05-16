@@ -70,10 +70,10 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
 
     # MPG 가중치 (SAFE_DIST 마스킹과 조합)
     # alpha↑: goal tracking 강화 / beta: SAFE_DIST 내 반발력만 작동
-    alpha: float = 2.0
+    alpha: float = 1.0
     beta: float = 0.5
 
-    rew_collision: float = -5.0   # 로봇 간 충돌 패널티 (IPPO 단계에서 사용)
+    rew_collision: float = -150.0  # 충돌 종료 패널티 (에피소드 최대 손실 -81의 2× → 조기 종료 악용 차단)
 
 
 class WarehouseMARLEnv(DirectRLEnv):
@@ -222,7 +222,17 @@ class WarehouseMARLEnv(DirectRLEnv):
             time_step=self.episode_length_buf,
         )   # (N, N_ROBOTS)
 
-        return rewards_per_robot.mean(dim=1)   # (N,) — 로봇 수로 나눠 스케일 정규화
+        team_reward = rewards_per_robot.mean(dim=1)   # (N,)
+
+        # 충돌 종료 패널티 — 조기 충돌 사망이 생존보다 유리한 local optimum 차단
+        collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        for i in range(N_ROBOTS):
+            for j in range(i + 1, N_ROBOTS):
+                d = (positions[:, i] - positions[:, j]).norm(dim=1)
+                collision |= (d < ROBOT_COLLISION_DIST)
+        team_reward = team_reward + collision.float() * self.cfg.rew_collision
+
+        return team_reward
 
     # ------------------------------------------------------------------
     # Dones
