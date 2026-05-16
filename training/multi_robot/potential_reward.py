@@ -24,7 +24,7 @@ def self_reward(
     goal: torch.Tensor,         # (N, 2) 목표 위치
     goal_radius: float = 0.35,
     time_step: torch.Tensor | None = None,  # (N,) 경과 스텝
-    rew_goal: float = 10.0,
+    rew_goal: float = 3.0,
     rew_time: float = -0.01,
 ) -> torch.Tensor:
     """rᵢ^self — 개별 목표 추적 보상 (Theorem 3).
