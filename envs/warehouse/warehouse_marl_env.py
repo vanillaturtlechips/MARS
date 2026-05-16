@@ -105,9 +105,9 @@ class WarehouseMARLEnv(DirectRLEnv):
                     collision_props=sim_utils.CollisionPropertiesCfg(),
                     visual_material=sim_utils.PreviewSurfaceCfg(
                         diffuse_color=(
-                            [0.2, 0.4, 0.8],   # 파랑
-                            [0.8, 0.3, 0.2],   # 빨강
-                            [0.2, 0.7, 0.3],   # 초록
+                            (0.2, 0.4, 0.8),   # 파랑
+                            (0.8, 0.3, 0.2),   # 빨강
+                            (0.2, 0.7, 0.3),   # 초록
                         )[i],
                         metallic=0.1,
                     ),
