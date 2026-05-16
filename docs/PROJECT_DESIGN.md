@@ -407,9 +407,9 @@ VRAM 관리 (RTX 2070 8GB 기준):
 ```
 
 체크포인트:
-- [ ] 멀티 로봇 Isaac Lab 환경 구성 (3대 동시 스폰, 충돌 감지)
-- [ ] IPPO 베이스라인 수렴 확인 (100 iter 조기 진단)
-- [ ] MPG 보상 구현 (`potential_reward.py`)
+- [x] 멀티 로봇 Isaac Lab 환경 구성 (3대 동시 스폰, 충돌 감지)
+- [x] IPPO 베이스라인 수렴 확인 — 400 iter, noise_std 1.00→0.56, ep_len 220-280
+- [x] MPG 보상 구현 (`potential_reward.py`) — Danger Zone 마스킹, rew_collision=-150
 - [ ] MAPPO 환경 구성 + IPPO 체크포인트 fine-tuning
 - [ ] IPPO vs MAPPO 5종 시나리오 비교
 - [ ] 교착 발생률 < 1% 달성 확인
