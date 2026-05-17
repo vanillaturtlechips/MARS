@@ -126,6 +126,23 @@ fi
 
 echo "  완료"
 
+# ── 4.5. flatdict 사전 설치 (setup.py가 pkg_resources 미선언 — 빌드 버그) ──
+# isaaclab이 flatdict==4.0.1에 의존하는데, 해당 setup.py가 pkg_resources를
+# build-system.requires에 선언하지 않아 격리 빌드 환경에서 항상 실패함.
+# tarball에서 .py 파일만 직접 복사하고 dist-info를 수동 생성해 우회.
+SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
+_FD_DIR="/tmp/flatdict_src"
+mkdir -p "$_FD_DIR"
+uv pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
+tar xzf "$_FD_DIR/flatdict-4.0.1.tar.gz" -C "$_FD_DIR"
+cp "$_FD_DIR/flatdict-4.0.1/flatdict.py" "$SITE_PKG/"
+_DI="$SITE_PKG/flatdict-4.0.1.dist-info"
+mkdir -p "$_DI"
+printf "Metadata-Version: 2.1\nName: flatdict\nVersion: 4.0.1\n" > "$_DI/METADATA"
+printf "Wheel-Version: 1.0\nGenerator: manual\nRoot-Is-Purelib: true\n" > "$_DI/WHEEL"
+echo "" > "$_DI/RECORD"
+echo "  flatdict 완료"
+
 # ── 5. Isaac Lab v2.3.2 ────────────────────────────────────────
 echo "[5/7] Isaac Lab $ISAACLAB_VERSION..."
 if [ ! -d "$ISAACLAB_PATH" ]; then
@@ -152,9 +169,11 @@ pip install \
     onnxscript \
     warp-lang \
     tensorboard \
-    "gymnasium>=0.29,<1.0" \
     "onnx>=1.14.0" \
     "onnxruntime>=1.16.0"
+
+# rsl-rl-lib이 gymnasium을 다운그레이드하므로 isaaclab 요구 버전으로 복구
+uv pip install "gymnasium==1.2.1"
 
 echo "  완료"
 
@@ -195,7 +214,8 @@ except ImportError:
 
 try:
     import rsl_rl
-    print(f'  rsl_rl        {rsl_rl.__version__}  ✓')
+    ver = getattr(rsl_rl, '__version__', '(버전 미노출)')
+    print(f'  rsl_rl        {ver}  ✓')
 except ImportError as e:
     print(f'  rsl_rl        FAIL: {e}')
     ok = False

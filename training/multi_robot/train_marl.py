@@ -37,10 +37,8 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_marl_env import WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT
+from envs.warehouse.ippo_wrapper import IPPOReshapeWrapper
 
-# MAPPO Critic은 전체 상태를 봄
-ACTOR_OBS_DIM  = OBS_PER_ROBOT          # 9  (자기 관측만)
-CRITIC_OBS_DIM = OBS_PER_ROBOT * N_ROBOTS   # 27 (전체 상태)
 ACT_DIM = 3
 
 
@@ -67,13 +65,13 @@ def make_mappo_runner_cfg(num_envs: int, max_iter: int) -> RslRlOnPolicyRunnerCf
 def main():
     env_cfg = WarehouseMARLEnvCfg()
     env_cfg.scene.num_envs    = args.num_envs
-    env_cfg.observation_space = ACTOR_OBS_DIM
-    env_cfg.action_space      = ACT_DIM
-    # Critic에 전체 상태 제공 (rsl_rl state_space 활용)
-    env_cfg.state_space       = CRITIC_OBS_DIM
+    env_cfg.observation_space = OBS_PER_ROBOT * N_ROBOTS   # 27 (joint)
+    env_cfg.action_space      = ACT_DIM * N_ROBOTS          # 9
 
     env = WarehouseMARLEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
+    env = IPPOReshapeWrapper(env, N_ROBOTS, OBS_PER_ROBOT)
+    # actor obs=9 (per-robot) — IPPO 체크포인트와 호환
 
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
@@ -88,8 +86,8 @@ def main():
     else:
         print("[경고] --ippo_ckpt 없음. IPPO 먼저 수렴시킨 후 fine-tuning 권장")
 
-    print(f"\n[MAPPO] Actor obs: {ACTOR_OBS_DIM}차원, Critic obs: {CRITIC_OBS_DIM}차원")
-    print(f"[MAPPO] {N_ROBOTS}대 로봇, {args.num_envs} envs, {args.max_iter} iter\n")
+    print(f"\n[MAPPO] Actor obs: {OBS_PER_ROBOT}차원 (per-robot), {N_ROBOTS}대 로봇")
+    print(f"[MAPPO] {args.num_envs} envs (유효 배치 {args.num_envs * N_ROBOTS}), {args.max_iter} iter\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()

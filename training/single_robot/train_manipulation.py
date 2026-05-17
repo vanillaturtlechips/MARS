@@ -85,8 +85,10 @@ def main():
     runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
 
     if args.student and args.teacher_ckpt:
-        print(f"[Student] Teacher 체크포인트에서 Actor 초기화: {args.teacher_ckpt}")
-        runner.load(args.teacher_ckpt)
+        print(f"[Student] Teacher 체크포인트에서 hidden layer 초기화: {args.teacher_ckpt}")
+        ckpt = torch.load(args.teacher_ckpt, map_location=runner.device, weights_only=False)
+        runner.alg.policy.load_state_dict(ckpt["model_state_dict"], strict=False)
+        # Teacher(33차원) → Student(25차원) 입력 차원 불일치: strict=False로 hidden layer만 이어받음
 
     print(f"\n[{mode.upper()}] obs_dim={obs_dim}, {args.num_envs} envs, {args.max_iter} iter")
     print(f"조기 진단: 50 iter 안에 rew_grasp 상승 확인")
