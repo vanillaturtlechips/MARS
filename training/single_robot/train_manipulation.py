@@ -93,9 +93,14 @@ def main():
         # runner.learn()은 max_iter가 아니라 num_learning_iterations만큼 추가 진행
     elif args.student and args.teacher_ckpt:
         print(f"[Student] Teacher 체크포인트에서 hidden layer 초기화: {args.teacher_ckpt}")
-        ckpt = torch.load(args.teacher_ckpt, map_location=runner.device, weights_only=False)
-        runner.alg.policy.load_state_dict(ckpt["model_state_dict"], strict=False)
-        # Teacher(33차원) → Student(25차원) 입력 차원 불일치: strict=False로 hidden layer만 이어받음
+        ckpt       = torch.load(args.teacher_ckpt, map_location=runner.device, weights_only=False)
+        teacher_sd = ckpt["model_state_dict"]
+        student_sd = runner.alg.policy.state_dict()
+        # shape 일치하는 레이어만 로드 (입력 레이어 Teacher 33차원 vs Student 25차원 제외)
+        filtered = {k: v for k, v in teacher_sd.items()
+                    if k in student_sd and v.shape == student_sd[k].shape}
+        runner.alg.policy.load_state_dict(filtered, strict=False)
+        print(f"  로드 완료 — {len(filtered)}/{len(teacher_sd)} keys 매칭")
 
     print(f"\n[{mode.upper()}] obs_dim={obs_dim}, {args.num_envs} envs, {args.max_iter} iter")
     print(f"조기 진단: 50 iter 안에 rew_grasp 상승 확인")
