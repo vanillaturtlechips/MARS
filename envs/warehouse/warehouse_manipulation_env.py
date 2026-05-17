@@ -149,8 +149,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # pi/4 스케일: ±0.785rad — noise_std~0.9 환경에서 정밀 접근 가능
-        joint_pos_target = self._actions * (torch.pi / 4)
+        # pi/2 스케일: ±1.57rad — Franka 작업 공간 커버하면서 pi보다 정밀
+        joint_pos_target = self._actions * (torch.pi / 2)
         self.robot.set_joint_position_target(joint_pos_target)
 
     # ------------------------------------------------------------------
