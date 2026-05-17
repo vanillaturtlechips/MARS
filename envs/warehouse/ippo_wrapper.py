@@ -1,11 +1,10 @@
 """True CTDE 래퍼 (Centralized Training, Decentralized Execution).
 
-Actor : per-robot obs (9-dim) — 각 로봇 독립 실행
-Critic: global obs (27-dim)  — 전체 상태 중앙 평가
+Actor : per-robot obs (9-dim)  — 각 로봇 독립 실행
+Critic: global obs (27-dim)   — 전체 상태 중앙 평가
 
-보상 분리:
-  env._get_rewards() → extras["per_robot_rewards"] (E, N_ROBOTS)
-  wrapper가 reshape(-1) → (E*N,) 로 각 actor에 개별 분배
+rsl_rl 3.x는 get_observations() / step() 이 'policy' 키를 가진
+TensorDict 를 반환하길 기대함. 'critic' 키를 추가해 CTDE 구현.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ class IPPOReshapeWrapper:
     ----------
     vec_env        : RslRlVecEnvWrapper (num_envs = E)
     n_robots       : 로봇 수 N
-    obs_per_robot  : 로봇 1대 관측 차원 (actor obs)
+    obs_per_robot  : 로봇 1대 관측 차원 (actor obs = 9)
     act_per_robot  : 로봇 1대 행동 차원 (기본 3)
     """
 
@@ -42,7 +41,7 @@ class IPPOReshapeWrapper:
 
     @property
     def num_obs(self) -> int:
-        return self.obs_per_robot  # actor: 9-dim per-robot
+        return self.obs_per_robot          # actor: 9-dim per-robot
 
     @property
     def num_actions(self) -> int:
@@ -74,81 +73,78 @@ class IPPOReshapeWrapper:
 
     # ── rsl_rl 3.x 인터페이스 ────────────────────────────────────
     def step(self, actions: torch.Tensor):
-        """(E×N, act_per_robot) → joint step → (E×N, obs_per_robot)."""
+        """(E×N, act_per_robot) → joint step → TensorDict{"policy","critic"}."""
         joint_act = actions.reshape(self._E, self.n * self.act_per_robot)
-
         obs, rew, dones, extras = self._env.step(joint_act)
 
-        # obs: (E, N*obs_per_robot) = (E, 27)
-        actor_obs = self._split_actor_obs(obs)          # (E*N, 9)
-        critic_obs = self._expand_critic_obs(obs)       # (E*N, 27)
+        obs_out = self._build_obs_dict(obs)         # TensorDict (E*N,)
 
         # per-robot 보상 분리 (credit assignment)
         per_robot_rew = extras.pop("per_robot_rewards", None)
         if per_robot_rew is not None:
-            rew_exp = per_robot_rew.reshape(-1)         # (E*N,)
+            rew_exp = per_robot_rew.reshape(-1)     # (E*N,)
         else:
             rew_exp = rew.repeat_interleave(self.n, dim=0)
 
-        dones_exp = dones.repeat_interleave(self.n, dim=0)
+        dones_exp  = dones.repeat_interleave(self.n, dim=0)
         extras_exp = self._expand_extras(extras)
 
-        # critic obs를 extras에 삽입 → rsl_rl이 privileged obs로 사용
-        if "observations" not in extras_exp:
-            extras_exp["observations"] = {}
-        extras_exp["observations"]["critic"] = critic_obs
-
-        return actor_obs, rew_exp, dones_exp, extras_exp
+        return obs_out, rew_exp, dones_exp, extras_exp
 
     def get_observations(self):
         result = self._env.get_observations()
-        if isinstance(result, tuple):
-            obs, extras = result
-            actor_obs = self._split_actor_obs(obs)
-            critic_obs = self._expand_critic_obs(obs)
-            if not isinstance(extras, dict):
-                extras = {}
-            if "observations" not in extras:
-                extras["observations"] = {}
-            extras["observations"]["critic"] = critic_obs
-            return actor_obs, extras
-        obs = result
-        actor_obs = self._split_actor_obs(obs)
-        critic_obs = self._expand_critic_obs(obs)
-        return actor_obs, {"observations": {"critic": critic_obs}}
+        obs, extras = result if isinstance(result, tuple) else (result, {})
+        obs_out = self._build_obs_dict(obs)
+        if not isinstance(extras, dict):
+            extras = {}
+        return obs_out, extras
 
     def reset(self):
         result = self._env.reset()
-        if isinstance(result, tuple):
-            obs, extras = result
-            actor_obs = self._split_actor_obs(obs)
-            critic_obs = self._expand_critic_obs(obs)
-            if not isinstance(extras, dict):
-                extras = {}
-            if "observations" not in extras:
-                extras["observations"] = {}
-            extras["observations"]["critic"] = critic_obs
-            return actor_obs, extras
-        obs = result
-        return self._split_actor_obs(obs), {}
+        obs, extras = result if isinstance(result, tuple) else (result, {})
+        obs_out = self._build_obs_dict(obs)
+        if not isinstance(extras, dict):
+            extras = {}
+        return obs_out, extras
 
     # ── 내부 유틸 ─────────────────────────────────────────────────
+    def _build_obs_dict(self, obs) -> "TensorDict":
+        """raw obs → TensorDict{"policy": (E*N,9), "critic": (E*N,27)}."""
+        from tensordict import TensorDict
+
+        actor_obs  = self._split_actor_obs(obs)    # (E*N, 9)
+        critic_obs = self._expand_critic_obs(obs)  # (E*N, 27)
+
+        return TensorDict(
+            {"policy": actor_obs, "critic": critic_obs},
+            batch_size=[self._E * self.n],
+            device=self.device,
+        )
+
     def _split_actor_obs(self, obs) -> torch.Tensor:
-        """(E, N*obs_per_robot) → (E*N, obs_per_robot): per-robot actor 입력."""
-        # TensorDict / dict / tensor 모두 처리
-        if hasattr(obs, "batch_size"):          # TensorDict
-            obs = obs["policy"]
-        elif isinstance(obs, dict):
-            obs = obs.get("policy", next(iter(obs.values())))
-        return obs.reshape(self._E * self.n, self.obs_per_robot)
+        """(E, 27) → (E*N, 9): per-robot actor 입력."""
+        tensor = self._extract_tensor(obs, key="policy")
+        return tensor.reshape(self._E * self.n, self.obs_per_robot)
 
     def _expand_critic_obs(self, obs) -> torch.Tensor:
-        """(E, N*obs_per_robot) → (E*N, N*obs_per_robot): global state 복제."""
-        if hasattr(obs, "batch_size"):          # TensorDict
-            obs = obs.get("critic", obs["policy"])
-        elif isinstance(obs, dict):
-            obs = obs.get("critic", obs.get("policy", next(iter(obs.values()))))
-        return obs.repeat_interleave(self.n, dim=0)
+        """(E, 27) → (E*N, 27): global state 복제."""
+        tensor = self._extract_tensor(obs, key="critic")
+        return tensor.repeat_interleave(self.n, dim=0)
+
+    def _extract_tensor(self, obs, key: str) -> torch.Tensor:
+        """TensorDict / dict / tensor 에서 key 에 해당하는 tensor 추출."""
+        if isinstance(obs, torch.Tensor):
+            return obs
+        # TensorDict 또는 dict
+        if hasattr(obs, "__getitem__"):
+            try:
+                return obs[key]
+            except KeyError:
+                pass
+            # fallback: 첫 번째 값
+            if hasattr(obs, "values"):
+                return next(iter(obs.values()))
+        return obs
 
     def _expand_extras(self, extras) -> dict:
         """shape (E, ...) 인 텐서를 (E×N, ...) 로 확장."""
