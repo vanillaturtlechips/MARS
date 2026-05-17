@@ -83,7 +83,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
 
     # 파지 판정: potential 보상 + clean start 기준 (0.25m로 초기 grasp 성공 유도)
     grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
-    place_dist_threshold: float = 0.15   # ee ~ goal 거리 [m] (성공 빈도↑ → gradient 안정화)
+    place_dist_threshold: float = 0.35   # ee ~ goal 거리 [m] (커리큘럼 1단계: 넓게 열어 place 경험 유도)
 
     student_mode: bool = False    # True면 Student 관측 반환
 
