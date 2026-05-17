@@ -45,10 +45,10 @@ except ImportError:
 
 # 목표 선반 위치 4곳 (world frame, 로봇 베이스 기준)
 PLACE_GOALS = [
-    (0.4,  0.2, 0.05),
-    (0.4, -0.2, 0.05),
-    (0.5,  0.1, 0.05),
-    (0.5, -0.1, 0.05),
+    (0.4,  0.2, 0.53),
+    (0.4, -0.2, 0.53),
+    (0.5,  0.1, 0.53),
+    (0.5, -0.1, 0.53),
 ]
 
 TEACHER_OBS_DIM = 33
@@ -80,8 +80,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # 파지 판정 (커리큘럼: 0.30m로 완화 → 랜덤 policy가 우연 발견 가능)
-    grasp_dist_threshold: float = 0.30   # ee ~ box 거리 [m]
+    # 파지 판정 (박스가 테이블 위(z=0.53)에 있고 EE ready pose z≈0.5 → ~0.15m 초기 거리)
+    grasp_dist_threshold: float = 0.20   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.05   # box ~ goal 거리 [m]
 
     student_mode: bool = False    # True면 Student 관측 반환
@@ -134,6 +134,18 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.box = RigidObject(box_cfg)
 
         spawn_ground_plane("/World/ground", GroundPlaneCfg())
+
+        # 테이블: 상면 z=0.5m, 박스와 EE가 같은 높이에서 상호작용
+        table_cfg = sim_utils.CuboidCfg(
+            size=(0.8, 0.8, 0.5),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            mass_props=sim_utils.MassPropertiesCfg(mass=500.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.5, 0.35, 0.15), metallic=0.0),
+        )
+        table_cfg.func("/World/envs/env_0/Table", table_cfg,
+                       translation=(0.45, 0.0, 0.25), orientation=(1.0, 0.0, 0.0, 0.0))
+
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
@@ -198,23 +210,22 @@ class WarehouseManipulationEnv(DirectRLEnv):
         ee_pos, _ = self._get_ee_pose()
         box_pos   = self.box.data.root_pos_w
 
-        dist_ee_box   = (ee_pos - box_pos).norm(dim=1)
-        dist_box_goal = (box_pos - self._goal_pos_w).norm(dim=1)
+        dist_ee_box  = (ee_pos - box_pos).norm(dim=1)
+        dist_ee_goal = (ee_pos - self._goal_pos_w).norm(dim=1)
 
-        # 파지 판정: ee가 박스에 충분히 가까우면 grasped
+        # 파지 판정
         newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
         self._grasped |= newly_grasped
 
-        # 낙하 판정: 파지 후 박스가 바닥으로 떨어진 경우
-        dropped = self._grasped & (box_pos[:, 2] < 0.01)
+        # 낙하 판정: 테이블(z=0.5m)에서 떨어진 경우
+        dropped = self._grasped & (box_pos[:, 2] < 0.45)
 
-        # 거치 성공
-        placed = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+        # 거치 성공: EE가 목표 위치에 도달 (박스는 비물리적 proximity 파지이므로 EE 기준)
+        placed = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
 
-        # exp-based 절대거리 보상 (trajectory 간 return 분산 확보)
-        # dist 0.30m→ exp(-1.5)=0.22, dist 0.0m→ exp(0)=1.0 (×rew_approach)
-        approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0)
-        transport = self.cfg.rew_transport * torch.exp(-dist_box_goal * 5.0) * self._grasped.float()
+        # exp-based 절대거리 보상
+        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box  * 5.0)
+        transport = self.cfg.rew_transport * torch.exp(-dist_ee_goal * 5.0) * self._grasped.float()
 
         rew = (
             approach
@@ -229,11 +240,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
     # Dones
     # ------------------------------------------------------------------
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
-        box_pos = self.box.data.root_pos_w
-        dist_box_goal = (box_pos - self._goal_pos_w).norm(dim=1)
+        ee_pos, _ = self._get_ee_pose()
+        box_pos   = self.box.data.root_pos_w
 
-        placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (box_pos[:, 2] < 0.01)
+        dist_ee_goal = (ee_pos - self._goal_pos_w).norm(dim=1)
+        placed  = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
+        dropped = self._grasped & (box_pos[:, 2] < 0.45)
         # Grasp 성공 시 즉시 종료 (커리큘럼: 잡는 법 먼저 학습)
         grasped_done = self._grasped & (~placed) & (~dropped)
 
@@ -263,12 +275,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
         self.robot.write_joint_state_to_sim(reach_pose, torch.zeros_like(reach_pose), env_ids=env_ids_t)
 
-        # 박스 위치 랜덤화 (Domain Randomization)
+        # 박스 위치 랜덤화 — 절대 좌표로 설정 (default_root_state.x=0.5 누적 버그 방지)
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, :3] += self.scene.env_origins[env_ids_t]
-        box_state[:, 0] += sample_uniform(0.3, 0.6, (n,), device=self.device)
-        box_state[:, 1] += sample_uniform(-0.2, 0.2, (n,), device=self.device)
-        box_state[:, 2]  = self.scene.env_origins[env_ids_t, 2] + 0.03
+        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.3, 0.6, (n,), device=self.device)
+        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.2, 0.2, (n,), device=self.device)
+        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.53  # 테이블 위 (상면 0.5m + 박스 반경 0.03m)
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         # 박스 질량 DR
