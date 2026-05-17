@@ -73,9 +73,10 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     alpha: float = 1.0
     beta: float = 0.5
 
-    rew_collision: float  = -150.0  # 충돌 종료 패널티
-    rew_goal: float       =    6.0  # 목표 도달 보상 (deadlock 탈출용으로 3.0→6.0)
-    rew_stationary: float =   -0.15 # 정지 패널티 (속도 < 0.1m/s 시 매 스텝, deadlock 방지)
+    rew_collision: float  =  -50.0  # 충돌 종료 패널티 (-150→-50: 탐색 포기 방지)
+    rew_goal: float       =    6.0  # 목표 도달 보상
+    rew_stationary: float =   -0.8  # 정지 패널티 (-0.15→-0.8: 정지 전략 차단)
+    rew_nav: float        =    2.0  # potential 이동 보상 가중치
 
 
 class WarehouseMARLEnv(DirectRLEnv):
@@ -85,6 +86,7 @@ class WarehouseMARLEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
         self._goal_pos_w = torch.zeros(self.num_envs, N_ROBOTS, 2, device=self.device)
         self._actions = torch.zeros(self.num_envs, N_ROBOTS, 3, device=self.device)
+        self._prev_dist_goal = torch.full((self.num_envs, N_ROBOTS), float("inf"), device=self.device)
 
     # ------------------------------------------------------------------
     # Scene: 로봇 N대 + 선반 4개
@@ -225,7 +227,18 @@ class WarehouseMARLEnv(DirectRLEnv):
             rew_goal=self.cfg.rew_goal,
         )   # (N, N_ROBOTS)
 
-        team_reward = rewards_per_robot.mean(dim=1)   # (N,)
+        # potential 이동 보상: 목표에 가까워질수록 +, 멀어지면 -
+        dist_goal = (positions - self._goal_pos_w).norm(dim=2)   # (N, N_ROBOTS)
+        first_step = (self._prev_dist_goal == float("inf"))
+        delta_goal = torch.where(
+            first_step,
+            torch.zeros_like(dist_goal),
+            (self._prev_dist_goal - dist_goal).clamp(-0.5, 0.5),
+        )
+        nav_reward = self.cfg.rew_nav * delta_goal   # (N, N_ROBOTS)
+        self._prev_dist_goal = dist_goal.detach()
+
+        team_reward = (rewards_per_robot + nav_reward).mean(dim=1)   # (N,)
 
         # 충돌 종료 패널티
         collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
@@ -324,3 +337,5 @@ class WarehouseMARLEnv(DirectRLEnv):
                 bad[rem[~b2]] = False
 
             self._goal_pos_w[env_ids_t, i] = candidates
+
+        self._prev_dist_goal[env_ids_t] = float("inf")
