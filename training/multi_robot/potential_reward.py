@@ -72,6 +72,7 @@ def mpg_reward(
     goal_radius: float = 0.35,
     time_step: torch.Tensor | None = None,
     eps: float = EPS,
+    rew_goal: float = 3.0,
 ) -> torch.Tensor:
     """rᵢ = α·rᵢ^self + β·Σⱼ≠ᵢ rᵢⱼ — 전체 MPG 보상.
 
@@ -86,7 +87,7 @@ def mpg_reward(
     pos_i  = positions[:, robot_idx]   # (N, 2)
     goal_i = goals[:, robot_idx]       # (N, 2)
 
-    r_self = self_reward(pos_i, goal_i, goal_radius, time_step)
+    r_self = self_reward(pos_i, goal_i, goal_radius, time_step, rew_goal=rew_goal)
 
     n_robots = positions.shape[1]
     r_pair = torch.zeros_like(r_self)
@@ -105,6 +106,7 @@ def all_robots_mpg_reward(
     beta: float = BETA,
     goal_radius: float = 0.35,
     time_step: torch.Tensor | None = None,
+    rew_goal: float = 3.0,
     eps: float = EPS,
 ) -> torch.Tensor:
     """모든 로봇의 MPG 보상을 한 번에 계산.
@@ -114,7 +116,7 @@ def all_robots_mpg_reward(
     """
     n_robots = positions.shape[1]
     rewards = torch.stack([
-        mpg_reward(positions, goals, i, alpha, beta, goal_radius, time_step, eps)
+        mpg_reward(positions, goals, i, alpha, beta, goal_radius, time_step, eps, rew_goal=rew_goal)
         for i in range(n_robots)
     ], dim=1)
     return rewards

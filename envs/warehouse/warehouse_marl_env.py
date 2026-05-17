@@ -73,7 +73,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     alpha: float = 1.0
     beta: float = 0.5
 
-    rew_collision: float = -150.0  # 충돌 종료 패널티 (에피소드 최대 손실 -81의 2× → 조기 종료 악용 차단)
+    rew_collision: float  = -150.0  # 충돌 종료 패널티
+    rew_goal: float       =    6.0  # 목표 도달 보상 (deadlock 탈출용으로 3.0→6.0)
+    rew_stationary: float =   -0.15 # 정지 패널티 (속도 < 0.1m/s 시 매 스텝, deadlock 방지)
 
 
 class WarehouseMARLEnv(DirectRLEnv):
@@ -220,17 +222,25 @@ class WarehouseMARLEnv(DirectRLEnv):
             alpha=self.cfg.alpha, beta=self.cfg.beta,
             goal_radius=self.cfg.goal_radius,
             time_step=self.episode_length_buf,
+            rew_goal=self.cfg.rew_goal,
         )   # (N, N_ROBOTS)
 
         team_reward = rewards_per_robot.mean(dim=1)   # (N,)
 
-        # 충돌 종료 패널티 — 조기 충돌 사망이 생존보다 유리한 local optimum 차단
+        # 충돌 종료 패널티
         collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         for i in range(N_ROBOTS):
             for j in range(i + 1, N_ROBOTS):
                 d = (positions[:, i] - positions[:, j]).norm(dim=1)
                 collision |= (d < ROBOT_COLLISION_DIST)
         team_reward = team_reward + collision.float() * self.cfg.rew_collision
+
+        # 정지 패널티 — deadlock 방지 (모든 로봇이 느리면 팀 패널티)
+        stationary = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+        for robot in self.robots:
+            speed = robot.data.root_lin_vel_w[:, :2].norm(dim=1)
+            stationary &= (speed < 0.1)
+        team_reward = team_reward + stationary.float() * self.cfg.rew_stationary
 
         return team_reward
 
