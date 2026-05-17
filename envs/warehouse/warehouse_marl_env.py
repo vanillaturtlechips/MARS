@@ -52,7 +52,7 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     episode_length_s = 20.0
     action_space = 3 * N_ROBOTS          # 각 로봇 [vx, vy, omega]
     observation_space = OBS_PER_ROBOT * N_ROBOTS
-    state_space = 0
+    state_space = OBS_PER_ROBOT * N_ROBOTS  # 27 — centralized critic global state
 
     sim: SimulationCfg = SimulationCfg(dt=1.0 / 60.0, render_interval=decimation)
 
@@ -73,10 +73,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     alpha: float = 1.0
     beta: float = 0.5
 
-    rew_collision: float  =  -50.0  # 충돌 종료 패널티 (-150→-50: 탐색 포기 방지)
+    rew_collision: float  =  -25.0  # per-robot 충돌 패널티 (충돌한 로봇 각자 부담)
     rew_goal: float       =    6.0  # 목표 도달 보상
-    rew_stationary: float =   -0.8  # 정지 패널티 (-0.15→-0.8: 정지 전략 차단)
-    rew_nav: float        =    2.0  # potential 이동 보상 가중치
+    rew_stationary: float =   -0.3  # per-robot 정지 패널티
 
 
 class WarehouseMARLEnv(DirectRLEnv):
@@ -86,7 +85,6 @@ class WarehouseMARLEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
         self._goal_pos_w = torch.zeros(self.num_envs, N_ROBOTS, 2, device=self.device)
         self._actions = torch.zeros(self.num_envs, N_ROBOTS, 3, device=self.device)
-        self._prev_dist_goal = torch.full((self.num_envs, N_ROBOTS), float("inf"), device=self.device)
 
     # ------------------------------------------------------------------
     # Scene: 로봇 N대 + 선반 4개
@@ -209,53 +207,45 @@ class WarehouseMARLEnv(DirectRLEnv):
             obs_i = torch.cat([goal_body, goal_dist, vel_body, omega_z, shelf_dist] + other_dists, dim=1)
             obs_list.append(obs_i)
 
-        obs = torch.cat(obs_list, dim=1)   # (N, N_ROBOTS * OBS_PER_ROBOT)
-        return {"policy": obs}
+        obs = torch.cat(obs_list, dim=1)   # (N, N_ROBOTS * OBS_PER_ROBOT) = (N, 27)
+        # "policy": per-robot로 분리 (wrapper가 9-dim으로 split)
+        # "critic": 그대로 27-dim global state → centralized critic 입력
+        return {"policy": obs, "critic": obs}
 
     # ------------------------------------------------------------------
-    # Rewards: MPG (potential_reward.py) + IPPO 단계는 단순 충돌 패널티
+    # Rewards: 진짜 CTDE — per-robot 개별 보상 (credit assignment)
     # ------------------------------------------------------------------
     def _get_rewards(self) -> torch.Tensor:
         from training.multi_robot.potential_reward import all_robots_mpg_reward
 
         positions = torch.stack([r.data.root_pos_w[:, :2] for r in self.robots], dim=1)
-        rewards_per_robot = all_robots_mpg_reward(
+
+        # MPG: 로봇별 goal-approaching 보상 (N, N_ROBOTS)
+        per_robot = all_robots_mpg_reward(
             positions, self._goal_pos_w,
             alpha=self.cfg.alpha, beta=self.cfg.beta,
             goal_radius=self.cfg.goal_radius,
             time_step=self.episode_length_buf,
             rew_goal=self.cfg.rew_goal,
-        )   # (N, N_ROBOTS)
-
-        # potential 이동 보상: 목표에 가까워질수록 +, 멀어지면 -
-        dist_goal = (positions - self._goal_pos_w).norm(dim=2)   # (N, N_ROBOTS)
-        first_step = (self._prev_dist_goal == float("inf"))
-        delta_goal = torch.where(
-            first_step,
-            torch.zeros_like(dist_goal),
-            (self._prev_dist_goal - dist_goal).clamp(-0.5, 0.5),
         )
-        nav_reward = self.cfg.rew_nav * delta_goal   # (N, N_ROBOTS)
-        self._prev_dist_goal = dist_goal.detach()
 
-        team_reward = (rewards_per_robot + nav_reward).mean(dim=1)   # (N,)
-
-        # 충돌 종료 패널티
-        collision = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        # per-robot 충돌 패널티 — 충돌한 로봇 양쪽 각자 부담
         for i in range(N_ROBOTS):
             for j in range(i + 1, N_ROBOTS):
                 d = (positions[:, i] - positions[:, j]).norm(dim=1)
-                collision |= (d < ROBOT_COLLISION_DIST)
-        team_reward = team_reward + collision.float() * self.cfg.rew_collision
+                col = (d < ROBOT_COLLISION_DIST).float() * self.cfg.rew_collision
+                per_robot[:, i] += col
+                per_robot[:, j] += col
 
-        # 정지 패널티 — deadlock 방지 (모든 로봇이 느리면 팀 패널티)
-        stationary = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
-        for robot in self.robots:
+        # per-robot 정지 패널티 — 본인이 안 움직이면 본인만 패널티
+        for i, robot in enumerate(self.robots):
             speed = robot.data.root_lin_vel_w[:, :2].norm(dim=1)
-            stationary &= (speed < 0.1)
-        team_reward = team_reward + stationary.float() * self.cfg.rew_stationary
+            per_robot[:, i] += (speed < 0.1).float() * self.cfg.rew_stationary
 
-        return team_reward
+        # wrapper가 per-robot 보상을 각 actor에 분배
+        self.extras["per_robot_rewards"] = per_robot  # (N, N_ROBOTS)
+
+        return per_robot.mean(dim=1)  # (N,) — env 인터페이스 유지
 
     # ------------------------------------------------------------------
     # Dones
@@ -337,5 +327,3 @@ class WarehouseMARLEnv(DirectRLEnv):
                 bad[rem[~b2]] = False
 
             self._goal_pos_w[env_ids_t, i] = candidates
-
-        self._prev_dist_goal[env_ids_t] = float("inf")

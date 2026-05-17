@@ -1,16 +1,11 @@
-"""IPPO 배치 재구성 래퍼.
+"""True CTDE 래퍼 (Centralized Training, Decentralized Execution).
 
-RslRlVecEnvWrapper 위에 씌워서, joint obs/act 를 per-robot 배치로 확장.
+Actor : per-robot obs (9-dim) — 각 로봇 독립 실행
+Critic: global obs (27-dim)  — 전체 상태 중앙 평가
 
-  joint  (E, N × obs_per_robot) → per-robot (E×N, obs_per_robot)
-  joint  (E, N × act_per_robot) ← per-robot (E×N, act_per_robot)
-
-협력 보상: 팀 보상을 각 로봇에 동일하게 부여 (cooperative MARL 표준 관행).
-
-배치 확장 방식:
-  env 0 robot 0, env 0 robot 1, env 0 robot 2,
-  env 1 robot 0, env 1 robot 1, env 1 robot 2, ...
-  → repeat_interleave(N, dim=0) 와 일치
+보상 분리:
+  env._get_rewards() → extras["per_robot_rewards"] (E, N_ROBOTS)
+  wrapper가 reshape(-1) → (E*N,) 로 각 actor에 개별 분배
 """
 
 from __future__ import annotations
@@ -29,7 +24,7 @@ class IPPOReshapeWrapper:
     ----------
     vec_env        : RslRlVecEnvWrapper (num_envs = E)
     n_robots       : 로봇 수 N
-    obs_per_robot  : 로봇 1대 관측 차원
+    obs_per_robot  : 로봇 1대 관측 차원 (actor obs)
     act_per_robot  : 로봇 1대 행동 차원 (기본 3)
     """
 
@@ -47,20 +42,16 @@ class IPPOReshapeWrapper:
 
     @property
     def num_obs(self) -> int:
-        return self.obs_per_robot
+        return self.obs_per_robot  # actor: 9-dim per-robot
 
     @property
     def num_actions(self) -> int:
         return self.act_per_robot
 
     @property
-    def num_privileged_obs(self) -> int | None:
-        priv = getattr(self._env, "num_privileged_obs", None)
-        if priv is not None and priv > 0:
-            return priv // self.n
-        return None
+    def num_privileged_obs(self) -> int:
+        return self.obs_per_robot * self.n  # critic: 27-dim global state
 
-    # rsl_rl 3.x 가 네트워크/storage 차원을 여기서 읽음 → per-robot 값으로 override
     @property
     def observation_space(self) -> gym.spaces.Box:
         return gym.spaces.Box(
@@ -88,45 +79,71 @@ class IPPOReshapeWrapper:
 
         obs, rew, dones, extras = self._env.step(joint_act)
 
-        obs_split  = self._split_obs(obs)
-        rew_exp    = rew.repeat_interleave(self.n, dim=0)
-        dones_exp  = dones.repeat_interleave(self.n, dim=0)
+        # obs: (E, N*obs_per_robot) = (E, 27)
+        actor_obs = self._split_actor_obs(obs)          # (E*N, 9)
+        critic_obs = self._expand_critic_obs(obs)       # (E*N, 27)
+
+        # per-robot 보상 분리 (credit assignment)
+        per_robot_rew = extras.pop("per_robot_rewards", None)
+        if per_robot_rew is not None:
+            rew_exp = per_robot_rew.reshape(-1)         # (E*N,)
+        else:
+            rew_exp = rew.repeat_interleave(self.n, dim=0)
+
+        dones_exp = dones.repeat_interleave(self.n, dim=0)
         extras_exp = self._expand_extras(extras)
 
-        return obs_split, rew_exp, dones_exp, extras_exp
+        # critic obs를 extras에 삽입 → rsl_rl이 privileged obs로 사용
+        if "observations" not in extras_exp:
+            extras_exp["observations"] = {}
+        extras_exp["observations"]["critic"] = critic_obs
+
+        return actor_obs, rew_exp, dones_exp, extras_exp
 
     def get_observations(self):
         result = self._env.get_observations()
         if isinstance(result, tuple):
             obs, extras = result
-            return self._split_obs(obs), extras
-        return self._split_obs(result)
+            actor_obs = self._split_actor_obs(obs)
+            critic_obs = self._expand_critic_obs(obs)
+            if not isinstance(extras, dict):
+                extras = {}
+            if "observations" not in extras:
+                extras["observations"] = {}
+            extras["observations"]["critic"] = critic_obs
+            return actor_obs, extras
+        obs = result
+        actor_obs = self._split_actor_obs(obs)
+        critic_obs = self._expand_critic_obs(obs)
+        return actor_obs, {"observations": {"critic": critic_obs}}
 
     def reset(self):
         result = self._env.reset()
         if isinstance(result, tuple):
             obs, extras = result
-            return self._split_obs(obs), extras
-        return self._split_obs(result)
+            actor_obs = self._split_actor_obs(obs)
+            critic_obs = self._expand_critic_obs(obs)
+            if not isinstance(extras, dict):
+                extras = {}
+            if "observations" not in extras:
+                extras["observations"] = {}
+            extras["observations"]["critic"] = critic_obs
+            return actor_obs, extras
+        obs = result
+        return self._split_actor_obs(obs), {}
 
     # ── 내부 유틸 ─────────────────────────────────────────────────
-    def _split_obs(self, obs):
-        """(E, N×feature_dim) → (E×N, feature_dim).
+    def _split_actor_obs(self, obs) -> torch.Tensor:
+        """(E, N*obs_per_robot) → (E*N, obs_per_robot): per-robot actor 입력."""
+        if isinstance(obs, dict):
+            obs = obs.get("policy", next(iter(obs.values())))
+        return obs.reshape(self._E * self.n, self.obs_per_robot)
 
-        rsl_rl 3.x는 get_observations() 결과에 .to(device)를 호출하므로
-        TensorDict였으면 TensorDict로 복원해야 함 (plain dict는 .to() 없음).
-        """
-        E_N = self._E * self.n
-        if isinstance(obs, torch.Tensor):
-            return obs.reshape(E_N, -1)
-        if isinstance(obs, collections.abc.Mapping):
-            new_dict = {k: v.reshape(E_N, -1) for k, v in obs.items()}
-            if type(obs).__name__ == "TensorDict" or hasattr(obs, "batch_size"):
-                from tensordict import TensorDict
-                device = getattr(obs, "device", self.device)
-                return TensorDict(new_dict, batch_size=[E_N], device=device)
-            return new_dict
-        return obs
+    def _expand_critic_obs(self, obs) -> torch.Tensor:
+        """(E, N*obs_per_robot) → (E*N, N*obs_per_robot): global state 복제."""
+        if isinstance(obs, dict):
+            obs = obs.get("critic", obs.get("policy", next(iter(obs.values()))))
+        return obs.repeat_interleave(self.n, dim=0)
 
     def _expand_extras(self, extras) -> dict:
         """shape (E, ...) 인 텐서를 (E×N, ...) 로 확장."""

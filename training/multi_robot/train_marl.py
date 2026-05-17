@@ -75,8 +75,8 @@ def main():
 
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
-    cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
-    cfg_dict["algorithm"]["entropy_coef"] = 0.003  # annealing 시작값
+    cfg_dict["algorithm"]["class_name"] = "PPO"
+    cfg_dict["algorithm"]["entropy_coef"] = 0.001  # per-robot 보상으로 신호 깨끗해져 낮은 값 충분
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
 
     if args.ippo_ckpt and not args.from_scratch:
@@ -85,26 +85,13 @@ def main():
     elif args.from_scratch:
         print("[MAPPO] 처음부터 훈련")
     else:
-        print("[경고] --ippo_ckpt 없음. IPPO 먼저 수렴시킨 후 fine-tuning 권장")
+        print("[경고] --ippo_ckpt 없음. --from_scratch 또는 --ippo_ckpt 지정 권장")
 
-    # entropy annealing: 0~1500 iter → 0.003 유지, 1500~5000 iter → 0.0005까지 선형 감소
-    ANNEAL_START = 1500
-    ENTROPY_HIGH = 0.003
-    ENTROPY_LOW  = 0.0005
-    _orig_update = runner.alg.update
-
-    def _annealed_update(*a, **kw):
-        it = runner.current_learning_iteration
-        if it >= ANNEAL_START:
-            t = min((it - ANNEAL_START) / max(args.max_iter - ANNEAL_START, 1), 1.0)
-            runner.alg.entropy_coef = ENTROPY_HIGH + (ENTROPY_LOW - ENTROPY_HIGH) * t
-        return _orig_update(*a, **kw)
-
-    runner.alg.update = _annealed_update
-
-    print(f"\n[MAPPO] Actor obs: {OBS_PER_ROBOT}차원 (per-robot), {N_ROBOTS}대 로봇")
-    print(f"[MAPPO] {args.num_envs} envs, {args.max_iter} iter")
-    print(f"[MAPPO] entropy annealing: {ENTROPY_HIGH} (0~{ANNEAL_START}) → {ENTROPY_LOW} ({ANNEAL_START}~{args.max_iter})\n")
+    print(f"\n[True CTDE MAPPO]")
+    print(f"  Actor obs : {OBS_PER_ROBOT}-dim per-robot")
+    print(f"  Critic obs: {OBS_PER_ROBOT * N_ROBOTS}-dim global state")
+    print(f"  Reward    : per-robot (credit assignment)")
+    print(f"  {args.num_envs} envs × {N_ROBOTS} robots = {args.num_envs * N_ROBOTS} virtual envs\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()
