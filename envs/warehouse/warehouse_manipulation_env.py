@@ -223,10 +223,16 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 거치 성공: EE가 목표 위치에 도달 (박스는 비물리적 proximity 파지이므로 EE 기준)
         placed = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
 
-        # exp-based 절대거리 보상 (파지 후 approach 비활성 → hover exploit 차단)
+        # exp-based approach (파지 전), potential-based transport (파지 후)
         not_grasped = (~self._grasped).float()
-        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box  * 5.0) * not_grasped
-        transport = self.cfg.rew_transport * torch.exp(-dist_ee_goal * 2.0) * self._grasped.float()
+        approach  = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
+
+        # Potential-based transport: EE가 goal 방향으로 이동할 때만 양수 (정지=0, 후퇴=음수)
+        # episode_length_buf > 1 마스크: 첫 스텝 prev=999 초기화 폭발 방지
+        first_step_ok = (self.episode_length_buf > 1).float()
+        delta_goal = (self._prev_dist_box_goal - dist_ee_goal).clamp(-0.5, 0.5)
+        transport  = self.cfg.rew_transport * delta_goal * 10.0 * self._grasped.float() * first_step_ok
+        self._prev_dist_box_goal = dist_ee_goal.detach()
 
         rew = (
             approach
