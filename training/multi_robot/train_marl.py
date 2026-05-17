@@ -77,6 +77,7 @@ def main():
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
     cfg_dict["algorithm"]["entropy_coef"] = 0.001  # per-robot 보상으로 신호 깨끗해져 낮은 값 충분
+    cfg_dict["obs_groups"] = None  # to_dict()가 {}로 만들면 resolve_obs_groups가 거부 → None으로 auto-detect
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
 
     if args.ippo_ckpt and not args.from_scratch:
