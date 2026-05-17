@@ -72,9 +72,10 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     # 보상 가중치
     rew_approach:  float =  2.0    # exp(-dist*5) 스케일 → trajectory 간 분산 확보
     rew_grasp:     float = 10.0    # 파지 성공
-    rew_transport: float =  2.0    # exp(-dist_goal*5) 스케일
+    rew_transport: float =  2.0    # potential-based delta 스케일
     rew_place:     float = 20.0    # 거치 성공
     rew_drop:      float = -10.0   # 낙하 패널티
+    rew_time:      float = -0.1    # 스텝 패널티 → timeout(-90) vs place(+20) 차이 120점으로 확대
 
     # 박스 Domain Randomization
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
@@ -240,6 +241,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             + self.cfg.rew_grasp * newly_grasped.float()
             + self.cfg.rew_place * placed.float()
             + self.cfg.rew_drop  * dropped.float()
+            + self.cfg.rew_time  # 매 스텝 고정 패널티
         )
         return rew
 
