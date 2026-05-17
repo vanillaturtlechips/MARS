@@ -81,8 +81,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # 파지 판정 (0.30→0.15: 3000 iter 체크포인트에서 재개, 더 정밀한 파지 유도)
-    grasp_dist_threshold: float = 0.15   # ee ~ box 거리 [m]
+    # 파지 판정: potential 보상 + clean start 기준 (0.25m로 초기 grasp 성공 유도)
+    grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.15   # ee ~ goal 거리 [m] (성공 빈도↑ → gradient 안정화)
 
     student_mode: bool = False    # True면 Student 관측 반환
