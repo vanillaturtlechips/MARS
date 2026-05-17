@@ -149,9 +149,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # Delta control: 현재 관절 위치 기준 소량 이동 (절대 위치 점프 방지)
+        # Delta control: 현재 관절 위치 기준 이동
         current_pos = self.robot.data.joint_pos          # (N, 9)
-        delta = self._actions * 0.1                      # ±0.1 rad/step (~6°)
+        delta = self._actions * 0.3                      # ±0.3 rad/step (~17°)
         joint_pos_target = current_pos + delta
         self.robot.set_joint_position_target(joint_pos_target)
 
@@ -250,10 +250,13 @@ class WarehouseManipulationEnv(DirectRLEnv):
             env_ids_t = env_ids.long()
         n = env_ids_t.shape[0]
 
-        # 로봇 초기 관절 자세 리셋
-        default_joint = self.robot.data.default_joint_pos[env_ids_t]
-        self.robot.set_joint_position_target(default_joint, env_ids=env_ids_t)
-        self.robot.write_joint_state_to_sim(default_joint, torch.zeros_like(default_joint), env_ids=env_ids_t)
+        # Franka "ready" 자세: ee가 테이블 앞 ~40cm 높이 (default 수직 자세 대비 박스에 훨씬 가까움)
+        reach_pose = torch.tensor(
+            [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04],
+            device=self.device
+        ).unsqueeze(0).expand(n, -1)
+        self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
+        self.robot.write_joint_state_to_sim(reach_pose, torch.zeros_like(reach_pose), env_ids=env_ids_t)
 
         # 박스 위치 랜덤화 (Domain Randomization)
         box_state = self.box.data.default_root_state[env_ids_t].clone()
