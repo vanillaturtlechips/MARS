@@ -81,8 +81,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # 파지 판정 (커리큘럼: 초기 8cm → 수렴 후 타이트하게 조임)
-    grasp_dist_threshold: float = 0.08   # ee ~ box 거리 [m] (0.03→0.08)
+    # 파지 판정 (커리큘럼: 초기 12cm → 수렴 후 타이트하게 조임)
+    grasp_dist_threshold: float = 0.12   # ee ~ box 거리 [m] (0.03→0.12)
     place_dist_threshold: float = 0.05   # box ~ goal 거리 [m]
 
     student_mode: bool = False    # True면 Student 관측 반환
@@ -149,8 +149,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # 관절 위치 범위로 스케일링
-        joint_pos_target = self._actions * torch.pi   # [-π, π]
+        # pi/4 스케일: ±0.785rad — noise_std~0.9 환경에서 정밀 접근 가능
+        joint_pos_target = self._actions * (torch.pi / 4)
         self.robot.set_joint_position_target(joint_pos_target)
 
     # ------------------------------------------------------------------
