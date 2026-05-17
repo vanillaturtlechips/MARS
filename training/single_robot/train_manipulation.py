@@ -25,6 +25,7 @@ parser.add_argument("--num_envs",     type=int,   default=256)
 parser.add_argument("--max_iter",     type=int,   default=3000)
 parser.add_argument("--student",      action="store_true", default=False)
 parser.add_argument("--teacher_ckpt", type=str,   default=None)
+parser.add_argument("--resume_ckpt",  type=str,   default=None, help="이어서 훈련할 체크포인트 경로")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -85,7 +86,12 @@ def main():
     cfg_dict["algorithm"]["entropy_coef"] = 0.001  # noise_std 발산 억제
     runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
 
-    if args.student and args.teacher_ckpt:
+    if args.resume_ckpt:
+        print(f"[Resume] 체크포인트에서 이어서 훈련: {args.resume_ckpt}")
+        runner.load(args.resume_ckpt)
+        # runner.current_learning_iteration 이 로드된 iter로 설정됨
+        # runner.learn()은 max_iter가 아니라 num_learning_iterations만큼 추가 진행
+    elif args.student and args.teacher_ckpt:
         print(f"[Student] Teacher 체크포인트에서 hidden layer 초기화: {args.teacher_ckpt}")
         ckpt = torch.load(args.teacher_ckpt, map_location=runner.device, weights_only=False)
         runner.alg.policy.load_state_dict(ckpt["model_state_dict"], strict=False)
