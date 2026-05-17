@@ -149,8 +149,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # pi/2 스케일: ±1.57rad — Franka 작업 공간 커버하면서 pi보다 정밀
-        joint_pos_target = self._actions * (torch.pi / 2)
+        # Delta control: 현재 관절 위치 기준 소량 이동 (절대 위치 점프 방지)
+        current_pos = self.robot.data.joint_pos          # (N, 9)
+        delta = self._actions * 0.1                      # ±0.1 rad/step (~6°)
+        joint_pos_target = current_pos + delta
         self.robot.set_joint_position_target(joint_pos_target)
 
     # ------------------------------------------------------------------
@@ -227,8 +229,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
         dropped = self._grasped & (box_pos[:, 2] < 0.01)
+        # Grasp 성공 시 즉시 종료 (커리큘럼: 잡는 법 먼저 학습)
+        grasped_done = self._grasped & (~placed) & (~dropped)
 
-        terminated = placed | dropped
+        terminated = placed | dropped | grasped_done
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, timed_out
 
