@@ -2,6 +2,7 @@
 logs/**/*.pt
 !logs/warehouse_nav/model_999.pt
 !logs/warehouse_obstacle_nav/model_100.pt
+!logs/warehouse_mappo/model_4999.pt
 logs/**/events.out.tfevents.*
 logs/**/git/
 
