@@ -107,6 +107,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._box_mass    = torch.ones(n, device=d)
         self._grasped     = torch.zeros(n, dtype=torch.bool, device=d)
         self._actions     = torch.zeros(n, 9, device=d)
+        self._prev_dist_ee_box  = torch.full((n,), 999.0, device=d)  # potential-based reward용
+        self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
 
     # ------------------------------------------------------------------
     # Scene
@@ -151,7 +153,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         # Delta control: 현재 관절 위치 기준 이동
         current_pos = self.robot.data.joint_pos          # (N, 9)
-        delta = self._actions * 0.3                      # ±0.3 rad/step (~17°)
+        delta = self._actions * 0.05                     # ±0.05 rad/step (~3°, ~3 rad/s @60Hz)
         joint_pos_target = current_pos + delta
         self.robot.set_joint_position_target(joint_pos_target)
 
@@ -197,7 +199,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         ee_pos, _ = self._get_ee_pose()
         box_pos   = self.box.data.root_pos_w
 
-        dist_ee_box  = (ee_pos - box_pos).norm(dim=1)
+        dist_ee_box   = (ee_pos - box_pos).norm(dim=1)
         dist_box_goal = (box_pos - self._goal_pos_w).norm(dim=1)
 
         # 파지 판정: ee가 박스에 충분히 가까우면 grasped
@@ -210,13 +212,22 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 거치 성공
         placed = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
 
-        approach = (self.cfg.rew_approach * (1.0 / (dist_ee_box + 0.01))).clamp(max=self.cfg.rew_approach_cap)
+        # Potential-based approach reward: 박스에 가까워질수록 양수, 멀어질수록 음수
+        approach = (self._prev_dist_ee_box - dist_ee_box) * 10.0
+        approach = approach.clamp(min=-self.cfg.rew_approach_cap, max=self.cfg.rew_approach_cap)
+        self._prev_dist_ee_box = dist_ee_box.detach()
+
+        # Potential-based transport reward: 박스를 목표로 이송
+        transport = (self._prev_dist_box_goal - dist_box_goal) * self.cfg.rew_transport * 10.0
+        transport = transport * self._grasped.float()
+        self._prev_dist_box_goal = dist_box_goal.detach()
+
         rew = (
             approach
-            + self.cfg.rew_grasp   * newly_grasped.float()
-            + self.cfg.rew_transport * self._grasped.float() * (1.0 / (dist_box_goal + 0.01))
-            + self.cfg.rew_place   * placed.float()
-            + self.cfg.rew_drop    * dropped.float()
+            + transport
+            + self.cfg.rew_grasp * newly_grasped.float()
+            + self.cfg.rew_place * placed.float()
+            + self.cfg.rew_drop  * dropped.float()
         )
         return rew
 
@@ -278,6 +289,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # 상태 리셋
         self._grasped[env_ids_t] = False
+        self._prev_dist_ee_box[env_ids_t]   = 999.0
+        self._prev_dist_box_goal[env_ids_t] = 999.0
 
     # ------------------------------------------------------------------
     # Helper
