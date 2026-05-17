@@ -82,6 +82,7 @@ def main():
     runner_cfg = make_runner_cfg(obs_dim, mode, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
+    cfg_dict["algorithm"]["entropy_coef"] = 0.001  # noise_std 발산 억제
     runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
 
     if args.student and args.teacher_ckpt:

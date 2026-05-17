@@ -70,7 +70,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:  float =  0.1    # 박스 접근
+    rew_approach:  float =  0.05   # 박스 접근 (호버링 꼼수 억제용으로 0.1→0.05)
+    rew_approach_cap: float = 1.0  # 스텝당 approach reward 상한 (호버링 cap)
     rew_grasp:     float =  5.0    # 파지 성공
     rew_transport: float =  0.1    # 목표로 이송
     rew_place:     float = 20.0    # 거치 성공
@@ -80,8 +81,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # 파지 판정
-    grasp_dist_threshold: float = 0.03   # ee ~ box 거리 [m]
+    # 파지 판정 (커리큘럼: 초기 8cm → 수렴 후 타이트하게 조임)
+    grasp_dist_threshold: float = 0.08   # ee ~ box 거리 [m] (0.03→0.08)
     place_dist_threshold: float = 0.05   # box ~ goal 거리 [m]
 
     student_mode: bool = False    # True면 Student 관측 반환
@@ -207,8 +208,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 거치 성공
         placed = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
 
+        approach = (self.cfg.rew_approach * (1.0 / (dist_ee_box + 0.01))).clamp(max=self.cfg.rew_approach_cap)
         rew = (
-            self.cfg.rew_approach  * (1.0 / (dist_ee_box + 0.01))
+            approach
             + self.cfg.rew_grasp   * newly_grasped.float()
             + self.cfg.rew_transport * self._grasped.float() * (1.0 / (dist_box_goal + 0.01))
             + self.cfg.rew_place   * placed.float()
