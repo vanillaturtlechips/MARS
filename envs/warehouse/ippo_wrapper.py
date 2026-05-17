@@ -108,18 +108,15 @@ class IPPOReshapeWrapper:
         return obs_out, extras
 
     # ── 내부 유틸 ─────────────────────────────────────────────────
-    def _build_obs_dict(self, obs) -> "TensorDict":
-        """raw obs → TensorDict{"policy": (E*N,9), "critic": (E*N,27)}."""
-        from tensordict import TensorDict
+    def _build_obs_dict(self, obs) -> dict:
+        """raw obs → dict{"policy": (E*N,9), "critic": (E*N,27)}.
 
+        TensorDict를 쓰면 isinstance(obs, dict)가 False → rsl_rl이 키를 못 읽음.
+        plain dict로 반환해야 resolve_obs_groups가 'policy' 키를 정상 인식함.
+        """
         actor_obs  = self._split_actor_obs(obs)    # (E*N, 9)
         critic_obs = self._expand_critic_obs(obs)  # (E*N, 27)
-
-        return TensorDict(
-            {"policy": actor_obs, "critic": critic_obs},
-            batch_size=[self._E * self.n],
-            device=self.device,
-        )
+        return {"policy": actor_obs, "critic": critic_obs}
 
     def _split_actor_obs(self, obs) -> torch.Tensor:
         """(E, 27) → (E*N, 9): per-robot actor 입력."""
