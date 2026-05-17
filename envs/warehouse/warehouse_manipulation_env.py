@@ -72,7 +72,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     # 보상 가중치
     rew_approach:  float =  2.0    # exp(-dist*5) 스케일 → trajectory 간 분산 확보
     rew_grasp:     float = 10.0    # 파지 성공
-    rew_transport: float =  2.0    # potential-based delta 스케일
+    rew_transport: float =  5.0    # potential-based delta 스케일 (time_penalty의 5배 이상)
     rew_place:     float = 20.0    # 거치 성공
     rew_drop:      float = -10.0   # 낙하 패널티
     rew_time:      float = -0.1    # 스텝 패널티 → timeout(-90) vs place(+20) 차이 120점으로 확대
@@ -165,7 +165,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         # Delta control: 현재 관절 위치 기준 이동
         current_pos = self.robot.data.joint_pos          # (N, 9)
-        delta = self._actions * 0.05                     # ±0.05 rad/step (~3°, ~3 rad/s @60Hz)
+        delta = self._actions * 0.10                     # ±0.10 rad/step (~6°, ~6 rad/s @60Hz)
         joint_pos_target = current_pos + delta
         self.robot.set_joint_position_target(joint_pos_target)
 
