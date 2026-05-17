@@ -70,10 +70,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:  float =  0.05   # 박스 접근 (호버링 꼼수 억제용으로 0.1→0.05)
-    rew_approach_cap: float = 1.0  # 스텝당 approach reward 상한 (호버링 cap)
-    rew_grasp:     float =  5.0    # 파지 성공
-    rew_transport: float =  0.1    # 목표로 이송
+    rew_approach:  float =  2.0    # exp(-dist*5) 스케일 → trajectory 간 분산 확보
+    rew_grasp:     float = 10.0    # 파지 성공
+    rew_transport: float =  2.0    # exp(-dist_goal*5) 스케일
     rew_place:     float = 20.0    # 거치 성공
     rew_drop:      float = -10.0   # 낙하 패널티
 
@@ -81,8 +80,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # 파지 판정 (커리큘럼: 초기 12cm → 수렴 후 타이트하게 조임)
-    grasp_dist_threshold: float = 0.12   # ee ~ box 거리 [m] (0.03→0.12)
+    # 파지 판정 (커리큘럼: 0.30m로 완화 → 랜덤 policy가 우연 발견 가능)
+    grasp_dist_threshold: float = 0.30   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.05   # box ~ goal 거리 [m]
 
     student_mode: bool = False    # True면 Student 관측 반환
@@ -212,15 +211,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 거치 성공
         placed = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
 
-        # Potential-based approach reward: 박스에 가까워질수록 양수, 멀어질수록 음수
-        approach = (self._prev_dist_ee_box - dist_ee_box) * 10.0
-        approach = approach.clamp(min=-self.cfg.rew_approach_cap, max=self.cfg.rew_approach_cap)
-        self._prev_dist_ee_box = dist_ee_box.detach()
-
-        # Potential-based transport reward: 박스를 목표로 이송
-        transport = (self._prev_dist_box_goal - dist_box_goal) * self.cfg.rew_transport * 10.0
-        transport = transport * self._grasped.float()
-        self._prev_dist_box_goal = dist_box_goal.detach()
+        # exp-based 절대거리 보상 (trajectory 간 return 분산 확보)
+        # dist 0.30m→ exp(-1.5)=0.22, dist 0.0m→ exp(0)=1.0 (×rew_approach)
+        approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0)
+        transport = self.cfg.rew_transport * torch.exp(-dist_box_goal * 5.0) * self._grasped.float()
 
         rew = (
             approach
