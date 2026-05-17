@@ -126,12 +126,9 @@ def run_scenario(
     actor: "torch.nn.Module",
     num_episodes: int,
     device: str,
+    env: "WarehouseMARLEnv",
 ) -> dict:
     """고정 시나리오 N 에피소드 실행 → 통계 반환."""
-    env_cfg = WarehouseMARLEnvCfg()
-    env_cfg.scene.num_envs = 1
-    env = WarehouseMARLEnv(env_cfg)
-
     spawns = scenario["spawns"]   # list of (x, y)
     goals  = scenario["goals"]
 
@@ -215,8 +212,6 @@ def run_scenario(
         elif ep_all_reached:
             stats["all_reached"] += 1
 
-    env.close()
-
     n = num_episodes
     stats["collision_rate"]   = stats["collision"]   / n
     stats["deadlock_rate"]    = stats["deadlock"]     / n
@@ -233,10 +228,15 @@ def main():
 
     actor = load_policy(args.ckpt, device)
 
+    # 환경을 한 번만 생성하고 모든 시나리오에서 재사용
+    env_cfg = WarehouseMARLEnvCfg()
+    env_cfg.scene.num_envs = 1
+    env = WarehouseMARLEnv(env_cfg)
+
     results = []
     for name, scenario in SCENARIOS.items():
         print(f"── {name}: {scenario['desc']}")
-        stats = run_scenario(name, scenario, actor, args.num_episodes, device)
+        stats = run_scenario(name, scenario, actor, args.num_episodes, device, env)
         results.append(stats)
         print(f"   충돌률: {stats['collision_rate']:.1%}  "
               f"교착률: {stats['deadlock_rate']:.1%}  "
@@ -261,6 +261,7 @@ def main():
         json.dump({"tag": args.tag, "ckpt": args.ckpt, "results": results}, f,
                   ensure_ascii=False, indent=2)
     print(f"결과 저장: {out_path}")
+    env.close()
 
 
 if __name__ == "__main__":
