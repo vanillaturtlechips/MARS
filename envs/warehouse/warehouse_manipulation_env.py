@@ -82,7 +82,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
 
     # 파지 판정 (0.235m 호버링 국소최적 탈출: 0.20→0.30으로 완화, approach는 파지 후 비활성화)
     grasp_dist_threshold: float = 0.30   # ee ~ box 거리 [m]
-    place_dist_threshold: float = 0.05   # box ~ goal 거리 [m]
+    place_dist_threshold: float = 0.15   # ee ~ goal 거리 [m] (성공 빈도↑ → gradient 안정화)
 
     student_mode: bool = False    # True면 Student 관측 반환
 
@@ -226,7 +226,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # exp-based 절대거리 보상 (파지 후 approach 비활성 → hover exploit 차단)
         not_grasped = (~self._grasped).float()
         approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box  * 5.0) * not_grasped
-        transport = self.cfg.rew_transport * torch.exp(-dist_ee_goal * 5.0) * self._grasped.float()
+        transport = self.cfg.rew_transport * torch.exp(-dist_ee_goal * 2.0) * self._grasped.float()
 
         rew = (
             approach
