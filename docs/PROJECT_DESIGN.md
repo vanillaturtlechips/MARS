@@ -173,6 +173,394 @@ DreamerV3 방식:
 
 ---
 
+## 2.5 Operational State Abstraction Layer
+
+### 목적
+
+ROS2 raw telemetry를 AI Agent가 reasoning 가능한 operational semantics로 변환한다.
+
+AI Agent는 `/odom`, `/scan` 같은 low-level robotics telemetry를 직접 처리하지 않고,
+운영 의미(Operational Meaning)를 기반으로 reasoning을 수행한다.
+
+---
+
+### 데이터 흐름
+
+```text
+ROS2 Topics
+    ↓
+Telemetry Processor / State Aggregator
+    ↓
+Operational State JSON
+    ↓
+Claude Orchestrator + Sub Agents
+```
+
+---
+
+### 주요 ROS2
+
+```text
+/odom           → nav_msgs/Odometry
+/battery_state  → sensor_msgs/BatteryState
+/scan           → sensor_msgs/LaserScan
+/diagnostics    → diagnostic_msgs/DiagnosticArray
+/task_status    → custom message
+/robot_status   → custom message
+```
+
+---
+
+### Operational State JSON 구조
+
+```json
+{
+  "timestamp": "2026-05-17T11:32:00Z",
+
+  "warehouse_state": {
+    "traffic_level": "HIGH",
+    "active_robot_count": 12,
+    "blocked_zone_count": 2,
+    "system_load": "PEAK"
+  },
+
+  "robots": [
+    {
+      "robot_id": "R1",
+      "zone": "A",
+      "position": {
+        "x": 12.4,
+        "y": 7.8
+      },
+      "status": "BUSY",
+      "battery_pct": 18,
+      "current_task_id": "TASK_42",
+      "traffic_state": "BLOCKED",
+      "health_state": "NORMAL",
+      "estimated_idle_eta_sec": 120
+    }
+  ],
+
+  "tasks": [
+    {
+      "task_id": "TASK_42",
+      "type": "PICKUP_DELIVERY",
+      "priority": "HIGH",
+      "status": "IN_PROGRESS",
+      "assigned_robot": "R1",
+      "source_zone": "A",
+      "destination_zone": "C",
+      "queue_wait_sec": 45
+    }
+  ],
+
+  "events": [
+    {
+      "event_type": "LOW_BATTERY",
+      "robot_id": "R2",
+      "severity": "HIGH",
+      "timestamp": "2026-05-17T11:31:20Z"
+    }
+  ],
+
+  "alerts": [
+    {
+      "type": "BOTTLENECK_RISK",
+      "zone": "B",
+      "confidence": 0.82,
+      "recommended_action": "reroute nearby robots"
+    }
+  ]
+}
+```
+
+---
+
+### Field Domain 정의
+
+#### warehouse_state
+
+##### traffic_level
+
+```text
+LOW
+MEDIUM
+HIGH
+CRITICAL
+```
+
+##### active_robot_count
+
+```text
+Integer >= 0
+```
+
+##### blocked_zone_count
+
+```text
+Integer >= 0
+```
+
+##### system_load
+
+```text
+LOW
+NORMAL
+HIGH
+PEAK
+```
+
+---
+
+#### robots
+
+##### robot_id
+
+```text
+String
+```
+
+##### zone
+
+```text
+A-Zone
+B-Zone
+Loading
+Charging
+etc.
+```
+
+##### position
+
+###### x
+
+```text
+Float
+```
+
+###### y
+
+```text
+Float
+```
+
+##### status
+
+```text
+IDLE
+BUSY
+MOVING
+BLOCKED
+CHARGING
+ERROR
+OFFLINE
+```
+
+##### battery_pct
+
+```text
+0 ~ 100
+```
+
+##### current_task_id
+
+```text
+TASK_xxx | null
+```
+
+##### traffic_state
+
+```text
+NORMAL
+CONGESTED
+BLOCKED
+```
+
+##### health_state
+
+```text
+NORMAL
+WARNING
+CRITICAL
+```
+
+##### estimated_idle_eta_sec
+
+```text
+Integer >= 0
+```
+
+---
+
+#### tasks
+
+##### task_id
+
+```text
+String
+```
+
+##### type
+
+```text
+PICKUP
+DELIVERY
+PICKUP_DELIVERY
+CHARGING
+INSPECTION
+```
+
+##### priority
+
+```text
+LOW
+MEDIUM
+HIGH
+CRITICAL
+```
+
+##### status
+
+```text
+PENDING
+ASSIGNED
+IN_PROGRESS
+BLOCKED
+COMPLETED
+FAILED
+```
+
+##### assigned_robot
+
+```text
+Robot ID | null
+```
+
+##### source_zone
+
+```text
+Warehouse Zone
+```
+
+##### destination_zone
+
+```text
+Warehouse Zone
+```
+
+##### queue_wait_sec
+
+```text
+Integer >= 0
+```
+
+---
+
+#### events
+
+##### event_type
+
+```text
+LOW_BATTERY
+CONGESTION_ALERT
+ROBOT_FAILURE
+TASK_TIMEOUT
+COLLISION_RISK
+SENSOR_ERROR
+TRAFFIC_SPIKE
+```
+
+##### robot_id
+
+```text
+Robot ID | null
+```
+
+##### severity
+
+```text
+LOW
+MEDIUM
+HIGH
+CRITICAL
+```
+
+##### timestamp
+
+```text
+ISO8601 datetime
+```
+
+---
+
+#### alerts
+
+##### type
+
+```text
+BOTTLENECK_RISK
+OVERLOAD_RISK
+CHARGING_SHORTAGE
+CONGESTION_WARNING
+```
+
+##### zone
+
+```text
+Warehouse Zone
+```
+
+##### confidence
+
+```text
+0.0 ~ 1.0
+```
+
+##### recommended_action
+
+```text
+Free Text
+```
+
+---
+
+### Middle Layer 역할
+
+* ROS2 telemetry aggregation
+* low-level robotics state → operational semantics 변환
+* event generation
+* AI reasoning용 compact state 생성
+
+---
+
+### 구현 파일 구조
+
+```text
+agents/state/
+  ├── telemetry_collector.py
+  ├── state_aggregator.py
+  ├── event_engine.py
+  └── operational_state_schema.py
+```
+
+---
+
+### 설계 핵심
+
+Operational State Layer는 robotics telemetry와 AI reasoning 사이의 abstraction layer 역할을 수행한다.
+
+이 계층을 통해:
+
+* raw robotics telemetry를 operational semantics로 변환
+* event-driven reasoning 지원
+* supervisory AI orchestration 가능
+* multi-agent coordination 지원
+* bottleneck/anomaly detection 수행
+
+구조를 구현할 수 있다.
+
+---
+
 ## 3. 서브 에이전트 설계
 
 | 에이전트 | 역할 | 핵심 도구 |
@@ -456,139 +844,6 @@ VRAM 관리 (RTX 2070 8GB 기준):
     max_tokens_per_call = 4096
     max_cost_per_session = $2.0  (무한 루프 방지)
     예산 초과 시 → 임무 중단 + 알림
-
-3.5단계 — Operational State Abstraction Layer
-
-  목적:
-    ROS2 raw telemetry를 AI Agent가 reasoning 가능한
-    operational semantics로 변환
-
-  데이터 흐름:
-    ROS2 Topics
-        ↓
-    Telemetry Processor / State Aggregator
-        ↓
-    Operational State JSON
-        ↓
-    Claude Orchestrator + Sub Agents
-
-  핵심 철학:
-    AI Agent는 /odom, /scan 같은 low-level robotics telemetry를
-    직접 처리하지 않고 운영 의미(Operational Meaning)를 처리
-
-  주요 ROS2 입력:
-    /odom           → nav_msgs/Odometry
-    /battery_state  → sensor_msgs/BatteryState
-    /scan           → sensor_msgs/LaserScan
-    /diagnostics    → diagnostic_msgs/DiagnosticArray
-    /task_status    → custom message
-    /robot_status   → custom message
-
-  Operational State JSON 예시:
-
-  {
-    "timestamp": "2026-05-17T11:32:00Z",
-
-    "warehouse_state": {
-      "traffic_level": "HIGH",
-      "active_robot_count": 12,
-      "blocked_zone_count": 2,
-      "system_load": "PEAK"
-    },
-
-    "robots": [
-      {
-        "robot_id": "R1",
-        "zone": "A",
-        "position": {
-          "x": 12.4,
-          "y": 7.8
-        },
-        "status": "BUSY",
-        "battery_pct": 18,
-        "current_task_id": "TASK_42",
-        "traffic_state": "BLOCKED",
-        "health_state": "NORMAL",
-        "estimated_idle_eta_sec": 120
-      }
-    ],
-
-    "tasks": [
-      {
-        "task_id": "TASK_42",
-        "type": "PICKUP_DELIVERY",
-        "priority": "HIGH",
-        "status": "IN_PROGRESS",
-        "assigned_robot": "R1",
-        "source_zone": "A",
-        "destination_zone": "C",
-        "queue_wait_sec": 45
-      }
-    ],
-
-    "events": [
-      {
-        "event_type": "LOW_BATTERY",
-        "robot_id": "R2",
-        "severity": "HIGH",
-        "timestamp": "2026-05-17T11:31:20Z"
-      }
-    ],
-
-    "alerts": [
-      {
-        "type": "BOTTLENECK_RISK",
-        "zone": "B",
-        "confidence": 0.82,
-        "recommended_action": "reroute nearby robots"
-      }
-    ]
-  }
-
-  필드 domain 정의:
-
-    robots[].status:
-      IDLE | BUSY | MOVING | BLOCKED | CHARGING | ERROR | OFFLINE
-
-    robots[].traffic_state:
-      NORMAL | CONGESTED | BLOCKED
-
-    robots[].health_state:
-      NORMAL | WARNING | CRITICAL
-
-    tasks[].priority:
-      LOW | MEDIUM | HIGH | CRITICAL
-
-    tasks[].status:
-      PENDING | ASSIGNED | IN_PROGRESS | BLOCKED | COMPLETED | FAILED
-
-    events[].event_type:
-      LOW_BATTERY
-      CONGESTION_ALERT
-      ROBOT_FAILURE
-      TASK_TIMEOUT
-      COLLISION_RISK
-      SENSOR_ERROR
-      TRAFFIC_SPIKE
-
-    alerts[].type:
-      BOTTLENECK_RISK
-      OVERLOAD_RISK
-      CHARGING_SHORTAGE
-      CONGESTION_WARNING
-
-  Middle Layer 역할:
-    - ROS2 telemetry aggregation
-    - low-level robotics state → operational semantics 변환
-    - event generation
-    - AI reasoning용 compact state 생성
-
-  구현 파일:
-    agents/state/
-      ├── telemetry_collector.py
-      ├── state_aggregator.py
-      ├── event_engine.py
-      └── operational_state_schema.py
 
 4단계 — Propose-then-Commit 패턴
   모든 로봇 이동 명령은 2단계:
