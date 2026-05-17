@@ -76,7 +76,7 @@ def main():
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
-    cfg_dict["algorithm"]["entropy_coef"] = 0.001  # noise std 발산 억제 (IPPO와 동일)
+    cfg_dict["algorithm"]["entropy_coef"] = 0.01   # 0.001→0.01: 충돌 회피 발견 전 탐색 유지
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
 
     if args.ippo_ckpt and not args.from_scratch:
