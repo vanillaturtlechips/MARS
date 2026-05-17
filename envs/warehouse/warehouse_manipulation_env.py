@@ -107,8 +107,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._box_mass    = torch.ones(n, device=d)
         self._grasped     = torch.zeros(n, dtype=torch.bool, device=d)
         self._actions     = torch.zeros(n, 9, device=d)
-        self._prev_dist_ee_box  = torch.full((n,), 999.0, device=d)  # potential-based reward용
+        self._prev_dist_ee_box   = torch.full((n,), 999.0, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
+        # grasp 시점의 박스 위치 저장 (proximity grasp: 팔이 박스를 밀지 못하도록 freeze)
+        self._frozen_box_state   = torch.zeros(n, 13, device=d)
 
     # ------------------------------------------------------------------
     # Scene
@@ -169,6 +171,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
         joint_pos_target = current_pos + delta
         self.robot.set_joint_position_target(joint_pos_target)
 
+        # Proximity grasp freeze: 파지된 박스를 grasp 시점 위치에 고정
+        # (실제 그리퍼 없는 sim에서 팔이 박스를 물리적으로 밀어내는 것 방지)
+        if self._grasped.any():
+            grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
+            frozen = self._frozen_box_state[grasped_ids].clone()
+            frozen[:, 7:13] = 0.0   # 속도·각속도 제로
+            self.box.write_root_state_to_sim(frozen, grasped_ids)
+
     # ------------------------------------------------------------------
     # Observations
     # ------------------------------------------------------------------
@@ -217,6 +227,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 파지 판정
         newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
         self._grasped |= newly_grasped
+        # grasp 발동 순간 박스 상태 저장 (이후 freeze에 사용)
+        if newly_grasped.any():
+            new_ids = newly_grasped.nonzero(as_tuple=True)[0]
+            self._frozen_box_state[new_ids] = self.box.data.root_state_w[new_ids].clone()
 
         # 낙하 판정: 테이블(z=0.5m)에서 떨어진 경우
         dropped = self._grasped & (box_pos[:, 2] < 0.45)
@@ -307,6 +321,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._grasped[env_ids_t] = False
         self._prev_dist_ee_box[env_ids_t]   = 999.0
         self._prev_dist_box_goal[env_ids_t] = 999.0
+        self._frozen_box_state[env_ids_t]   = 0.0
 
     # ------------------------------------------------------------------
     # Helper
