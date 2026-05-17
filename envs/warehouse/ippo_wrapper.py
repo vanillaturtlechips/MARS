@@ -92,31 +92,35 @@ class IPPOReshapeWrapper:
         return obs_out, rew_exp, dones_exp, extras_exp
 
     def get_observations(self):
+        """rsl_rl 3.x OnPolicyRunner은 TensorDict 단독 반환을 기대함 (튜플 아님).
+        on_policy_runner.py line 43: obs = self.env.get_observations()
+        on_policy_runner.py line 70: obs = self.env.get_observations().to(device)
+        """
         result = self._env.get_observations()
-        obs, extras = result if isinstance(result, tuple) else (result, {})
-        obs_out = self._build_obs_dict(obs)
-        if not isinstance(extras, dict):
-            extras = {}
-        return obs_out, extras
+        obs = result[0] if isinstance(result, tuple) else result
+        return self._build_obs_dict(obs)  # TensorDict 단독 반환
 
     def reset(self):
         result = self._env.reset()
-        obs, extras = result if isinstance(result, tuple) else (result, {})
-        obs_out = self._build_obs_dict(obs)
-        if not isinstance(extras, dict):
-            extras = {}
-        return obs_out, extras
+        obs = result[0] if isinstance(result, tuple) else result
+        return self._build_obs_dict(obs)  # TensorDict 단독 반환
 
     # ── 내부 유틸 ─────────────────────────────────────────────────
-    def _build_obs_dict(self, obs) -> dict:
-        """raw obs → dict{"policy": (E*N,9), "critic": (E*N,27)}.
+    def _build_obs_dict(self, obs) -> "TensorDict":
+        """raw obs → TensorDict{"policy": (E*N,9), "critic": (E*N,27)}.
 
-        TensorDict를 쓰면 isinstance(obs, dict)가 False → rsl_rl이 키를 못 읽음.
-        plain dict로 반환해야 resolve_obs_groups가 'policy' 키를 정상 인식함.
+        TensorDict로 반환해야 .to(device) 호출이 동작함.
+        rsl_rl이 "policy" in TensorDict 로 키를 자동 감지함.
         """
+        from tensordict import TensorDict
+
         actor_obs  = self._split_actor_obs(obs)    # (E*N, 9)
         critic_obs = self._expand_critic_obs(obs)  # (E*N, 27)
-        return {"policy": actor_obs, "critic": critic_obs}
+        return TensorDict(
+            {"policy": actor_obs, "critic": critic_obs},
+            batch_size=[self._E * self.n],
+            device=self.device,
+        )
 
     def _split_actor_obs(self, obs) -> torch.Tensor:
         """(E, 27) → (E*N, 9): per-robot actor 입력."""
