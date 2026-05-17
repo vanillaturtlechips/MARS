@@ -798,10 +798,13 @@ VRAM 관리 (RTX 2070 8GB 기준):
 - [x] 멀티 로봇 Isaac Lab 환경 구성 (3대 동시 스폰, 충돌 감지)
 - [x] IPPO 베이스라인 수렴 확인 — 400 iter, noise_std 1.00→0.56, ep_len 220-280
 - [x] MPG 보상 구현 (`potential_reward.py`) — Danger Zone 마스킹, rew_collision=-150
-- [ ] MAPPO 환경 구성 + IPPO 체크포인트 fine-tuning
-- [ ] IPPO vs MAPPO 5종 시나리오 비교
+- [x] True CTDE MAPPO 구현 — Critic 27-dim global, per-robot credit assignment
+- [x] IPPO vs MAPPO 5종 시나리오 비교 완료 (PHASE3_IPPO_VS_MAPPO.md)
+  - True CTDE MAPPO: 전원도달 40%, 교착 20% (IPPO 대비 전원도달 2배)
+- [ ] Fine-tuning (rew_collision=-80, rew_stationary=-0.5) — RunPod 재생성 후 실행
+- [ ] 전원도달률 60~70% 달성 확인 (Fine-tuning 후 재평가)
 - [ ] 교착 발생률 < 1% 달성 확인
-- [ ] A2A 충돌 협상 프로토콜 구현
+- [ ] A2A 충돌 협상 프로토콜 구현 (다른 팀원 담당)
 
 ---
 
@@ -1042,28 +1045,29 @@ OS: Ubuntu 22.04 (JetPack 6.2, L4T R36.4.7)
 ## 8. 다음 세션 시작점
 
 ```bash
-# 훈련 PC — Phase 2 시작
-source ~/ai-engineering-from-scratch/.venv-isaac/bin/activate
-cd ~/MARS
+# RunPod 재생성 후 — Phase 3 Fine-tuning
+git clone https://github.com/vanillaturtlechips/MARS.git /workspace/MARS
+bash /workspace/MARS/deploy/runpod/setup.sh
 
-# 1. Phase 1.5 모델 export
-python deploy/export_model.py
+source /workspace/isaac_venv/bin/activate
+cd /workspace/MARS
 
-# 2. Phase 2 환경 제작
-# → envs/warehouse/warehouse_manipulation_env.py
+# Fine-tuning: True CTDE MAPPO + 개선된 보상 (rew_collision=-80, rew_stationary=-0.5)
+python training/multi_robot/train_marl.py \
+  --ippo_ckpt logs/warehouse_mappo/model_4999.pt \
+  --num_envs 128 --max_iter 5000
 
-# Jetson — LLM 벤치마킹
-ssh nvidia@192.168.55.1
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.2:3b-instruct-q4_K_M
-ollama pull qwen2.5:3b-instruct-q4_K_M
+# 훈련 완료 후 평가
+python training/multi_robot/eval_scenarios.py \
+  --ckpt logs/warehouse_mappo/model_9999.pt \
+  --num_episodes 100 --tag mappo_finetuned
 ```
 
 **현재 우선순위:**
-1. 훈련 PC: `deploy/export_model.py` 실행 → `actor_phase15.pt` Jetson으로 scp
-2. Jetson: ollama + Q4_K_M 모델 2종 설치 → 벤치마킹
-3. 훈련 PC: Phase 2 그리퍼 환경 제작
+1. RunPod 신규 Pod 생성 → `model_4999.pt` 체크포인트 복구 확인
+2. Fine-tuning 실행 (rew_collision=-80 적용)
+3. 5종 시나리오 재평가 → 전원도달률 60~70% 목표
 
 ---
 
-*최종 업데이트: 2026-05-16*
+*최종 업데이트: 2026-05-18*

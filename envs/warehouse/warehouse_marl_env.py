@@ -73,9 +73,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     alpha: float = 1.0
     beta: float = 0.5
 
-    rew_collision: float  =  -25.0  # per-robot 충돌 패널티 (충돌한 로봇 각자 부담)
+    rew_collision: float  =  -80.0  # per-robot 충돌 패널티 (S2/S4 greedy rush 억제)
     rew_goal: float       =    6.0  # 목표 도달 보상
-    rew_stationary: float =   -0.3  # per-robot 정지 패널티
+    rew_stationary: float =   -0.5  # per-robot 정지 패널티 (S5 교착 완화)
 
 
 class WarehouseMARLEnv(DirectRLEnv):

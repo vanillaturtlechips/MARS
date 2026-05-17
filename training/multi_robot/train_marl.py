@@ -23,7 +23,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Phase 3 MAPPO 훈련")
 parser.add_argument("--num_envs",    type=int,   default=128)
 parser.add_argument("--max_iter",    type=int,   default=5000)
-parser.add_argument("--ippo_ckpt",   type=str,   default=None, help="IPPO 체크포인트 경로")
+parser.add_argument("--ippo_ckpt",   type=str,   default=None, help="체크포인트 경로 (IPPO 또는 이전 MAPPO)")
 parser.add_argument("--from_scratch", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
