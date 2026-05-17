@@ -135,13 +135,18 @@ class IPPOReshapeWrapper:
     # ── 내부 유틸 ─────────────────────────────────────────────────
     def _split_actor_obs(self, obs) -> torch.Tensor:
         """(E, N*obs_per_robot) → (E*N, obs_per_robot): per-robot actor 입력."""
-        if isinstance(obs, dict):
+        # TensorDict / dict / tensor 모두 처리
+        if hasattr(obs, "batch_size"):          # TensorDict
+            obs = obs["policy"]
+        elif isinstance(obs, dict):
             obs = obs.get("policy", next(iter(obs.values())))
         return obs.reshape(self._E * self.n, self.obs_per_robot)
 
     def _expand_critic_obs(self, obs) -> torch.Tensor:
         """(E, N*obs_per_robot) → (E*N, N*obs_per_robot): global state 복제."""
-        if isinstance(obs, dict):
+        if hasattr(obs, "batch_size"):          # TensorDict
+            obs = obs.get("critic", obs["policy"])
+        elif isinstance(obs, dict):
             obs = obs.get("critic", obs.get("policy", next(iter(obs.values()))))
         return obs.repeat_interleave(self.n, dim=0)
 
