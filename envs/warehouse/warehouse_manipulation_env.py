@@ -246,10 +246,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         dist_ee_goal = (ee_pos - self._goal_pos_w).norm(dim=1)
         placed  = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
         dropped = self._grasped & (box_pos[:, 2] < 0.45)
-        # Grasp 성공 시 즉시 종료 (커리큘럼: 잡는 법 먼저 학습)
-        grasped_done = self._grasped & (~placed) & (~dropped)
 
-        terminated = placed | dropped | grasped_done
+        # grasped_done 제거: 파지 후 호버링 exploit 차단, place까지 풀 태스크 학습
+        terminated = placed | dropped
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, timed_out
 
