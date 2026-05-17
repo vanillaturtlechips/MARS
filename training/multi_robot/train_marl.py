@@ -76,7 +76,7 @@ def main():
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
-    cfg_dict["algorithm"]["entropy_coef"] = 0.003  # 0.001(과소)↔0.01(과다) 중간값
+    cfg_dict["algorithm"]["entropy_coef"] = 0.003  # annealing 시작값
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
 
     if args.ippo_ckpt and not args.from_scratch:
@@ -87,8 +87,24 @@ def main():
     else:
         print("[경고] --ippo_ckpt 없음. IPPO 먼저 수렴시킨 후 fine-tuning 권장")
 
+    # entropy annealing: 0~1500 iter → 0.003 유지, 1500~5000 iter → 0.0005까지 선형 감소
+    ANNEAL_START = 1500
+    ENTROPY_HIGH = 0.003
+    ENTROPY_LOW  = 0.0005
+    _orig_update = runner.alg.update
+
+    def _annealed_update(*a, **kw):
+        it = runner.current_learning_iteration
+        if it >= ANNEAL_START:
+            t = min((it - ANNEAL_START) / max(args.max_iter - ANNEAL_START, 1), 1.0)
+            runner.alg.entropy_coef = ENTROPY_HIGH + (ENTROPY_LOW - ENTROPY_HIGH) * t
+        return _orig_update(*a, **kw)
+
+    runner.alg.update = _annealed_update
+
     print(f"\n[MAPPO] Actor obs: {OBS_PER_ROBOT}차원 (per-robot), {N_ROBOTS}대 로봇")
-    print(f"[MAPPO] {args.num_envs} envs (유효 배치 {args.num_envs * N_ROBOTS}), {args.max_iter} iter\n")
+    print(f"[MAPPO] {args.num_envs} envs, {args.max_iter} iter")
+    print(f"[MAPPO] entropy annealing: {ENTROPY_HIGH} (0~{ANNEAL_START}) → {ENTROPY_LOW} ({ANNEAL_START}~{args.max_iter})\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()
