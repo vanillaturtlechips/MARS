@@ -93,8 +93,8 @@ def main():
         ckpt = torch.load(args.ippo_ckpt, map_location=env.device, weights_only=False)
         sd = ckpt.get("model_state_dict", ckpt)
         actor_sd = {k: v for k, v in sd.items() if k.startswith("actor.")}
-        missing, unexpected = runner.alg.policy.load_state_dict(actor_sd, strict=False)
-        print(f"[MAPPO] actor 로드 완료 | critic 새로 초기화 | missing={len(missing)}")
+        runner.alg.policy.load_state_dict(actor_sd, strict=False)
+        print(f"[MAPPO] actor 로드 완료 | critic 새로 초기화")
         if args.reset_noise_std is not None:
             runner.alg.policy.std.data.fill_(args.reset_noise_std)
             print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
