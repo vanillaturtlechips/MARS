@@ -21,8 +21,8 @@ EPS   = 1e-5  # 분모 0 방지
 
 MAX_DIST = 4.0   # goal_range (m) — 정규화 기준 반경
 
-SAFE_DIST = 1.5   # m — 이 거리 밖에서는 pairwise 보상 없음 (1.2→1.5로 확장)
-W_REP     = 1.5   # delta repulsion 스케일 (13-dim 눈 있으니 강하게 — S1 직진 본능 억제)
+SAFE_DIST = 1.2   # m — 1.5는 S5 교착 유발, 1.2로 축소
+W_REP     = 1.5   # delta repulsion 스케일
 
 
 def self_reward(

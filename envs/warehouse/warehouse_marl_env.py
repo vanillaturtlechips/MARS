@@ -73,7 +73,7 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     alpha: float = 1.0
     beta: float = 0.5
 
-    rew_collision: float  =  -20.0  # per-robot 충돌 패널티 (delta repulsion이 주 회피 신호)
+    rew_collision: float  = -100.0  # 충돌 = 사형 선고 (교착 -90보다 훨씬 비쌈)
     rew_goal: float       =    6.0  # 목표 도달 보상
     rew_stationary: float =   -0.3  # per-robot 정지 패널티
 
