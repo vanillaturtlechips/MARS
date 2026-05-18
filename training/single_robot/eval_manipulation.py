@@ -149,23 +149,16 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
 # ------------------------------------------------------------------
 @torch.inference_mode()
 def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, device: str):
-    env.reset_stats()
     actor = load_actor(ckpt_path, device)
 
-    # 관측 정규화 파라미터 로드 (empirical_normalization)
-    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-    obs_mean = ckpt.get("obs_norm_mean", None)
-    obs_var  = ckpt.get("obs_norm_var",  None)
-
     obs_dict, _ = env.reset()
+    env.reset_stats()          # 초기 reset 이후에 카운터 초기화
     obs = obs_dict["policy"]
 
     while env.total_episodes < num_episodes:
-        if obs_mean is not None:
-            obs = (obs - obs_mean) / (obs_var + 1e-8).sqrt()
-
         actions = actor(obs)
-        obs_dict, _, dones, _ = env.step({"policy": actions})
+        # DirectRLEnv.step: tensor 입력, (obs, rew, terminated, truncated, extras) 반환
+        obs_dict, _, terminated, truncated, _ = env.step(actions)
         obs = obs_dict["policy"]
 
     n  = env.total_episodes
