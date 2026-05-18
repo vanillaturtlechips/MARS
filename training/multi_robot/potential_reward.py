@@ -22,7 +22,7 @@ EPS   = 1e-5  # 분모 0 방지
 MAX_DIST = 4.0   # goal_range (m) — 정규화 기준 반경
 
 SAFE_DIST = 1.5   # m — 이 거리 밖에서는 pairwise 보상 없음 (1.2→1.5로 확장)
-W_REP     = 0.5   # delta repulsion 스케일
+W_REP     = 1.0   # delta repulsion 스케일 (백지 훈련: 강하게 각인)
 
 
 def self_reward(
