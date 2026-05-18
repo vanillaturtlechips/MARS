@@ -167,6 +167,7 @@ uv pip install \
 if [ ! -d "/workspace/rsl_rl" ]; then
     git clone https://github.com/leggedrobotics/rsl_rl.git /workspace/rsl_rl
 fi
+cd /workspace/rsl_rl && git checkout v3.1.2 && cd -
 uv pip install -e /workspace/rsl_rl
 
 uv pip install \
