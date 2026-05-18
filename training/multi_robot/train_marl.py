@@ -110,7 +110,7 @@ def main():
         print("[경고] --mappo_ckpt 또는 --ippo_ckpt 지정 권장")
 
     print(f"\n[True CTDE MAPPO]")
-    print(f"  Actor obs : {OBS_PER_ROBOT}-dim per-robot")
+    print(f"  Actor obs : {OBS_PER_ROBOT}-dim per-robot (goal+vel+shelf+relative_robots)")
     print(f"  Critic obs: {OBS_PER_ROBOT * N_ROBOTS}-dim global state")
     print(f"  Reward    : per-robot (credit assignment)")
     print(f"  {args.num_envs} envs × {N_ROBOTS} robots = {args.num_envs * N_ROBOTS} virtual envs\n")
