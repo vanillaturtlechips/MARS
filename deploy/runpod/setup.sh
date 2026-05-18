@@ -167,9 +167,10 @@ uv pip install \
 if [ ! -d "/workspace/rsl_rl" ]; then
     git clone https://github.com/leggedrobotics/rsl_rl.git /workspace/rsl_rl
 fi
-pip install -e /workspace/rsl_rl
+uv pip install -e /workspace/rsl_rl
 
-pip install \
+uv pip install \
+    tensordict \
     onnxscript \
     warp-lang \
     tensorboard \
