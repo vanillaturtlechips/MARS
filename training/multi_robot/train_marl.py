@@ -21,10 +21,12 @@ from pathlib import Path
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Phase 3 MAPPO 훈련")
-parser.add_argument("--num_envs",    type=int,   default=128)
-parser.add_argument("--max_iter",    type=int,   default=5000)
-parser.add_argument("--ippo_ckpt",   type=str,   default=None, help="체크포인트 경로 (IPPO 또는 이전 MAPPO)")
-parser.add_argument("--from_scratch", action="store_true", default=False)
+parser.add_argument("--num_envs",       type=int,   default=128)
+parser.add_argument("--max_iter",       type=int,   default=5000)
+parser.add_argument("--ippo_ckpt",      type=str,   default=None, help="체크포인트 경로 (IPPO 또는 이전 MAPPO)")
+parser.add_argument("--from_scratch",   action="store_true", default=False)
+parser.add_argument("--reset_noise_std", type=float, default=None,
+                    help="체크포인트 로드 후 noise_std 강제 설정 (예: 0.5). 미지정 시 체크포인트 값 유지")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -86,8 +88,11 @@ def main():
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
 
     if args.ippo_ckpt and not args.from_scratch:
-        print(f"[MAPPO] IPPO 체크포인트 로드: {args.ippo_ckpt}")
+        print(f"[MAPPO] 체크포인트 로드: {args.ippo_ckpt}")
         runner.load(args.ippo_ckpt)
+        if args.reset_noise_std is not None:
+            runner.alg.actor_critic.std.data.fill_(args.reset_noise_std)
+            print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
     elif args.from_scratch:
         print("[MAPPO] 처음부터 훈련")
     else:
