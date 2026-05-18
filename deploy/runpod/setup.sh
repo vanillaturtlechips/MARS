@@ -165,7 +165,7 @@ uv pip install \
 # rsl_rl: PyPI 패키지(rsl-rl-lib)는 Isaac Sim이 sys.path 덮어써서 못 찾는 경우가 있음
 # → 소스 클론 후 editable 설치가 가장 확실함
 if [ ! -d "/workspace/rsl_rl" ]; then
-    git clone https://github.com/isaac-sim/rsl_rl.git /workspace/rsl_rl
+    git clone https://github.com/leggedrobotics/rsl_rl.git /workspace/rsl_rl
 fi
 pip install -e /workspace/rsl_rl
 
