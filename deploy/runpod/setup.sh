@@ -133,7 +133,7 @@ echo "  완료"
 SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
 _FD_DIR="/tmp/flatdict_src"
 mkdir -p "$_FD_DIR"
-uv pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
+pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
 tar xzf "$_FD_DIR/flatdict-4.0.1.tar.gz" -C "$_FD_DIR"
 cp "$_FD_DIR/flatdict-4.0.1/flatdict.py" "$SITE_PKG/"
 _DI="$SITE_PKG/flatdict-4.0.1.dist-info"
