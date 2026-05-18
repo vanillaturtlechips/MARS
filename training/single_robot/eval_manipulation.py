@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from isaaclab.app import AppLauncher
@@ -155,6 +156,10 @@ def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, devic
     obs_dict, _ = env.reset()
     env.reset_stats()          # 초기 reset 이후에 카운터 초기화
     obs = obs_dict["policy"]
+
+    if getattr(args, "livestream", 0):
+        print("[Livestream] 브라우저에서 접속하세요. 40초 대기...")
+        time.sleep(40)
 
     while env.total_episodes < num_episodes:
         actions = actor(obs)
