@@ -23,7 +23,8 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Phase 3 MAPPO 훈련")
 parser.add_argument("--num_envs",       type=int,   default=128)
 parser.add_argument("--max_iter",       type=int,   default=5000)
-parser.add_argument("--ippo_ckpt",      type=str,   default=None, help="체크포인트 경로 (IPPO 또는 이전 MAPPO)")
+parser.add_argument("--ippo_ckpt",      type=str,   default=None, help="IPPO 체크포인트 (actor-only 로드)")
+parser.add_argument("--mappo_ckpt",     type=str,   default=None, help="MAPPO 체크포인트 (full 로드, 이어서 훈련용)")
 parser.add_argument("--from_scratch",   action="store_true", default=False)
 parser.add_argument("--reset_noise_std", type=float, default=None,
                     help="체크포인트 로드 후 noise_std 강제 설정 (예: 0.5). 미지정 시 체크포인트 값 유지")
@@ -87,9 +88,14 @@ def main():
     cfg_dict["algorithm"]["entropy_coef"] = 0.001  # per-robot 보상으로 신호 깨끗해져 낮은 값 충분
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
 
-    if args.ippo_ckpt and not args.from_scratch:
-        print(f"[MAPPO] 체크포인트 로드 (actor only): {args.ippo_ckpt}")
-        # IPPO critic=9-dim, MAPPO critic=27-dim → actor 가중치만 이식
+    if args.mappo_ckpt and not args.from_scratch:
+        print(f"[MAPPO] full 로드 (이어서 훈련): {args.mappo_ckpt}")
+        runner.load(args.mappo_ckpt)
+        if args.reset_noise_std is not None:
+            runner.alg.policy.std.data.fill_(args.reset_noise_std)
+            print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
+    elif args.ippo_ckpt and not args.from_scratch:
+        print(f"[MAPPO] actor-only 로드 (IPPO→MAPPO): {args.ippo_ckpt}")
         ckpt = torch.load(args.ippo_ckpt, map_location=env.device, weights_only=False)
         sd = ckpt.get("model_state_dict", ckpt)
         actor_sd = {k: v for k, v in sd.items() if k.startswith("actor.")}
@@ -101,7 +107,7 @@ def main():
     elif args.from_scratch:
         print("[MAPPO] 처음부터 훈련")
     else:
-        print("[경고] --ippo_ckpt 없음. --from_scratch 또는 --ippo_ckpt 지정 권장")
+        print("[경고] --mappo_ckpt 또는 --ippo_ckpt 지정 권장")
 
     print(f"\n[True CTDE MAPPO]")
     print(f"  Actor obs : {OBS_PER_ROBOT}-dim per-robot")
