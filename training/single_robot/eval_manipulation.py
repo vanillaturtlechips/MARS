@@ -24,9 +24,11 @@ parser = argparse.ArgumentParser(description="Phase 2 Teacher eval")
 parser.add_argument("--ckpt",        type=str, nargs="+", required=True)
 parser.add_argument("--num_episodes", type=int, default=100)
 parser.add_argument("--num_envs",    type=int, default=64)
+parser.add_argument("--livestream", type=int, default=0)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
-args.headless = True
+if args.livestream == 0:
+    args.headless = True
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
