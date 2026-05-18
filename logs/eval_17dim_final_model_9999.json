@@ -1,0 +1,71 @@
+{
+  "tag": "17dim_final",
+  "ckpt": "logs/warehouse_mappo/model_9999.pt",
+  "results": [
+    {
+      "scenario": "S1_headon",
+      "desc": "정면 충돌 — 좁은 복도 양방향 진입",
+      "n_episodes": 100,
+      "collision": 0,
+      "deadlock": 7,
+      "all_reached": 93,
+      "ep_len_sum": 12687.0,
+      "collision_rate": 0.0,
+      "deadlock_rate": 0.07,
+      "all_reached_rate": 0.93,
+      "avg_ep_len": 126.87
+    },
+    {
+      "scenario": "S2_3way_deadlock",
+      "desc": "3-way 교착 — 삼각 대치",
+      "n_episodes": 100,
+      "collision": 0,
+      "deadlock": 16,
+      "all_reached": 84,
+      "ep_len_sum": 10316.0,
+      "collision_rate": 0.0,
+      "deadlock_rate": 0.16,
+      "all_reached_rate": 0.84,
+      "avg_ep_len": 103.16
+    },
+    {
+      "scenario": "S3_battery_priority",
+      "desc": "배터리 우선순위 — 배터리 낮은 로봇이 좁은 통로 우선 통과",
+      "n_episodes": 100,
+      "collision": 1,
+      "deadlock": 4,
+      "all_reached": 95,
+      "ep_len_sum": 13175.0,
+      "collision_rate": 0.01,
+      "deadlock_rate": 0.04,
+      "all_reached_rate": 0.95,
+      "avg_ep_len": 131.75
+    },
+    {
+      "scenario": "S4_same_goal",
+      "desc": "동일 목표 경쟁 — 두 로봇이 같은 목표 지점 도달 경쟁",
+      "n_episodes": 100,
+      "collision": 0,
+      "deadlock": 100,
+      "all_reached": 0,
+      "ep_len_sum": 29900.0,
+      "collision_rate": 0.0,
+      "deadlock_rate": 1.0,
+      "all_reached_rate": 0.0,
+      "avg_ep_len": 299.0
+    },
+    {
+      "scenario": "S5_mixed",
+      "desc": "장애물 + 다중 로봇 혼합 — 선반 사이 밀집 이동",
+      "n_episodes": 100,
+      "collision": 0,
+      "deadlock": 100,
+      "all_reached": 0,
+      "ep_len_sum": 29900.0,
+      "collision_rate": 0.0,
+      "deadlock_rate": 1.0,
+      "all_reached_rate": 0.0,
+      "avg_ep_len": 299.0
+    }
+  ]
+}
