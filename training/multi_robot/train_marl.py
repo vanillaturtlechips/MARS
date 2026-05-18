@@ -91,7 +91,7 @@ def main():
         print(f"[MAPPO] 체크포인트 로드: {args.ippo_ckpt}")
         runner.load(args.ippo_ckpt)
         if args.reset_noise_std is not None:
-            runner.alg.actor_critic.std.data.fill_(args.reset_noise_std)
+            runner.alg.policy.std.data.fill_(args.reset_noise_std)
             print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
     elif args.from_scratch:
         print("[MAPPO] 처음부터 훈련")
