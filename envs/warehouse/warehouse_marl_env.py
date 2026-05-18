@@ -26,14 +26,14 @@ from isaaclab.utils.math import euler_xyz_from_quat, quat_apply_inverse, sample_
 from .warehouse_obstacle_env import SHELF_CENTERS, SHELF_HALF, _shelf_aabb_dist, _goal_in_shelf
 
 # 관측 구성 (로봇 1대 기준)
-#   goal_x_body, goal_y_body, goal_dist         : 3
-#   vx_body, vy_body, omega_z                   : 3
-#   min_shelf_dist                              : 1
-#   other_robot_dx, other_robot_dy, dist × (N-1): 3*(N-1)
-# 합계: 7 + 3*(N-1)
+#   goal_x_body, goal_y_body, goal_dist              : 3
+#   vx_body, vy_body, omega_z                        : 3
+#   min_shelf_dist                                   : 1
+#   other_robot_dx, dy, dist, vx_rel, vy_rel × (N-1): 5*(N-1)
+# 합계: 7 + 5*(N-1)
 
 N_ROBOTS = 3
-OBS_PER_ROBOT = 7 + 3 * (N_ROBOTS - 1)   # 13
+OBS_PER_ROBOT = 7 + 5 * (N_ROBOTS - 1)   # 17
 
 # 로봇 간 충돌 판정 거리
 ROBOT_COLLISION_DIST = 0.55   # m (로봇 폭 0.5m + 여유)
@@ -73,7 +73,7 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     alpha: float = 1.0
     beta: float = 0.5
 
-    rew_collision: float  = -100.0  # 충돌 = 사형 선고 (교착 -90보다 훨씬 비쌈)
+    rew_collision: float  = -200.0  # 충돌 = 즉사 (교착 -90과 확실한 차이)
     rew_goal: float       =    6.0  # 목표 도달 보상
     rew_stationary: float =   -0.3  # per-robot 정지 패널티
 
@@ -196,17 +196,24 @@ class WarehouseMARLEnv(DirectRLEnv):
             local_pos  = pos_w - self.scene.env_origins[:, :2]
             shelf_dist = _shelf_aabb_dist(local_pos).unsqueeze(1).clamp(max=5.0)
 
-            # 다른 로봇까지 상대 위치(body frame) + 거리 — 3-dim per robot
+            # 다른 로봇까지 상대 위치(body frame) + 거리 + 상대 속도 — 5-dim per robot
             other_dists = []
             for j, other in enumerate(self.robots):
                 if j == i:
                     continue
-                other_pos = other.data.root_pos_w[:, :2]
+                other_pos   = other.data.root_pos_w[:, :2]
+                other_vel_w = other.data.root_lin_vel_w[:, :2]
+
                 rel_w  = other_pos - pos_w
                 rel_3d = torch.cat([rel_w, torch.zeros(self.num_envs, 1, device=self.device)], dim=1)
                 rel_body_xy = quat_apply_inverse(quat, rel_3d)[:, :2]
                 d = rel_w.norm(dim=1, keepdim=True).clamp(max=6.0)
-                other_dists.append(torch.cat([rel_body_xy, d], dim=1))
+
+                vel_rel_w  = other_vel_w - lin_vel_w[:, :2]
+                vel_rel_3d = torch.cat([vel_rel_w, torch.zeros(self.num_envs, 1, device=self.device)], dim=1)
+                vel_rel_body = quat_apply_inverse(quat, vel_rel_3d)[:, :2]
+
+                other_dists.append(torch.cat([rel_body_xy, d, vel_rel_body], dim=1))
 
             obs_i = torch.cat([goal_body, goal_dist, vel_body, omega_z, shelf_dist] + other_dists, dim=1)
             obs_list.append(obs_i)

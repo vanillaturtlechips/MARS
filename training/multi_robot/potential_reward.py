@@ -21,7 +21,7 @@ EPS   = 1e-5  # 분모 0 방지
 
 MAX_DIST = 4.0   # goal_range (m) — 정규화 기준 반경
 
-SAFE_DIST = 1.2   # m — 1.5는 S5 교착 유발, 1.2로 축소
+SAFE_DIST = 2.5   # m — 조기 경보: 2.5m 밖에서부터 반발력 작동
 W_REP     = 1.5   # delta repulsion 스케일
 
 
