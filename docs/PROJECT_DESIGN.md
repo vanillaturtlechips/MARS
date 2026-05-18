@@ -801,10 +801,11 @@ VRAM 관리 (RTX 2070 8GB 기준):
 - [x] True CTDE MAPPO 구현 — Critic 27-dim global, per-robot credit assignment
 - [x] IPPO vs MAPPO 5종 시나리오 비교 완료 (PHASE3_IPPO_VS_MAPPO.md)
   - True CTDE MAPPO: 전원도달 40%, 교착 20% (IPPO 대비 전원도달 2배)
-- [ ] Fine-tuning (rew_collision=-80, rew_stationary=-0.5) — RunPod 재생성 후 실행
-- [ ] 전원도달률 60~70% 달성 확인 (Fine-tuning 후 재평가)
-- [ ] 교착 발생률 < 1% 달성 확인
+- [x] 17-dim obs + rew_collision=-200 + SAFE_DIST=2.5 from scratch 훈련 (model_9999.pt)
+- [x] 충돌률 0.2% 달성 (목표 <1% ✅)
+- [x] S1~S3 전원도달률 90.7% 달성 — Low-level Controller 확정 (Freeze)
 - [ ] A2A 충돌 협상 프로토콜 구현 (다른 팀원 담당)
+- [ ] S4/S5 → Phase 4 오케스트레이터로 해결 예정
 
 ---
 
