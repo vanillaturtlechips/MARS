@@ -73,9 +73,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     alpha: float = 1.0
     beta: float = 0.5
 
-    rew_collision: float  =  -80.0  # per-robot 충돌 패널티 (S2/S4 greedy rush 억제)
+    rew_collision: float  =  -20.0  # per-robot 충돌 패널티 (delta repulsion이 주 회피 신호)
     rew_goal: float       =    6.0  # 목표 도달 보상
-    rew_stationary: float =   -0.5  # per-robot 정지 패널티 (S5 교착 완화)
+    rew_stationary: float =   -0.3  # per-robot 정지 패널티
 
 
 class WarehouseMARLEnv(DirectRLEnv):
@@ -85,6 +85,7 @@ class WarehouseMARLEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
         self._goal_pos_w = torch.zeros(self.num_envs, N_ROBOTS, 2, device=self.device)
         self._actions = torch.zeros(self.num_envs, N_ROBOTS, 3, device=self.device)
+        self._prev_positions: torch.Tensor | None = None   # delta repulsion 버퍼
 
     # ------------------------------------------------------------------
     # Scene: 로봇 N대 + 선반 4개
@@ -220,14 +221,21 @@ class WarehouseMARLEnv(DirectRLEnv):
 
         positions = torch.stack([r.data.root_pos_w[:, :2] for r in self.robots], dim=1)
 
-        # MPG: 로봇별 goal-approaching 보상 (N, N_ROBOTS)
+        # 첫 스텝 또는 reset 직후에는 이전 위치가 현재와 동일 → delta = 0
+        if self._prev_positions is None:
+            self._prev_positions = positions.clone()
+
+        # MPG: 로봇별 goal-approaching + delta repulsion 보상 (N, N_ROBOTS)
         per_robot = all_robots_mpg_reward(
             positions, self._goal_pos_w,
+            prev_positions=self._prev_positions,
             alpha=self.cfg.alpha, beta=self.cfg.beta,
             goal_radius=self.cfg.goal_radius,
             time_step=self.episode_length_buf,
             rew_goal=self.cfg.rew_goal,
         )
+
+        self._prev_positions = positions.clone()
 
         # per-robot 충돌 패널티 — 충돌한 로봇 양쪽 각자 부담
         for i in range(N_ROBOTS):
@@ -327,3 +335,8 @@ class WarehouseMARLEnv(DirectRLEnv):
                 bad[rem[~b2]] = False
 
             self._goal_pos_w[env_ids_t, i] = candidates
+
+        # reset된 env의 prev_positions를 현재 위치로 동기화 (delta = 0 보장)
+        if self._prev_positions is not None:
+            for i, robot in enumerate(self.robots):
+                self._prev_positions[env_ids_t, i] = robot.data.root_pos_w[env_ids_t, :2]
