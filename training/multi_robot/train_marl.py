@@ -88,8 +88,13 @@ def main():
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
 
     if args.ippo_ckpt and not args.from_scratch:
-        print(f"[MAPPO] 체크포인트 로드: {args.ippo_ckpt}")
-        runner.load(args.ippo_ckpt)
+        print(f"[MAPPO] 체크포인트 로드 (actor only): {args.ippo_ckpt}")
+        # IPPO critic=9-dim, MAPPO critic=27-dim → actor 가중치만 이식
+        ckpt = torch.load(args.ippo_ckpt, map_location=env.device, weights_only=False)
+        sd = ckpt.get("model_state_dict", ckpt)
+        actor_sd = {k: v for k, v in sd.items() if k.startswith("actor.")}
+        missing, unexpected = runner.alg.policy.load_state_dict(actor_sd, strict=False)
+        print(f"[MAPPO] actor 로드 완료 | critic 새로 초기화 | missing={len(missing)}")
         if args.reset_noise_std is not None:
             runner.alg.policy.std.data.fill_(args.reset_noise_std)
             print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
