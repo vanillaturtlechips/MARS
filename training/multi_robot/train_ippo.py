@@ -26,6 +26,11 @@ args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
+import os as _os
+_rsl_rl_src = "/workspace/rsl_rl"
+if _os.path.isdir(_rsl_rl_src) and _rsl_rl_src not in sys.path:
+    sys.path.insert(0, _rsl_rl_src)
+
 import torch
 from rsl_rl.runners import OnPolicyRunner
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
