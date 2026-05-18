@@ -53,11 +53,28 @@
 - S3 95% → 1% 붕괴 — 좁은 통로에서 역효과
 - model_9999.pt(2.5m)가 최종 확정
 
-### Phase 2 코드
+### Phase 2 코드 (⚠️ 재훈련 필요)
 - `envs/warehouse/warehouse_manipulation_env.py` — Franka Panda Pick & Place
   - Teacher 관측 33차원 (특권 정보), Student 관측 25차원 (실제 센서)
   - 박스 크기/질량 DR 적용
-- `training/single_robot/train_manipulation.py` — Teacher PPO + Student fine-tuning
+- `training/single_robot/train_manipulation.py` — Teacher PPO
+- `training/single_robot/eval_manipulation.py` — place_success_rate 평가 스크립트
+
+**Phase 2 훈련 결과 (model_2999.pt) — 무효**
+- 3000 iter 완료, 256 envs, RunPod A6000
+- eval 결과: place 100%, avg_len 2.0 → **trivial success 버그**
+
+**Trivial Success 버그 원인 (2가지)**
+1. **Env 설계 버그**: EE ready pose ≈ (0.4, 0, 0.5)m가 box 스폰 범위(x∈[0.3,0.6]) 및 PLACE_GOALS 4개 모두의 grasp/place threshold 이내
+   - `grasp_dist_threshold=0.25m` → EE가 reset 시점에 이미 grasp 성공
+   - `place_dist_threshold=0.35m` → 4개 goal 모두 EE 시작점에서 0.35m 이내
+2. **Obs 정규화 누락**: 훈련 시 `empirical_normalization=True`, eval 시 normalization stats 미포함 → actor 입력 스케일 불일치 → near-zero actions
+
+**다음 세션 Phase 2 재훈련 시 수정 사항**
+- `grasp_dist_threshold: 0.25 → 0.06m`
+- `place_dist_threshold: 0.35 → 0.08m`
+- 박스 스폰 범위: x∈[0.3,0.6] → x∈[0.55,0.75] (EE 시작점에서 멀리)
+- `empirical_normalization=False` (eval 시 정규화 stats 없이도 동작하도록)
 
 ### Jetson 완료
 - PyTorch 2.8.0 + CUDA 설치 (cuSPARSELt 0.7.0, cuDSS 0.7.1.4)
@@ -101,8 +118,8 @@ bash /workspace/MARS/deploy/runpod/setup.sh
 | Phase 4 에이전트 레이어 (오케스트레이터) | 다음 단계 |
 | Phase 4 S4 목표 충돌 → LLM 목표 배정으로 해결 | Phase 4 |
 | Phase 4 S5 교착 → 교착 감지 + 재라우팅으로 해결 | Phase 4 |
-| Phase 2 Teacher PPO 훈련 | 추후 진행 |
-| Phase 2 Teacher-Student 증류 | 위 이후 |
+| Phase 2 Env 버그 수정 + 재훈련 | 다음 세션 |
+| Phase 2 Teacher-Student 증류 | 재훈련 이후 |
 | Phase 5 통합 테스트 | Phase 3/4 완료 후 |
 
 ---
@@ -148,4 +165,4 @@ RunPod: A6000, /workspace/isaac_venv
 
 ---
 
-*최종 업데이트: 2026-05-18 — Phase 3 완료*
+*최종 업데이트: 2026-05-18 — Phase 2 trivial success 버그 발견, 다음 세션 재훈련 예정*
