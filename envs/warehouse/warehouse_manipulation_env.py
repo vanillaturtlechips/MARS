@@ -180,9 +180,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # Translational Jacobian for panda_hand (body 8), arm joints (DOF 0-6)
         # jac shape: [N, num_bodies, 6, num_dofs] — rows 0:3 = translational
         jac = self.robot.root_physx_view.get_jacobians()
-        if not hasattr(self, '_jac_shape_logged'):
-            self._jac_shape_logged = True
-            print(f"[DEBUG] jac.shape={jac.shape}  (num_bodies_in_jac={jac.shape[1]}, body_names={len(list(self.robot.data.body_names))})")
+        if not hasattr(self, '_jac_debug_count'):
+            self._jac_debug_count = 0
         J = jac[:, self._jac_body_idx, :3, :7]   # [N, 3, 7]  (get_jacobians: base 제외)
 
         # Damped Least Squares IK: Δq = J^T (J J^T + λI)^{-1} Δx
@@ -192,6 +191,13 @@ class WarehouseManipulationEnv(DirectRLEnv):
         JJT_reg = JJT + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls = torch.bmm(JT, torch.linalg.inv(JJT_reg))                  # [N, 7, 3]
         delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)   # [N, 7]
+
+        if self._jac_debug_count < 3:
+            self._jac_debug_count += 1
+            print(f"[DEBUG IK] J[0] norm={J[0].norm():.4f}")
+            print(f"[DEBUG IK] delta_pos[0]={delta_pos[0].detach().cpu().tolist()}")
+            print(f"[DEBUG IK] delta_q[0]={delta_q[0].detach().cpu().tolist()}")
+            print(f"[DEBUG IK] joint_pos[0,:7]={self.robot.data.joint_pos[0,:7].detach().cpu().tolist()}")
 
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
         self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
