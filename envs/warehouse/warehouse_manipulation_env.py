@@ -116,8 +116,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions     = torch.zeros(n, 4, device=d)
         self._prev_dist_ee_box   = torch.full((n,), 999.0, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
-        # grasp 시점의 박스 위치 저장 (proximity grasp: 팔이 박스를 밀지 못하도록 freeze)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
+        # grasp 시 EE→박스 offset (박스가 EE를 따라 이동하도록)
+        self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
 
     # ------------------------------------------------------------------
     # Scene
@@ -208,10 +209,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
             gripper_pos.expand(-1, 2).clone(), joint_ids=[7, 8]
         )
 
-        # Proximity grasp freeze
+        # Proximity grasp: 박스를 EE + offset 위치로 이동 (EE를 따라 운반)
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
+            ee_pos, _ = self._get_ee_pose()
             frozen = self._frozen_box_state[grasped_ids].clone()
+            frozen[:, :3] = ee_pos[grasped_ids] + self._grasp_ee_offset[grasped_ids]
             frozen[:, 7:13] = 0.0
             self.box.write_root_state_to_sim(frozen, grasped_ids)
 
@@ -268,23 +271,26 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 파지 판정
         newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
         self._grasped |= newly_grasped
-        # grasp 발동 순간 박스 상태 저장 (이후 freeze에 사용)
+        # grasp 발동 순간: 박스 state 저장 + EE→박스 offset 계산
         if newly_grasped.any():
             new_ids = newly_grasped.nonzero(as_tuple=True)[0]
             self._frozen_box_state[new_ids] = self.box.data.root_state_w[new_ids].clone()
+            self._grasp_ee_offset[new_ids]  = box_pos[new_ids] - ee_pos[new_ids]
 
-        # 낙하 판정: 테이블(z=0.5m)에서 떨어진 경우
-        dropped = self._grasped & (box_pos[:, 2] < 0.45)
+        # 박스 현재 위치 (EE + offset으로 운반 중)
+        box_pos_carried = ee_pos + self._grasp_ee_offset  # grasped 아닌 env는 의미없음
+        dist_box_goal = (box_pos_carried - self._goal_pos_w).norm(dim=1)
 
-        # 거치 성공: EE가 목표 위치에 도달 (박스는 비물리적 proximity 파지이므로 EE 기준)
-        placed = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
+        # 낙하 판정 (proximity grasp에서는 박스가 날아가지 않으므로 거의 발생 안 함)
+        dropped = self._grasped & (box_pos[:, 2] < 0.30)
 
-        # exp(-dist) 절대거리 기반: 랜덤 정책도 박스 방향 gradient 받음
-        # delta 기반은 랜덤 정책에서 기댓값=0 → bootstrap 불가
+        # 거치 성공: 박스 위치가 goal에 도달 (EE가 박스를 실제로 운반해야 함)
+        placed = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+
         not_grasped = (~self._grasped).float()
 
-        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box  * 10.0) * not_grasped
-        transport = self.cfg.rew_transport * torch.exp(-dist_ee_goal *  5.0) * self._grasped.float()
+        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box   * 10.0) * not_grasped
+        transport = self.cfg.rew_transport * torch.exp(-dist_box_goal *  5.0) * self._grasped.float()
 
         self._prev_dist_ee_box   = dist_ee_box.detach()
         self._prev_dist_box_goal = dist_ee_goal.detach()
@@ -306,9 +312,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         ee_pos, _ = self._get_ee_pose()
         box_pos   = self.box.data.root_pos_w
 
-        dist_ee_goal = (ee_pos - self._goal_pos_w).norm(dim=1)
-        placed  = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (box_pos[:, 2] < 0.45)
+        box_pos_carried = ee_pos + self._grasp_ee_offset
+        dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
+        placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+        dropped = self._grasped & (box_pos[:, 2] < 0.30)
 
         # dropped는 termination 조건에서 제외 — placed만 종료
         # (dropped penalty로 policy가 박스 회피 전략을 학습하는 것 방지)
@@ -360,6 +367,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._prev_dist_ee_box[env_ids_t]   = 999.0
         self._prev_dist_box_goal[env_ids_t] = 999.0
         self._frozen_box_state[env_ids_t]   = 0.0
+        self._grasp_ee_offset[env_ids_t]    = 0.0
 
     # ------------------------------------------------------------------
     # Helper

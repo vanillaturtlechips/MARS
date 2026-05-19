@@ -67,11 +67,11 @@ class EvalManipulationEnv(WarehouseManipulationEnv):
         terminated, timed_out = super()._get_dones()
 
         ee_pos, _ = self._get_ee_pose()
-        box_pos   = self.box.data.root_pos_w
-        dist_ee_goal = (ee_pos - self._goal_pos_w).norm(dim=1)
+        box_pos_carried = ee_pos + self._grasp_ee_offset
+        dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
 
-        placed  = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (box_pos[:, 2] < 0.45)
+        placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+        dropped = self._grasped & (self.box.data.root_pos_w[:, 2] < 0.30)
 
         self._outcome[timed_out]               = 3
         self._outcome[terminated & dropped]    = 2
