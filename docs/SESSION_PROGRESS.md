@@ -80,32 +80,34 @@
 
 ### Phase 2 Student 진행 중 (2026-05-19 세션)
 
-#### Student 훈련 1차 실패 및 수정
+#### Student 훈련 실패 이력 및 수정
 
 | # | 커밋 | 문제 | 원인 | 수정 |
 |---|------|------|------|------|
-| 1 | — | iter 724까지 ep_len=899 고착 | Student obs(25dim)에 box 위치 없음 → approach gradient 있어도 policy가 활용 불가 | `cd3394a` box_rel + N(0,0.03m) 추가 → 28dim |
+| 1 | `cd3394a` | iter 724까지 ep_len=899 고착 | Student obs(25dim)에 box 위치 없음 → approach gradient 있어도 policy가 활용 불가 | noisy_box_rel(3) 추가 → 28dim |
+| 2 | `1d1ef17` | σ=0.03m 고정은 per-step 샘플 → 3cm 이동 vs 최대 노이즈(SNR<1) → gradient 파괴 위험 | per-step 고정 노이즈는 현실과 다름 (카메라는 같은 환경에서 일정한 노이즈 레벨 유지) | per-episode [1cm, 6cm] 균일 샘플로 변경 |
 
-**반복 실수 기록**: Phase 3에서도 상대속도 누락(9→17dim)으로 동일 패턴 발생.
-**교훈**: obs 설계 전 "policy가 reward를 받으려면 어떤 정보가 필요한가?" 체크리스트 필수.
+**반복 실수 기록**: Phase 3 상대속도 누락(9→17dim)과 동일한 패턴.
+**교훈**: obs 설계 전 "policy가 reward를 받으려면 어떤 정보가 필요한가?" 체크리스트 필수. "나중에 추가" 없음.
 
 #### Student obs 확정 (28-dim)
 
 ```
-ee_pos(3) + gripper_w(1) + goal_rel(3) + noisy_box_rel(3, σ=0.03m) + jpos(9) + jvel(9)
+ee_pos(3) + gripper_w(1) + goal_rel(3) + noisy_box_rel(3) + jpos(9) + jvel(9)
 ```
 
-- `noisy_box_rel`: 카메라 감지 시뮬레이션 (σ=0.03m)
+- `noisy_box_rel`: 에피소드마다 σ ∈ [1cm, 6cm] 균일 샘플 (카메라 DR)
+- 에피소드 내 노이즈 레벨 고정 → gradient 안정 + 에피소드마다 카메라 품질 변동 → Sim2Real 강건성
 - 실제 Jetson 배포 시 RGB-D 카메라 출력으로 대체
 
 #### 현재 상태 (2026-05-19 세션 종료 시점)
 
-- Student 2차 훈련 **재시작** (from Teacher model_2999.pt)
+- Student 3차 훈련 **재시작** (from Teacher model_2999.pt, per-episode DR 적용)
 - 명령: `python training/single_robot/train_manipulation.py --student --teacher_ckpt logs/warehouse_manipulation_teacher/model_2999.pt --num_envs 5096 --max_iter 3000 --headless`
 
 **조기 진단 기준**:
-1. iter ~300: ep_len < 800 (grasp 시작)
-2. iter ~600: reward 양수 전환
+1. iter ~300: ep_len < 800, reward 양수 전환
+2. iter ~800: ep_len < 600
 3. iter ~1500: ep_len < 400
 4. 최종: place_rate > 80% → Student 완료
 
@@ -226,4 +228,4 @@ RunPod: A6000, /workspace/isaac_venv
 
 ---
 
-*최종 업데이트: 2026-05-19 — Phase 2 Teacher 100% place 달성, Student 2차 훈련 시작 (28dim obs)*
+*최종 업데이트: 2026-05-19 — Phase 2 Teacher 100% place 달성(avg_len=183), Student 3차 훈련 시작 (28dim obs + per-episode 카메라 DR)*
