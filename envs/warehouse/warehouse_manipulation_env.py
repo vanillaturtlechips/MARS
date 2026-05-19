@@ -59,7 +59,7 @@ STUDENT_OBS_DIM = 25
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
     episode_length_s = 15.0
-    action_space = 9             # 7 관절 위치 + 2 그리퍼 (Franka)
+    action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
     observation_space = TEACHER_OBS_DIM   # Teacher 모드 기본
     state_space = 0
 
@@ -106,7 +106,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._goal_pos_w  = torch.zeros(n, 3, device=d)
         self._box_mass    = torch.ones(n, device=d)
         self._grasped     = torch.zeros(n, dtype=torch.bool, device=d)
-        self._actions     = torch.zeros(n, 9, device=d)
+        self._actions     = torch.zeros(n, 4, device=d)
         self._prev_dist_ee_box   = torch.full((n,), 999.0, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
         # grasp 시점의 박스 위치 저장 (proximity grasp: 팔이 박스를 밀지 못하도록 freeze)
@@ -165,18 +165,38 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # Delta control: 현재 관절 위치 기준 이동
-        current_pos = self.robot.data.joint_pos          # (N, 9)
-        delta = self._actions * 0.10                     # ±0.10 rad/step (~6°, ~6 rad/s @60Hz)
-        joint_pos_target = current_pos + delta
-        self.robot.set_joint_position_target(joint_pos_target)
+        n = self.num_envs
 
-        # Proximity grasp freeze: 파지된 박스를 grasp 시점 위치에 고정
-        # (실제 그리퍼 없는 sim에서 팔이 박스를 물리적으로 밀어내는 것 방지)
+        # Cartesian delta: actions[:, :3] = [dx, dy, dz] world frame, actions[:, 3] = gripper
+        delta_pos = self._actions[:, :3] * 0.03  # max 3cm/step
+
+        # Translational Jacobian for panda_hand (body 8), arm joints (DOF 0-6)
+        # jac shape: [N, num_bodies, 6, num_dofs] — rows 0:3 = translational
+        jac = self.robot.root_physx_view.get_jacobians()
+        J = jac[:, 8, :3, :7]   # [N, 3, 7]
+
+        # Damped Least Squares IK: Δq = J^T (J J^T + λI)^{-1} Δx
+        lam = 0.05
+        JT = J.transpose(-2, -1)                                          # [N, 7, 3]
+        JJT = torch.bmm(J, JT)                                            # [N, 3, 3]
+        JJT_reg = JJT + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
+        J_dls = torch.bmm(JT, torch.linalg.inv(JJT_reg))                  # [N, 7, 3]
+        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)   # [N, 7]
+
+        joint_target = self.robot.data.joint_pos[:, :7] + delta_q
+        self.robot.set_joint_position_target(joint_target, joint_indices=list(range(7)))
+
+        # Gripper: action[:, 3] ∈ [-1, 1] → [0, 0.04]m
+        gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
+        self.robot.set_joint_position_target(
+            gripper_pos.expand(-1, 2).clone(), joint_indices=[7, 8]
+        )
+
+        # Proximity grasp freeze
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
             frozen = self._frozen_box_state[grasped_ids].clone()
-            frozen[:, 7:13] = 0.0   # 속도·각속도 제로
+            frozen[:, 7:13] = 0.0
             self.box.write_root_state_to_sim(frozen, grasped_ids)
 
     # ------------------------------------------------------------------

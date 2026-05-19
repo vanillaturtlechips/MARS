@@ -125,7 +125,7 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
             for h in [512, 256, 128]:
                 layers += [nn.Linear(in_dim, h), nn.ELU()]
                 in_dim = h
-            layers.append(nn.Linear(in_dim, 9))
+            layers.append(nn.Linear(in_dim, 4))
             self.net = nn.Sequential(*layers)
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
