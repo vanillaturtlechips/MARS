@@ -10,8 +10,8 @@ Teacher 관측 (특권 정보, 훈련 전용):
 
 Student 관측 (배포용, 실제 센서):
   ee_pos(3) + gripper_width(1) + goal_pos_approx(3) +
-  joint_pos(9) + joint_vel(9) = 25차원
-  (RGB-D CNN feature는 추후 추가)
+  noisy_box_rel(3, σ=0.03m, 카메라 감지 시뮬레이션) +
+  joint_pos(9) + joint_vel(9) = 28차원
 
 Teacher-Student 증류 순서:
   1. Teacher PPO 훈련 → place_success_rate > 90%
@@ -55,7 +55,7 @@ PLACE_GOALS = [
 ]
 
 TEACHER_OBS_DIM = 30   # box_rel(3)+quat(4)+mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)
-STUDENT_OBS_DIM = 25
+STUDENT_OBS_DIM = 28   # ee_pos(3)+gripper(1)+goal_rel(3)+noisy_box_rel(3)+jpos(9)+jvel(9)
 
 
 @configclass
@@ -225,14 +225,19 @@ class WarehouseManipulationEnv(DirectRLEnv):
         gripper_w  = (joint_pos[:, 7:8] + joint_pos[:, 8:9])  # 그리퍼 폭
 
         if self.cfg.student_mode:
-            # Student: 특권 정보 없음 (goal 상대좌표만 제공)
+            # Student: box 위치는 카메라 감지 시뮬레이션 (σ=0.03m 노이즈)
+            # 실제 배포 시 RGB-D 카메라 출력으로 대체
+            box_pos = self.box.data.root_pos_w             # (N, 3)
+            noise   = torch.randn_like(box_pos) * 0.03
+            box_rel_noisy = (box_pos - ee_pos) + noise
             obs = torch.cat([
                 ee_pos,                          # (N, 3)
                 gripper_w,                       # (N, 1)
                 self._goal_pos_w - ee_pos,       # (N, 3) goal 상대좌표
+                box_rel_noisy,                   # (N, 3) 카메라 기반 box 위치 (노이즈 포함)
                 joint_pos[:, :9],                # (N, 9)
                 joint_vel[:, :9],                # (N, 9)
-            ], dim=1)   # (N, 25)
+            ], dim=1)   # (N, 28)
         else:
             # Teacher: 특권 정보 포함 (box/goal 모두 EE 기준 상대좌표)
             box_pos  = self.box.data.root_pos_w            # (N, 3)
