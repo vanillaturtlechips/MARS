@@ -72,15 +72,15 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    # 보상 가중치
-    # 설계 원칙: V(place) > V(grasp_hover) > V(approach_hover)
-    # V(approach_hover) ≈ 0.5 * 0.9 * 899 - 0.02 * 899 = 387
-    # V(grasp_hover)    ≈ 387/3*100 + 30 + 1.0 * 0.84 * 799 = 727
-    # V(place_at_200)   ≈ 45 + 30 + 1.0 * 0.92 * 100 + 800 - 4 = 963
-    rew_approach:  float =  0.5    # 최소화: approach hover 가치 억제
-    rew_grasp:     float = 30.0    # 단발 grasp 유인 (유지)
-    rew_transport: float =  1.0    # 10x 축소: hover 가치 억제 (10→1)
-    rew_place:     float = 800.0   # 40x 확대: place가 hover보다 명확히 우위 (20→800)
+    # 보상 가중치 — 하이브리드 설계
+    # Approach: Exp 금속탐지기 (박스 찾기), decay=5.0으로 중거리 hover 억제
+    # Transport: Progress Delta (성과급) — 월급 루팡 방지
+    #   이동한 만큼만 보상, 가만히 서있으면 0, 뒤로 가면 음수
+    #   V(hover@goal) = transport(이동분) + 0(정지) << V(place) = transport + 800
+    rew_approach:  float =  0.5    # Exp decay=5.0 적용
+    rew_grasp:     float = 30.0    # 단발 grasp 유인
+    rew_transport: float = 10.0    # delta * 100 배율 → 3cm 이동 시 +30/step
+    rew_place:     float = 800.0   # 대형 터미널 보상 유지
     rew_drop:      float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
     rew_time:      float = -0.02   # 스텝 패널티 축소 (탐색 장려)
 
@@ -281,8 +281,13 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         not_grasped = (~self._grasped).float()
 
-        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box   * 0.5) * not_grasped
-        transport = self.cfg.rew_transport * torch.exp(-dist_box_goal * 0.5) * self._grasped.float()
+        # Approach: Exp 금속탐지기 — decay=5.0으로 근거리에만 집중
+        approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
+
+        # Transport: Progress Delta — "어제보다 오늘 더 다가간 만큼만" 보상
+        # clamp(-0.1, 0.1): 첫 스텝 prev=999 튀는 현상 방지, 최대 이동 제한
+        delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
+        transport  = self.cfg.rew_transport * delta_goal * 100.0 * self._grasped.float()
 
         self._prev_dist_ee_box   = dist_ee_box.detach()
         self._prev_dist_box_goal = dist_box_goal.detach()
