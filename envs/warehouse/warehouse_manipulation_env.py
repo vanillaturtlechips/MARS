@@ -81,9 +81,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # 파지 판정: EE ready pose(x≈0.4) ~ 박스 거리가 최소 0.15m 이상이어야 즉시 grasp 방지
-    grasp_dist_threshold: float = 0.06   # ee ~ box 거리 [m]
-    place_dist_threshold: float = 0.08   # ee ~ goal 거리 [m]
+    # 파지 판정: EE ready pose(x≈0.4) ~ 박스 최소거리 0.15m > threshold → trivial success 없음
+    grasp_dist_threshold: float = 0.10   # ee ~ box 거리 [m]
+    place_dist_threshold: float = 0.12   # ee ~ goal 거리 [m]
 
     student_mode: bool = False    # True면 Student 관측 반환
 
