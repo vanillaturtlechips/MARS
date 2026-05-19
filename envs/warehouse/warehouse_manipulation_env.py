@@ -70,19 +70,19 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:  float =  3.0    # exp(-dist*10): 0.5m이상에서 time_penalty보다 낮아 강제 접근
+    rew_approach:  float = 10.0    # exp(-dist*5): 0.6m에서도 time_penalty 이김
     rew_grasp:     float = 10.0    # 파지 성공
-    rew_transport: float =  5.0    # potential-based delta 스케일 (time_penalty의 5배 이상)
+    rew_transport: float =  5.0    # potential-based delta 스케일
     rew_place:     float = 20.0    # 거치 성공
     rew_drop:      float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
-    rew_time:      float = -0.1    # 스텝 패널티 → timeout(-90) vs place(+20) 차이 120점으로 확대
+    rew_time:      float = -0.02   # 스텝 패널티 축소 (탐색 장려)
 
     # 박스 Domain Randomization
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
     # EE(x≈0.4) ~ box(x≥0.60) 최소거리 0.202m > 0.15m → trivial success 없음
-    grasp_dist_threshold: float = 0.12   # ee ~ box 거리 [m]
+    grasp_dist_threshold: float = 0.20   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # ee ~ goal 거리 [m] (goal 최소거리 0.145m > 0.12m ✓)
 
     student_mode: bool = False    # True면 Student 관측 반환
@@ -255,7 +255,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         not_grasped = (~self._grasped).float()
 
-        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box   * 10.0) * not_grasped
+        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box   *  5.0) * not_grasped
         transport = self.cfg.rew_transport * torch.exp(-dist_box_goal *  5.0) * self._grasped.float()
 
         self._prev_dist_ee_box   = dist_ee_box.detach()
