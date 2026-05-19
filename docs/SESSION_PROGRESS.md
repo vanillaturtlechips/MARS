@@ -1,4 +1,4 @@
-# 세션 진행 현황 (2026-05-18)
+# 세션 진행 현황 (2026-05-19)
 
 ## 완료된 작업
 
@@ -25,95 +25,89 @@
 | **S1~S3 평균** | **0.3%** | **9%** | **90.7%** |
 | **전체 평균** | **0.2%** | **45.4%** | **54.4%** |
 
-**핵심 성과:**
-- 충돌률 **0.2%** — 목표 <1% ✅ 달성
-- S1~S3 전원도달 **90.7%** — 실무 배포 가능 수준
-- S4: Phase 4 목표 배정(LLM 오케스트레이터)으로 해결 예정
-- S5: Phase 4 교착 감지 + 재라우팅으로 해결 예정
+### Phase 2 Teacher 완료 ✅ (2026-05-19 세션)
 
-**훈련 구성 (최종 확정):**
-- obs: 17-dim (상대속도 vx_rel/vy_rel 추가)
-- rew_collision: -200
-- SAFE_DIST: 2.5m
-- W_REP: 1.5
-- 8192 envs × 3 robots, 10000 iter
-- 훈련 시간: 약 3.5시간 (RunPod A6000)
+**model_2999.pt — Teacher Policy 확정**
 
-**보상 엔지니어링 이력:**
-| 문제 | 원인 | 수정 |
-|------|------|------|
-| VF loss 폭발 (1329) | rew_time*t 2차 누적 | 상수 -0.01/step |
-| death exploitation | rew_collision 미적용 | -150 penalty (IPPO) |
-| camping local optimum | rew_goal=10 연속 | 10→3 축소 |
-| noise_std 발산 | entropy_coef 지배 | 0.01→0.001 |
-| S2/S4 즉시 충돌 | obs에 상대속도 없음 | 9→17dim + SAFE_DIST 2.5m |
-| 자살 학습 | rew_collision 너무 약함 | -200 (교착 -90보다 110점 낮게) |
+| 체크포인트 | place rate | avg_len |
+|-----------|-----------|---------|
+| model_2400 | 1.4% | 898 |
+| model_2700 | 100% | 352 |
+| **model_2999** | **100%** | **183** |
 
-**SAFE_DIST 1.8m 실험 결과 (실패, model_11998.pt):**
-- S3 95% → 1% 붕괴 — 좁은 통로에서 역효과
-- model_9999.pt(2.5m)가 최종 확정
-
-### Phase 2 (⚠️ 훈련 진행 중 — 2026-05-19 세션)
-
-- `envs/warehouse/warehouse_manipulation_env.py` — Franka Panda Pick & Place
-- `training/single_robot/train_manipulation.py` — Teacher PPO
-- `training/single_robot/eval_manipulation.py` — place_success_rate 평가 스크립트
+- 100% place rate, avg 183 스텝 (≈3초) 만에 pick & place 완료
 
 ---
 
-#### 이번 세션 버그 수정 이력 (2026-05-19)
+#### 이번 세션 버그 수정 이력 (2026-05-19 오전 세션 이어서)
 
 | # | 커밋 | 문제 | 원인 | 수정 |
 |---|------|------|------|------|
-| 1 | trivial success (이전 세션) | place 100% 즉시 성공 | EE 시작점≈grasp zone | box 스폰 x∈[0.60,0.75], threshold 축소 |
-| 2 | `476af16` | IK가 EE를 거의 안 움직임 (0.002m/step) | Franka stiffness=80 → 명령 12%만 추종 | stiffness=400, damping=40 |
-| 3 | `24f3e5a` → `b9b518d` | joint space 제어 시도 후 실패 | entropy=11.41(최대), reward=-89로 고착 | Cartesian IK로 revert |
-| 4 | `92d9ed2` → revert | delta(PBRS) reward 폭발 | EE 방황 시 누적 음수 (-532), VF loss=30000 | exp(-dist) 방식으로 복원 |
-| 5 | `6e464f9` | 원거리에서 학습 신호 소실 | decay=3 → exp(-3m)≈0.05 (gradient 거의 0) | decay=1.0으로 완화 |
-| 6 | **`542f41d`** | **모든 훈련 실패 근본 원인** | **box에 `disable_gravity=False`** → 리셋마다 바닥으로 추락 | **`disable_gravity=True`** (collision도 disable) |
-| 7 | `7ff6388` | iter 1534에서도 grasp 미발생 | EE-box 평균거리 0.36m > threshold 0.20m | `grasp_dist_threshold: 0.20→0.30m` |
+| 1 | `ea987c1` | eval 전 체크포인트 전부 0% place | box spawn x=[0.60,0.75] → Franka 최대 도달거리(0.855m) 초과 | threshold 0.40m, box x=[0.50,0.65] |
+| 2 | `9b3d73f` | place 100%, avg_len=2 (trivial success) | box spawn x=[0.50,0.65]이 PLACE_GOALS x=[0.40,0.50]과 겹침 | PLACE_GOALS를 y=±0.32-0.35 측면으로 이동, box x=[0.45,0.55] |
+| 3 | `fb3c5de` | iter 1085 ep_len=895 고착, noise_std=0.61 | approach≈transport(그라스프 경계) → hover 로컬옵티멈 | rew_approach 5→3, rew_grasp 10→30, rew_transport 5→10 |
+| 4 | `7dc4522` | iter 2999 ep_len=880, noise_std=1.34 발산 | transport=10×exp(-0.35×0.5)×799=6,711 >> place=20 → grasp 후 무한 hover | rew_approach 3→0.5, rew_transport 10→1, rew_place 20→800 |
+| 5 | `af45f1b` | iter 898 ep_len=770 고착, 학습 zero | "늦은 place(1,430pt) > 빠른 place(980pt)" — 절대거리 Exp가 시간당 보상 누적 | transport: Exp(-dist) → Progress Delta clamp(-0.1,0.1)×100 (성과급 방식) |
 
-**Box gravity 버그 상세**:
-- `collision_enabled=False` 상태에서 gravity만 켜져 있으면 → 매 에피소드 리셋 후 박스가 테이블 통과해 즉시 추락
-- 이전 모든 훈련(model_2999.pt 포함)이 이 버그로 무효화
-- 수정 후 즉시 reward 70 → 2026 (보상 신호 정상화 확인)
+**Progress Delta 수정 후 즉시 수렴:**
+- iter 312: ep_len=575, noise_std=0.77 (이전 run iter 899에서도 못 본 수치)
+- iter 726: ep_len=520, noise_std=0.53
+- iter 1811: ep_len=565, noise_std=0.41 (수렴)
+- **iter 2700~2999: place rate 100%**
 
 ---
 
-#### 현재 확정 환경 설정 (최종)
+#### 최종 확정 환경 설정
 
 | 파라미터 | 값 | 비고 |
 |---------|-----|------|
 | action_space | 4 | [dx, dy, dz, gripper] Cartesian delta |
 | max step | 3cm/step | DLS IK λ=0.01 |
-| stiffness | 400 N·m/rad | (기본 80에서 상향) |
+| stiffness | 400 N·m/rad | |
 | damping | 40 | |
-| box 스폰 | x∈[0.60,0.75] | EE 시작점(x≈0.4)에서 최소 0.2m 이격 |
-| `grasp_dist_threshold` | 0.30m | EE-박스 거리 |
-| `place_dist_threshold` | 0.12m | 박스-goal 거리 |
-| `disable_gravity` | True | **필수 — 없으면 박스 추락** |
-| `collision_enabled` | False | proximity grasp 방식 |
-| `rew_approach` | 5.0 × exp(-dist×1.0) | |
-| `rew_transport` | 5.0 × exp(-dist×1.0) | grasped 시에만 |
-| `rew_grasp` | 10.0 | 파지 성공 순간 |
-| `rew_place` | 20.0 | 거치 성공 |
+| box 스폰 | x∈[0.45,0.55], y∈[-0.15,0.15] | Franka 최대 도달거리 89% |
+| PLACE_GOALS | y=±0.32-0.35 (측면 4곳) | box spawn과 겹침 없음 |
+| `grasp_dist_threshold` | 0.25m | |
+| `place_dist_threshold` | 0.12m | |
+| `rew_approach` | 0.5 × exp(-dist×5.0) | decay=5.0 중거리 hover 억제 |
+| `rew_grasp` | 30.0 | 단발 보너스 |
+| `rew_transport` | 10.0 × delta.clamp(-0.1,0.1) × 100 | Progress Delta (성과급) |
+| `rew_place` | 800.0 | 대형 터미널 보상 |
 | `rew_time` | -0.02/step | |
-| `empirical_normalization` | False | |
-| PLACE_GOALS | 4개 (0.4~0.5, ±0.1~0.2) | 테이블 위 목표 선반 |
 | Teacher obs | 30-dim | box_rel+quat+mass+gripper+goal_rel+jpos+jvel |
 
 ---
 
-#### 현재 훈련 상태 (2026-05-19 세션 종료 시점)
+### Phase 2 Student 진행 중 (2026-05-19 세션)
 
-- **Run**: gravity 버그 수정 + grasp_dist=0.30m 반영 후 **재시작** (from scratch)
-- **명령**: `python training/single_robot/train_manipulation.py --num_envs 5096 --max_iter 3000 --headless`
-- **iter ~210 기준 지표**:
-  - Mean reward: ~2020 (approach exp 보상만 쌓이는 중)
-  - Episode length: 899 (아직 grasp 미발생 — 정상, 초반 탐색 단계)
-  - Entropy: ~5.07 (탐색 중, 이전 좋은 run과 동일 궤도)
-  - Action noise std: 0.87
-- **확인 포인트**: iter 400~500에서 episode_length < 899 → grasp 발생 신호
+#### Student 훈련 1차 실패 및 수정
+
+| # | 커밋 | 문제 | 원인 | 수정 |
+|---|------|------|------|------|
+| 1 | — | iter 724까지 ep_len=899 고착 | Student obs(25dim)에 box 위치 없음 → approach gradient 있어도 policy가 활용 불가 | `cd3394a` box_rel + N(0,0.03m) 추가 → 28dim |
+
+**반복 실수 기록**: Phase 3에서도 상대속도 누락(9→17dim)으로 동일 패턴 발생.
+**교훈**: obs 설계 전 "policy가 reward를 받으려면 어떤 정보가 필요한가?" 체크리스트 필수.
+
+#### Student obs 확정 (28-dim)
+
+```
+ee_pos(3) + gripper_w(1) + goal_rel(3) + noisy_box_rel(3, σ=0.03m) + jpos(9) + jvel(9)
+```
+
+- `noisy_box_rel`: 카메라 감지 시뮬레이션 (σ=0.03m)
+- 실제 Jetson 배포 시 RGB-D 카메라 출력으로 대체
+
+#### 현재 상태 (2026-05-19 세션 종료 시점)
+
+- Student 2차 훈련 **재시작** (from Teacher model_2999.pt)
+- 명령: `python training/single_robot/train_manipulation.py --student --teacher_ckpt logs/warehouse_manipulation_teacher/model_2999.pt --num_envs 5096 --max_iter 3000 --headless`
+
+**조기 진단 기준**:
+1. iter ~300: ep_len < 800 (grasp 시작)
+2. iter ~600: reward 양수 전환
+3. iter ~1500: ep_len < 400
+4. 최종: place_rate > 80% → Student 완료
 
 ---
 
@@ -123,34 +117,33 @@
 # RunPod 접속 후
 cd /workspace/MARS && git pull
 
-# 훈련 재개 (체크포인트 있으면 --resume_ckpt 추가)
+# Student 훈련 재개 (체크포인트 있으면 --resume_ckpt 추가)
 python training/single_robot/train_manipulation.py \
+  --student \
+  --teacher_ckpt logs/warehouse_manipulation_teacher/model_2999.pt \
   --num_envs 5096 --max_iter 3000 --headless
 
 # TensorBoard
-tensorboard --logdir logs/warehouse_manipulation_teacher --port 6006
+tensorboard --logdir logs/warehouse_manipulation_student --port 6006
 
-# 평가 (훈련 완료 후)
+# 평가 (Student 훈련 완료 후)
 python training/single_robot/eval_manipulation.py \
-  --ckpt logs/warehouse_manipulation_teacher/model_XXXX.pt
+  --ckpt logs/warehouse_manipulation_student/model_2999.pt \
+  --num_episodes 200 --num_envs 512
 ```
-
-**체크 지표 우선순위**:
-1. `episode_length` 감소 → grasp 발생 확인 (가장 중요)
-2. `rew_grasp` 상승 → 파지 학습 진행
-3. `rew_transport` 상승 → 운반 학습 진행
-4. 최종 `place_success_rate > 90%` → Teacher 완료
 
 ---
 
-#### 이후 단계 (Phase 2 Teacher 완료 후)
+#### 이후 단계
 
-1. **eval**: `python training/single_robot/eval_manipulation.py --ckpt logs/.../model_2999.pt`
-2. **Student 훈련**: `--student --teacher_ckpt logs/.../model_2999.pt`
-3. **Teacher-Student 증류**: 가중치 필터링 (입력층 30→25dim 제외, 나머지 공유)
+1. **Student eval**: place_rate > 80% 확인
+2. **Phase 4**: LLM 오케스트레이터 (Claude API + pgvector RAG)
+3. **Phase 5**: 통합 테스트 (Jetson 배포, Student 정책 교체)
+
+---
 
 ### Jetson 완료
-- PyTorch 2.8.0 + CUDA 설치 (cuSPARSELt 0.7.0, cuDSS 0.7.1.4)
+- PyTorch 2.8.0 + CUDA 설치
 - ROS2 Humble 설치
 - ollama + qwen2.5:3b-instruct-q4_K_M 설치 (채택)
 - `actor_phase15.pt` export 및 복사 완료
@@ -164,19 +157,14 @@ python training/single_robot/eval_manipulation.py \
 
 → **qwen2.5:3b-instruct-q4_K_M 채택**
 
-- RL policy inference: **0.33ms = 3034 Hz** (목표 100Hz의 30배)
+- RL policy inference: **0.33ms = 3034 Hz**
 - ros2_bridge.py: `/goal_pose` → `/cmd_vel` 파이프라인 동작 확인
 
 ---
 
 ## RunPod 재생성 절차
 
-Pod 삭제/GPU 회수 후 재생성 시:
-
 ```bash
-# 새 Pod 생성 시 필수: 포트 8211(livestream), 6006(TensorBoard) 사전 추가
-# → RUNPOD_GUIDE.md 참고
-
 git clone https://github.com/vanillaturtlechips/MARS.git /workspace/MARS
 bash /workspace/MARS/deploy/runpod/setup.sh
 ```
@@ -187,13 +175,11 @@ bash /workspace/MARS/deploy/runpod/setup.sh
 
 | 항목 | 상태 |
 |------|------|
-| Phase 3 Low-level Controller 확정 (model_9999.pt) | ✅ 완료 |
-| Phase 4 에이전트 레이어 (오케스트레이터) | 다음 단계 |
-| Phase 4 S4 목표 충돌 → LLM 목표 배정으로 해결 | Phase 4 |
-| Phase 4 S5 교착 → 교착 감지 + 재라우팅으로 해결 | Phase 4 |
-| Phase 2 Env 버그 수정 + 재훈련 | 다음 세션 |
-| Phase 2 Teacher-Student 증류 | 재훈련 이후 |
-| Phase 5 통합 테스트 | Phase 3/4 완료 후 |
+| Phase 3 Low-level Controller (model_9999.pt) | ✅ 완료 |
+| Phase 2 Teacher (model_2999.pt, 100% place) | ✅ 완료 |
+| Phase 2 Student (28dim obs, 재훈련 중) | 🔄 진행 중 |
+| Phase 4 에이전트 레이어 (LLM 오케스트레이터) | 다음 단계 |
+| Phase 5 통합 테스트 | Phase 4 완료 후 |
 
 ---
 
@@ -205,37 +191,39 @@ MARS/
 │   ├── warehouse_nav/model_999.pt              # Phase 1 ✅
 │   ├── warehouse_obstacle_nav/model_100.pt     # Phase 1.5 ✅
 │   ├── warehouse_ippo/model_400.pt             # Phase 3 IPPO ✅
-│   └── warehouse_mappo/model_9999.pt           # Phase 3 최종 ✅ (Freeze)
+│   ├── warehouse_mappo/model_9999.pt           # Phase 3 최종 ✅ (Freeze)
+│   └── warehouse_manipulation_teacher/
+│       └── model_2999.pt                       # Phase 2 Teacher ✅ (100% place)
 ├── deploy/
 │   ├── export_model.py                         # ✅
 │   ├── jetson/
 │   │   ├── actor_phase15.pt                   # ✅ Jetson에 복사됨
-│   │   ├── inference.py                       # ✅ 0.33ms 확인
-│   │   ├── ros2_bridge.py                     # ✅ 동작 확인
+│   │   ├── inference.py                       # ✅
+│   │   ├── ros2_bridge.py                     # ✅
 │   │   └── benchmark_llm.py                  # ✅
 │   └── runpod/
-│       ├── setup.sh                           # ✅ 원클릭 설치
-│       └── RUNPOD_GUIDE.md                   # ✅ 포트/livestream 가이드
+│       ├── setup.sh                           # ✅
+│       └── RUNPOD_GUIDE.md                   # ✅
 ├── envs/warehouse/
 │   ├── warehouse_env.py                       # Phase 1 ✅
 │   ├── warehouse_obstacle_env.py              # Phase 1.5 ✅
-│   ├── warehouse_manipulation_env.py          # Phase 2 코드 ✅ (미훈련)
+│   ├── warehouse_manipulation_env.py          # Phase 2 ✅
 │   ├── warehouse_marl_env.py                 # Phase 3 ✅
-│   └── ippo_wrapper.py                       # Phase 3 ✅ rsl_rl 3.x 호환
+│   └── ippo_wrapper.py                       # Phase 3 ✅
 └── training/
-    ├── single_robot/train_manipulation.py      # Phase 2
+    ├── single_robot/
+    │   ├── train_manipulation.py              # Phase 2
+    │   └── eval_manipulation.py              # Phase 2 평가
     └── multi_robot/
-        ├── potential_reward.py                # MPG 보상 ✅ (SAFE_DIST=2.5)
         ├── train_ippo.py                     # Phase 3 IPPO ✅
-        ├── train_marl.py                    # Phase 3 True CTDE MAPPO ✅
-        ├── eval_scenarios.py                # 5종 시나리오 평가 ✅
-        └── demo_play.py                     # USD 에셋 데모 ✅
+        ├── train_marl.py                    # Phase 3 MAPPO ✅
+        └── eval_scenarios.py                # Phase 3 평가 ✅
+```
 
 GitHub: github.com/vanillaturtlechips/MARS (main)
 Jetson: ssh nvidia@192.168.55.1 (USB-C)
 RunPod: A6000, /workspace/isaac_venv
-```
 
 ---
 
-*최종 업데이트: 2026-05-19 — Phase 2 box gravity 버그(근본 원인) 수정 완료, grasp_dist=0.30m, 재훈련 중 (iter ~210)*
+*최종 업데이트: 2026-05-19 — Phase 2 Teacher 100% place 달성, Student 2차 훈련 시작 (28dim obs)*
