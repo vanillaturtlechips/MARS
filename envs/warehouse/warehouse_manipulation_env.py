@@ -51,7 +51,7 @@ PLACE_GOALS = [
     (0.5, -0.1, 0.53),
 ]
 
-TEACHER_OBS_DIM = 33
+TEACHER_OBS_DIM = 30   # box_rel(3)+quat(4)+mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)
 STUDENT_OBS_DIM = 25
 
 
@@ -189,28 +189,27 @@ class WarehouseManipulationEnv(DirectRLEnv):
         gripper_w  = (joint_pos[:, 7:8] + joint_pos[:, 8:9])  # 그리퍼 폭
 
         if self.cfg.student_mode:
-            # Student: 특권 정보 없음
+            # Student: 특권 정보 없음 (goal 상대좌표만 제공)
             obs = torch.cat([
-                ee_pos,                  # (N, 3)
-                gripper_w,               # (N, 1)
-                self._goal_pos_w,        # (N, 3)  — 근사 (사전 제공)
-                joint_pos[:, :9],        # (N, 9)
-                joint_vel[:, :9],        # (N, 9)
+                ee_pos,                          # (N, 3)
+                gripper_w,                       # (N, 1)
+                self._goal_pos_w - ee_pos,       # (N, 3) goal 상대좌표
+                joint_pos[:, :9],                # (N, 9)
+                joint_vel[:, :9],                # (N, 9)
             ], dim=1)   # (N, 25)
         else:
-            # Teacher: 특권 정보 포함
+            # Teacher: 특권 정보 포함 (box/goal 모두 EE 기준 상대좌표)
             box_pos  = self.box.data.root_pos_w            # (N, 3)
             box_quat = self.box.data.root_quat_w           # (N, 4)
             obs = torch.cat([
-                box_pos,                 # (N, 3)
-                box_quat,                # (N, 4)
-                self._box_mass.unsqueeze(1),  # (N, 1)
-                ee_pos,                  # (N, 3)
-                gripper_w,               # (N, 1)
-                self._goal_pos_w,        # (N, 3)
-                joint_pos[:, :9],        # (N, 9)
-                joint_vel[:, :9],        # (N, 9)
-            ], dim=1)   # (N, 33)
+                box_pos - ee_pos,                # (N, 3) box 상대좌표 ← 핵심
+                box_quat,                        # (N, 4)
+                self._box_mass.unsqueeze(1),     # (N, 1)
+                gripper_w,                       # (N, 1)
+                self._goal_pos_w - ee_pos,       # (N, 3) goal 상대좌표
+                joint_pos[:, :9],                # (N, 9)
+                joint_vel[:, :9],                # (N, 9)
+            ], dim=1)   # (N, 30)
 
         return {"policy": obs}
 
