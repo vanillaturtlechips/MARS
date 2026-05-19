@@ -81,9 +81,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # 파지 판정: potential 보상 + clean start 기준 (0.25m로 초기 grasp 성공 유도)
-    grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
-    place_dist_threshold: float = 0.35   # ee ~ goal 거리 [m] (커리큘럼 1단계: 넓게 열어 place 경험 유도)
+    # 파지 판정: EE ready pose(x≈0.4) ~ 박스 거리가 최소 0.15m 이상이어야 즉시 grasp 방지
+    grasp_dist_threshold: float = 0.06   # ee ~ box 거리 [m]
+    place_dist_threshold: float = 0.08   # ee ~ goal 거리 [m]
 
     student_mode: bool = False    # True면 Student 관측 반환
 
@@ -302,7 +302,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # 박스 위치 랜덤화 — 절대 좌표로 설정 (default_root_state.x=0.5 누적 버그 방지)
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.3, 0.6, (n,), device=self.device)
+        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.55, 0.75, (n,), device=self.device)
         box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.2, 0.2, (n,), device=self.device)
         box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.53  # 테이블 위 (상면 0.5m + 박스 반경 0.03m)
         self.box.write_root_state_to_sim(box_state, env_ids_t)

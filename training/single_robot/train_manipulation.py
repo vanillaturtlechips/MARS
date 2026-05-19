@@ -53,7 +53,7 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
     runner_cfg.save_interval      = 300
     runner_cfg.experiment_name    = f"warehouse_manipulation_{mode}"
     runner_cfg.logger             = "tensorboard"
-    runner_cfg.empirical_normalization = True
+    runner_cfg.empirical_normalization = False
 
     runner_cfg.policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0 if mode == "teacher" else 0.5,

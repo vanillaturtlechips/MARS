@@ -70,11 +70,11 @@
    - `place_dist_threshold=0.35m` → 4개 goal 모두 EE 시작점에서 0.35m 이내
 2. **Obs 정규화 누락**: 훈련 시 `empirical_normalization=True`, eval 시 normalization stats 미포함 → actor 입력 스케일 불일치 → near-zero actions
 
-**다음 세션 Phase 2 재훈련 시 수정 사항**
-- `grasp_dist_threshold: 0.25 → 0.06m`
-- `place_dist_threshold: 0.35 → 0.08m`
-- 박스 스폰 범위: x∈[0.3,0.6] → x∈[0.55,0.75] (EE 시작점에서 멀리)
-- `empirical_normalization=False` (eval 시 정규화 stats 없이도 동작하도록)
+**Trivial Success 버그 수정 완료 (2026-05-19)**
+- `grasp_dist_threshold: 0.25 → 0.06m` ✅
+- `place_dist_threshold: 0.35 → 0.08m` ✅
+- 박스 스폰 범위: x∈[0.3,0.6] → x∈[0.55,0.75] (EE 시작점에서 멀리) ✅
+- `empirical_normalization=False` ✅
 
 ### Jetson 완료
 - PyTorch 2.8.0 + CUDA 설치 (cuSPARSELt 0.7.0, cuDSS 0.7.1.4)
