@@ -70,7 +70,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:  float =  5.0    # delta 방식: 박스에 가까워진 거리 × scale
+    rew_approach:  float =  5.0    # exp(-dist*3): 1m에서도 0.25 유지
     rew_grasp:     float = 10.0    # 파지 성공
     rew_transport: float =  5.0    # potential-based delta 스케일
     rew_place:     float = 20.0    # 거치 성공
@@ -122,6 +122,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
     def _setup_scene(self):
         # Franka Panda
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+        # 기본 stiffness=80은 너무 낮아 관절이 명령의 12%만 추종 → 400으로 상향
+        for actuator in franka_cfg.actuators.values():
+            if hasattr(actuator, 'stiffness') and actuator.stiffness < 400:
+                actuator.stiffness = 400.0
+                actuator.damping   = 40.0
         self.robot = Articulation(franka_cfg)
 
         # 박스 (크기는 reset에서 DR 적용)
@@ -255,9 +260,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         not_grasped = (~self._grasped).float()
 
-        # delta 방식: 가까워진 만큼 보상, 멀어지면 패널티 (거리와 무관하게 일정한 기울기)
-        approach  = self.cfg.rew_approach  * (self._prev_dist_ee_box   - dist_ee_box)   * not_grasped
-        transport = self.cfg.rew_transport * (self._prev_dist_box_goal - dist_box_goal) * self._grasped.float()
+        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box   * 3.0) * not_grasped
+        transport = self.cfg.rew_transport * torch.exp(-dist_box_goal * 3.0) * self._grasped.float()
 
         self._prev_dist_ee_box   = dist_ee_box.detach()
         self._prev_dist_box_goal = dist_box_goal.detach()
