@@ -238,18 +238,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 거치 성공: EE가 목표 위치에 도달 (박스는 비물리적 proximity 파지이므로 EE 기준)
         placed = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
 
-        # Potential-based approach (파지 전): 박스에 가까워질 때만 양수 (호버링=0)
-        # Potential-based transport (파지 후): goal에 가까워질 때만 양수
-        # episode_length_buf > 1 마스크: 첫 스텝 prev=999 폭발 방지
-        not_grasped   = (~self._grasped).float()
-        first_step_ok = (self.episode_length_buf > 1).float()
+        # exp(-dist) 절대거리 기반: 랜덤 정책도 박스 방향 gradient 받음
+        # delta 기반은 랜덤 정책에서 기댓값=0 → bootstrap 불가
+        not_grasped = (~self._grasped).float()
 
-        delta_box  = (self._prev_dist_ee_box  - dist_ee_box ).clamp(-0.5, 0.5)
-        approach   = self.cfg.rew_approach  * delta_box  * 10.0 * not_grasped          * first_step_ok
-        self._prev_dist_ee_box  = dist_ee_box.detach()
+        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box  * 5.0) * not_grasped
+        transport = self.cfg.rew_transport * torch.exp(-dist_ee_goal * 3.0) * self._grasped.float()
 
-        delta_goal = (self._prev_dist_box_goal - dist_ee_goal).clamp(-0.5, 0.5)
-        transport  = self.cfg.rew_transport * delta_goal * 10.0 * self._grasped.float() * first_step_ok
+        self._prev_dist_ee_box   = dist_ee_box.detach()
         self._prev_dist_box_goal = dist_ee_goal.detach()
 
         rew = (
