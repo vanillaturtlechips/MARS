@@ -135,7 +135,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             prim_path="/World/envs/env_.*/Box",
             spawn=sim_utils.CuboidCfg(
                 size=(0.06, 0.06, 0.06),
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=True),
                 mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
                 collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
                 visual_material=sim_utils.PreviewSurfaceCfg(
