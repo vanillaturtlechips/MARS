@@ -59,7 +59,7 @@ STUDENT_OBS_DIM = 25
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
     episode_length_s = 15.0
-    action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
+    action_space = 8             # [dq1..dq7, gripper] joint space control
     observation_space = TEACHER_OBS_DIM   # Teacher 모드 기본
     state_space = 0
 
@@ -82,7 +82,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
     # EE(x≈0.4) ~ box(x≥0.60) 최소거리 0.202m > 0.15m → trivial success 없음
-    grasp_dist_threshold: float = 0.35   # ee ~ box 거리 [m]
+    grasp_dist_threshold: float = 0.12   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # ee ~ goal 거리 [m] (goal 최소거리 0.145m > 0.12m ✓)
 
     student_mode: bool = False    # True면 Student 관측 반환
@@ -104,16 +104,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         d = self.device
 
         body_names = list(self.robot.data.body_names)
-        self._ee_body_idx = body_names.index("panda_hand")  # body_pos_w 용 (base 포함)
-        # get_jacobians()는 base body(index 0)를 제외하므로 offset -1
-        self._jac_body_idx = self._ee_body_idx - 1
-        print(f"[DEBUG] body_names ({len(body_names)}): {body_names}")
-        print(f"[DEBUG] panda_hand → body_pos_w idx={self._ee_body_idx}, jacobian idx={self._jac_body_idx}")
+        self._ee_body_idx = body_names.index("panda_hand")
 
         self._goal_pos_w  = torch.zeros(n, 3, device=d)
         self._box_mass    = torch.ones(n, device=d)
         self._grasped     = torch.zeros(n, dtype=torch.bool, device=d)
-        self._actions     = torch.zeros(n, 4, device=d)
+        self._actions     = torch.zeros(n, 8, device=d)
         self._prev_dist_ee_box   = torch.full((n,), 999.0, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
@@ -173,38 +169,13 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        n = self.num_envs
-
-        # Cartesian delta: actions[:, :3] = [dx, dy, dz] world frame, actions[:, 3] = gripper
-        delta_pos = self._actions[:, :3] * 0.03  # max 3cm/step
-
-        # Translational Jacobian for panda_hand (body 8), arm joints (DOF 0-6)
-        # jac shape: [N, num_bodies, 6, num_dofs] — rows 0:3 = translational
-        jac = self.robot.root_physx_view.get_jacobians()
-        if not hasattr(self, '_jac_debug_count'):
-            self._jac_debug_count = 0
-        J = jac[:, self._jac_body_idx, :3, :7]   # [N, 3, 7]  (get_jacobians: base 제외)
-
-        # Damped Least Squares IK: Δq = J^T (J J^T + λI)^{-1} Δx
-        lam = 0.05
-        JT = J.transpose(-2, -1)                                          # [N, 7, 3]
-        JJT = torch.bmm(J, JT)                                            # [N, 3, 3]
-        JJT_reg = JJT + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
-        J_dls = torch.bmm(JT, torch.linalg.inv(JJT_reg))                  # [N, 7, 3]
-        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)   # [N, 7]
-
-        if self._jac_debug_count < 3:
-            self._jac_debug_count += 1
-            print(f"[DEBUG IK] J[0] norm={J[0].norm():.4f}")
-            print(f"[DEBUG IK] delta_pos[0]={delta_pos[0].detach().cpu().tolist()}")
-            print(f"[DEBUG IK] delta_q[0]={delta_q[0].detach().cpu().tolist()}")
-            print(f"[DEBUG IK] joint_pos[0,:7]={self.robot.data.joint_pos[0,:7].detach().cpu().tolist()}")
-
+        # Joint space control: actions[:, :7] = joint deltas [rad], actions[:, 7] = gripper
+        delta_q = self._actions[:, :7] * 0.05  # max 0.05 rad/step (3 rad/s at 60Hz)
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
         self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
 
-        # Gripper: action[:, 3] ∈ [-1, 1] → [0, 0.04]m
-        gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
+        # Gripper: action[:, 7] ∈ [-1, 1] → [0, 0.04]m
+        gripper_pos = ((self._actions[:, 7:8] + 1.0) / 2.0) * 0.04
         self.robot.set_joint_position_target(
             gripper_pos.expand(-1, 2).clone(), joint_ids=[7, 8]
         )
@@ -261,16 +232,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         dist_ee_box  = (ee_pos - box_pos).norm(dim=1)
 
-        if not hasattr(self, '_ee_track'):
-            self._ee_track = []
-        if len(self._ee_track) < 8:
-            self._ee_track.append(ee_pos[0].detach().cpu().tolist())
-            if len(self._ee_track) == 1:
-                print(f"[TRACK] box[0]={box_pos[0].detach().cpu().tolist()}")
-                print(f"[TRACK] dist_init mean={dist_ee_box.mean():.3f} min={dist_ee_box.min():.3f}")
-            if len(self._ee_track) == 8:
-                for i, p in enumerate(self._ee_track):
-                    print(f"[TRACK t={i}] ee={[round(v,3) for v in p]}")
         dist_ee_goal = (ee_pos - self._goal_pos_w).norm(dim=1)
 
         # 파지 판정
