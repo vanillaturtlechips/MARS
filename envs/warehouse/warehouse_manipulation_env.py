@@ -44,11 +44,14 @@ except ImportError:
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
 # 목표 선반 위치 4곳 (world frame, 로봇 베이스 기준)
+# box spawn: x=[0.45,0.55], y=[-0.15,0.15] (정면)
+# goals:     y=±0.32-0.35 (측면) → 측방 운반 필수, trivial place 없음
+# min box-goal dist: box(0.55,0.15)↔goal(0.50,0.32) = 0.177m > 0.12m ✓
 PLACE_GOALS = [
-    (0.4,  0.2, 0.53),
-    (0.4, -0.2, 0.53),
-    (0.5,  0.1, 0.53),
-    (0.5, -0.1, 0.53),
+    (0.48,  0.35, 0.53),
+    (0.48, -0.35, 0.53),
+    (0.50,  0.32, 0.53),
+    (0.50, -0.32, 0.53),
 ]
 
 TEACHER_OBS_DIM = 30   # box_rel(3)+quat(4)+mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)
@@ -81,10 +84,11 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # EE(x≈0.31) ~ box(x≥0.50) 최소거리 0.197m > 0.15m → trivial success 없음
-    # box spawn: [0.50, 0.65] (이전 [0.60,0.75]는 98% max reach → IK degenerate)
-    grasp_dist_threshold: float = 0.40   # ee ~ box 거리 [m] (0.30→0.40: 초기거리 확실히 포함)
-    place_dist_threshold: float = 0.12   # ee ~ goal 거리 [m]
+    # Franka max reach @z=0.53: x_max=0.671m → box x≤0.55 (89% reach, IK 안정)
+    # EE x≈0.307 ~ box x=0.45: dist=0.155m < threshold → 일부 즉시 grasp (OK, transport 학습)
+    # EE x≈0.307 ~ box x=0.55,y=0.15: dist=0.292m > threshold → approach 학습 필요
+    grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
+    place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
     student_mode: bool = False    # True면 Student 관측 반환
 
@@ -331,8 +335,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # 박스 위치 랜덤화 — 절대 좌표로 설정 (default_root_state.x=0.5 누적 버그 방지)
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.50, 0.65, (n,), device=self.device)
-        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.2, 0.2, (n,), device=self.device)
+        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
+        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
         box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.53  # 테이블 위 (상면 0.5m + 박스 반경 0.03m)
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
