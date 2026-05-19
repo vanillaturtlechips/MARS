@@ -74,7 +74,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_grasp:     float = 10.0    # 파지 성공
     rew_transport: float =  5.0    # potential-based delta 스케일 (time_penalty의 5배 이상)
     rew_place:     float = 20.0    # 거치 성공
-    rew_drop:      float = -10.0   # 낙하 패널티
+    rew_drop:      float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
     rew_time:      float = -0.1    # 스텝 패널티 → timeout(-90) vs place(+20) 차이 120점으로 확대
 
     # 박스 Domain Randomization
@@ -134,7 +134,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 size=(0.06, 0.06, 0.06),
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
                 mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
-                collision_props=sim_utils.CollisionPropertiesCfg(),
+                collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
                 visual_material=sim_utils.PreviewSurfaceCfg(
                     diffuse_color=(0.9, 0.6, 0.1), metallic=0.0
                 ),
@@ -310,8 +310,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         placed  = self._grasped & (dist_ee_goal < self.cfg.place_dist_threshold)
         dropped = self._grasped & (box_pos[:, 2] < 0.45)
 
-        # grasped_done 제거: 파지 후 호버링 exploit 차단, place까지 풀 태스크 학습
-        terminated = placed | dropped
+        # dropped는 termination 조건에서 제외 — placed만 종료
+        # (dropped penalty로 policy가 박스 회피 전략을 학습하는 것 방지)
+        terminated = placed
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
         return terminated, timed_out
 
