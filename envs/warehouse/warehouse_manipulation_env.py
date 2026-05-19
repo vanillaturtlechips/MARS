@@ -73,10 +73,14 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:  float =  3.0    # 낮춤: grasp 회피 로컬옵티멈 방지
-    rew_grasp:     float = 30.0    # 올림: 단발 보너스로 grasp 강제 유인
-    rew_transport: float = 10.0    # 올림: transport > approach 보장
-    rew_place:     float = 20.0    # 거치 성공
+    # 설계 원칙: V(place) > V(grasp_hover) > V(approach_hover)
+    # V(approach_hover) ≈ 0.5 * 0.9 * 899 - 0.02 * 899 = 387
+    # V(grasp_hover)    ≈ 387/3*100 + 30 + 1.0 * 0.84 * 799 = 727
+    # V(place_at_200)   ≈ 45 + 30 + 1.0 * 0.92 * 100 + 800 - 4 = 963
+    rew_approach:  float =  0.5    # 최소화: approach hover 가치 억제
+    rew_grasp:     float = 30.0    # 단발 grasp 유인 (유지)
+    rew_transport: float =  1.0    # 10x 축소: hover 가치 억제 (10→1)
+    rew_place:     float = 800.0   # 40x 확대: place가 hover보다 명확히 우위 (20→800)
     rew_drop:      float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
     rew_time:      float = -0.02   # 스텝 패널티 축소 (탐색 장려)
 
