@@ -257,6 +257,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos   = self.box.data.root_pos_w
 
         dist_ee_box  = (ee_pos - box_pos).norm(dim=1)
+
+        if not hasattr(self, '_pos_debug_done'):
+            self._pos_debug_done = True
+            print(f"[DEBUG POS] ee_pos[0]={ee_pos[0].detach().cpu().tolist()}")
+            print(f"[DEBUG POS] box_pos[0]={box_pos[0].detach().cpu().tolist()}")
+            print(f"[DEBUG POS] dist mean={dist_ee_box.mean():.3f} min={dist_ee_box.min():.3f} max={dist_ee_box.max():.3f}")
         dist_ee_goal = (ee_pos - self._goal_pos_w).norm(dim=1)
 
         # 파지 판정
