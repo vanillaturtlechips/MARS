@@ -73,9 +73,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:  float =  5.0    # exp(-dist*3): 1m에서도 0.25 유지
-    rew_grasp:     float = 10.0    # 파지 성공
-    rew_transport: float =  5.0    # potential-based delta 스케일
+    rew_approach:  float =  3.0    # 낮춤: grasp 회피 로컬옵티멈 방지
+    rew_grasp:     float = 30.0    # 올림: 단발 보너스로 grasp 강제 유인
+    rew_transport: float = 10.0    # 올림: transport > approach 보장
     rew_place:     float = 20.0    # 거치 성공
     rew_drop:      float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
     rew_time:      float = -0.02   # 스텝 패널티 축소 (탐색 장려)
