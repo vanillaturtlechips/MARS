@@ -70,7 +70,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:  float =  2.0    # exp(-dist*5) 스케일 → trajectory 간 분산 확보
+    rew_approach:  float =  3.0    # exp(-dist*10): 0.5m이상에서 time_penalty보다 낮아 강제 접근
     rew_grasp:     float = 10.0    # 파지 성공
     rew_transport: float =  5.0    # potential-based delta 스케일 (time_penalty의 5배 이상)
     rew_place:     float = 20.0    # 거치 성공
@@ -242,8 +242,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # delta 기반은 랜덤 정책에서 기댓값=0 → bootstrap 불가
         not_grasped = (~self._grasped).float()
 
-        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box  * 5.0) * not_grasped
-        transport = self.cfg.rew_transport * torch.exp(-dist_ee_goal * 3.0) * self._grasped.float()
+        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box  * 10.0) * not_grasped
+        transport = self.cfg.rew_transport * torch.exp(-dist_ee_goal *  5.0) * self._grasped.float()
 
         self._prev_dist_ee_box   = dist_ee_box.detach()
         self._prev_dist_box_goal = dist_ee_goal.detach()
