@@ -81,9 +81,10 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # EE(x≈0.4) ~ box(x≥0.60) 최소거리 0.202m > 0.15m → trivial success 없음
-    grasp_dist_threshold: float = 0.30   # ee ~ box 거리 [m]
-    place_dist_threshold: float = 0.12   # ee ~ goal 거리 [m] (goal 최소거리 0.145m > 0.12m ✓)
+    # EE(x≈0.31) ~ box(x≥0.50) 최소거리 0.197m > 0.15m → trivial success 없음
+    # box spawn: [0.50, 0.65] (이전 [0.60,0.75]는 98% max reach → IK degenerate)
+    grasp_dist_threshold: float = 0.40   # ee ~ box 거리 [m] (0.30→0.40: 초기거리 확실히 포함)
+    place_dist_threshold: float = 0.12   # ee ~ goal 거리 [m]
 
     student_mode: bool = False    # True면 Student 관측 반환
 
@@ -272,8 +273,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         not_grasped = (~self._grasped).float()
 
-        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box   * 1.0) * not_grasped
-        transport = self.cfg.rew_transport * torch.exp(-dist_box_goal * 1.0) * self._grasped.float()
+        approach  = self.cfg.rew_approach  * torch.exp(-dist_ee_box   * 0.5) * not_grasped
+        transport = self.cfg.rew_transport * torch.exp(-dist_box_goal * 0.5) * self._grasped.float()
 
         self._prev_dist_ee_box   = dist_ee_box.detach()
         self._prev_dist_box_goal = dist_box_goal.detach()
@@ -330,7 +331,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # 박스 위치 랜덤화 — 절대 좌표로 설정 (default_root_state.x=0.5 누적 버그 방지)
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.60, 0.75, (n,), device=self.device)
+        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.50, 0.65, (n,), device=self.device)
         box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.2, 0.2, (n,), device=self.device)
         box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.53  # 테이블 위 (상면 0.5m + 박스 반경 0.03m)
         self.box.write_root_state_to_sim(box_state, env_ids_t)
