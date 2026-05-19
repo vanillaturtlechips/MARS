@@ -82,7 +82,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
     # EE(x≈0.4) ~ box(x≥0.60) 최소거리 0.202m > 0.15m → trivial success 없음
-    grasp_dist_threshold: float = 0.20   # ee ~ box 거리 [m]
+    grasp_dist_threshold: float = 0.35   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # ee ~ goal 거리 [m] (goal 최소거리 0.145m > 0.12m ✓)
 
     student_mode: bool = False    # True면 Student 관측 반환
