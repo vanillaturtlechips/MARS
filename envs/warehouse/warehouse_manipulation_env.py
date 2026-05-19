@@ -82,7 +82,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
     # EE(x≈0.4) ~ box(x≥0.60) 최소거리 0.202m > 0.15m → trivial success 없음
-    grasp_dist_threshold: float = 0.15   # ee ~ box 거리 [m]
+    grasp_dist_threshold: float = 0.20   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # ee ~ goal 거리 [m] (goal 최소거리 0.145m > 0.12m ✓)
 
     student_mode: bool = False    # True면 Student 관측 반환
@@ -102,6 +102,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
         n = self.num_envs
         d = self.device
+
+        body_names = list(self.robot.data.body_names)
+        self._ee_body_idx = body_names.index("panda_hand")
+        print(f"[DEBUG] body_names ({len(body_names)}): {body_names}")
+        print(f"[DEBUG] panda_hand idx: {self._ee_body_idx}")
 
         self._goal_pos_w  = torch.zeros(n, 3, device=d)
         self._box_mass    = torch.ones(n, device=d)
@@ -173,7 +178,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # Translational Jacobian for panda_hand (body 8), arm joints (DOF 0-6)
         # jac shape: [N, num_bodies, 6, num_dofs] — rows 0:3 = translational
         jac = self.robot.root_physx_view.get_jacobians()
-        J = jac[:, 8, :3, :7]   # [N, 3, 7]
+        J = jac[:, self._ee_body_idx, :3, :7]   # [N, 3, 7]
 
         # Damped Least Squares IK: Δq = J^T (J J^T + λI)^{-1} Δx
         lam = 0.05
@@ -343,6 +348,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
     # ------------------------------------------------------------------
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
         """End-effector 위치와 방향 반환."""
-        ee_pos  = self.robot.data.body_pos_w[:, -3]    # panda_hand 링크
-        ee_quat = self.robot.data.body_quat_w[:, -3]
+        ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]
+        ee_quat = self.robot.data.body_quat_w[:, self._ee_body_idx]
         return ee_pos, ee_quat
