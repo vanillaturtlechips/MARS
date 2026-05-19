@@ -104,9 +104,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
         d = self.device
 
         body_names = list(self.robot.data.body_names)
-        self._ee_body_idx = body_names.index("panda_hand")
+        self._ee_body_idx = body_names.index("panda_hand")  # body_pos_w 용 (base 포함)
+        # get_jacobians()는 base body(index 0)를 제외하므로 offset -1
+        self._jac_body_idx = self._ee_body_idx - 1
         print(f"[DEBUG] body_names ({len(body_names)}): {body_names}")
-        print(f"[DEBUG] panda_hand idx: {self._ee_body_idx}")
+        print(f"[DEBUG] panda_hand → body_pos_w idx={self._ee_body_idx}, jacobian idx={self._jac_body_idx}")
 
         self._goal_pos_w  = torch.zeros(n, 3, device=d)
         self._box_mass    = torch.ones(n, device=d)
@@ -178,7 +180,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # Translational Jacobian for panda_hand (body 8), arm joints (DOF 0-6)
         # jac shape: [N, num_bodies, 6, num_dofs] — rows 0:3 = translational
         jac = self.robot.root_physx_view.get_jacobians()
-        J = jac[:, self._ee_body_idx, :3, :7]   # [N, 3, 7]
+        if not hasattr(self, '_jac_shape_logged'):
+            self._jac_shape_logged = True
+            print(f"[DEBUG] jac.shape={jac.shape}  (num_bodies_in_jac={jac.shape[1]}, body_names={len(list(self.robot.data.body_names))})")
+        J = jac[:, self._jac_body_idx, :3, :7]   # [N, 3, 7]  (get_jacobians: base 제외)
 
         # Damped Least Squares IK: Δq = J^T (J J^T + λI)^{-1} Δx
         lam = 0.05
