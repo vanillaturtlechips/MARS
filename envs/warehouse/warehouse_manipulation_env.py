@@ -184,12 +184,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)   # [N, 7]
 
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
-        self.robot.set_joint_position_target(joint_target, joint_indices=list(range(7)))
+        self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
 
         # Gripper: action[:, 3] ∈ [-1, 1] → [0, 0.04]m
         gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
         self.robot.set_joint_position_target(
-            gripper_pos.expand(-1, 2).clone(), joint_indices=[7, 8]
+            gripper_pos.expand(-1, 2).clone(), joint_ids=[7, 8]
         )
 
         # Proximity grasp freeze
