@@ -53,28 +53,101 @@
 - S3 95% → 1% 붕괴 — 좁은 통로에서 역효과
 - model_9999.pt(2.5m)가 최종 확정
 
-### Phase 2 코드 (⚠️ 재훈련 필요)
+### Phase 2 (⚠️ 훈련 진행 중 — 2026-05-19 세션)
+
 - `envs/warehouse/warehouse_manipulation_env.py` — Franka Panda Pick & Place
-  - Teacher 관측 33차원 (특권 정보), Student 관측 25차원 (실제 센서)
-  - 박스 크기/질량 DR 적용
 - `training/single_robot/train_manipulation.py` — Teacher PPO
 - `training/single_robot/eval_manipulation.py` — place_success_rate 평가 스크립트
 
-**Phase 2 훈련 결과 (model_2999.pt) — 무효**
-- 3000 iter 완료, 256 envs, RunPod A6000
-- eval 결과: place 100%, avg_len 2.0 → **trivial success 버그**
+---
 
-**Trivial Success 버그 원인 (2가지)**
-1. **Env 설계 버그**: EE ready pose ≈ (0.4, 0, 0.5)m가 box 스폰 범위(x∈[0.3,0.6]) 및 PLACE_GOALS 4개 모두의 grasp/place threshold 이내
-   - `grasp_dist_threshold=0.25m` → EE가 reset 시점에 이미 grasp 성공
-   - `place_dist_threshold=0.35m` → 4개 goal 모두 EE 시작점에서 0.35m 이내
-2. **Obs 정규화 누락**: 훈련 시 `empirical_normalization=True`, eval 시 normalization stats 미포함 → actor 입력 스케일 불일치 → near-zero actions
+#### 이번 세션 버그 수정 이력 (2026-05-19)
 
-**Trivial Success 버그 수정 완료 (2026-05-19)**
-- `grasp_dist_threshold: 0.25 → 0.06m` ✅
-- `place_dist_threshold: 0.35 → 0.08m` ✅
-- 박스 스폰 범위: x∈[0.3,0.6] → x∈[0.55,0.75] (EE 시작점에서 멀리) ✅
-- `empirical_normalization=False` ✅
+| # | 커밋 | 문제 | 원인 | 수정 |
+|---|------|------|------|------|
+| 1 | trivial success (이전 세션) | place 100% 즉시 성공 | EE 시작점≈grasp zone | box 스폰 x∈[0.60,0.75], threshold 축소 |
+| 2 | `476af16` | IK가 EE를 거의 안 움직임 (0.002m/step) | Franka stiffness=80 → 명령 12%만 추종 | stiffness=400, damping=40 |
+| 3 | `24f3e5a` → `b9b518d` | joint space 제어 시도 후 실패 | entropy=11.41(최대), reward=-89로 고착 | Cartesian IK로 revert |
+| 4 | `92d9ed2` → revert | delta(PBRS) reward 폭발 | EE 방황 시 누적 음수 (-532), VF loss=30000 | exp(-dist) 방식으로 복원 |
+| 5 | `6e464f9` | 원거리에서 학습 신호 소실 | decay=3 → exp(-3m)≈0.05 (gradient 거의 0) | decay=1.0으로 완화 |
+| 6 | **`542f41d`** | **모든 훈련 실패 근본 원인** | **box에 `disable_gravity=False`** → 리셋마다 바닥으로 추락 | **`disable_gravity=True`** (collision도 disable) |
+| 7 | `7ff6388` | iter 1534에서도 grasp 미발생 | EE-box 평균거리 0.36m > threshold 0.20m | `grasp_dist_threshold: 0.20→0.30m` |
+
+**Box gravity 버그 상세**:
+- `collision_enabled=False` 상태에서 gravity만 켜져 있으면 → 매 에피소드 리셋 후 박스가 테이블 통과해 즉시 추락
+- 이전 모든 훈련(model_2999.pt 포함)이 이 버그로 무효화
+- 수정 후 즉시 reward 70 → 2026 (보상 신호 정상화 확인)
+
+---
+
+#### 현재 확정 환경 설정 (최종)
+
+| 파라미터 | 값 | 비고 |
+|---------|-----|------|
+| action_space | 4 | [dx, dy, dz, gripper] Cartesian delta |
+| max step | 3cm/step | DLS IK λ=0.01 |
+| stiffness | 400 N·m/rad | (기본 80에서 상향) |
+| damping | 40 | |
+| box 스폰 | x∈[0.60,0.75] | EE 시작점(x≈0.4)에서 최소 0.2m 이격 |
+| `grasp_dist_threshold` | 0.30m | EE-박스 거리 |
+| `place_dist_threshold` | 0.12m | 박스-goal 거리 |
+| `disable_gravity` | True | **필수 — 없으면 박스 추락** |
+| `collision_enabled` | False | proximity grasp 방식 |
+| `rew_approach` | 5.0 × exp(-dist×1.0) | |
+| `rew_transport` | 5.0 × exp(-dist×1.0) | grasped 시에만 |
+| `rew_grasp` | 10.0 | 파지 성공 순간 |
+| `rew_place` | 20.0 | 거치 성공 |
+| `rew_time` | -0.02/step | |
+| `empirical_normalization` | False | |
+| PLACE_GOALS | 4개 (0.4~0.5, ±0.1~0.2) | 테이블 위 목표 선반 |
+| Teacher obs | 30-dim | box_rel+quat+mass+gripper+goal_rel+jpos+jvel |
+
+---
+
+#### 현재 훈련 상태 (2026-05-19 세션 종료 시점)
+
+- **Run**: gravity 버그 수정 + grasp_dist=0.30m 반영 후 **재시작** (from scratch)
+- **명령**: `python training/single_robot/train_manipulation.py --num_envs 5096 --max_iter 3000 --headless`
+- **iter ~210 기준 지표**:
+  - Mean reward: ~2020 (approach exp 보상만 쌓이는 중)
+  - Episode length: 899 (아직 grasp 미발생 — 정상, 초반 탐색 단계)
+  - Entropy: ~5.07 (탐색 중, 이전 좋은 run과 동일 궤도)
+  - Action noise std: 0.87
+- **확인 포인트**: iter 400~500에서 episode_length < 899 → grasp 발생 신호
+
+---
+
+#### 다음 세션 재시작 절차
+
+```bash
+# RunPod 접속 후
+cd /workspace/MARS && git pull
+
+# 훈련 재개 (체크포인트 있으면 --resume_ckpt 추가)
+python training/single_robot/train_manipulation.py \
+  --num_envs 5096 --max_iter 3000 --headless
+
+# TensorBoard
+tensorboard --logdir logs/warehouse_manipulation_teacher --port 6006
+
+# 평가 (훈련 완료 후)
+python training/single_robot/eval_manipulation.py \
+  --ckpt logs/warehouse_manipulation_teacher/model_XXXX.pt
+```
+
+**체크 지표 우선순위**:
+1. `episode_length` 감소 → grasp 발생 확인 (가장 중요)
+2. `rew_grasp` 상승 → 파지 학습 진행
+3. `rew_transport` 상승 → 운반 학습 진행
+4. 최종 `place_success_rate > 90%` → Teacher 완료
+
+---
+
+#### 이후 단계 (Phase 2 Teacher 완료 후)
+
+1. **eval**: `python training/single_robot/eval_manipulation.py --ckpt logs/.../model_2999.pt`
+2. **Student 훈련**: `--student --teacher_ckpt logs/.../model_2999.pt`
+3. **Teacher-Student 증류**: 가중치 필터링 (입력층 30→25dim 제외, 나머지 공유)
 
 ### Jetson 완료
 - PyTorch 2.8.0 + CUDA 설치 (cuSPARSELt 0.7.0, cuDSS 0.7.1.4)
@@ -165,4 +238,4 @@ RunPod: A6000, /workspace/isaac_venv
 
 ---
 
-*최종 업데이트: 2026-05-18 — Phase 2 trivial success 버그 발견, 다음 세션 재훈련 예정*
+*최종 업데이트: 2026-05-19 — Phase 2 box gravity 버그(근본 원인) 수정 완료, grasp_dist=0.30m, 재훈련 중 (iter ~210)*
