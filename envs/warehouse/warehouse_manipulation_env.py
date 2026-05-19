@@ -123,6 +123,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._prev_dist_ee_box   = torch.full((n,), 999.0, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
+        self._camera_noise_std   = torch.full((n,), 0.03, device=d)  # 에피소드당 카메라 노이즈 레벨
         # grasp 시 EE→박스 offset (박스가 EE를 따라 이동하도록)
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
 
@@ -225,10 +226,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         gripper_w  = (joint_pos[:, 7:8] + joint_pos[:, 8:9])  # 그리퍼 폭
 
         if self.cfg.student_mode:
-            # Student: box 위치는 카메라 감지 시뮬레이션 (σ=0.03m 노이즈)
+            # Student: box 위치는 카메라 감지 시뮬레이션 (Domain Randomization)
+            # 노이즈 레벨은 에피소드 시작 시 [1cm, 6cm] 균일 샘플 — per-step 샘플 금지
+            # (per-step이면 3cm 이동 vs 최대 6cm 노이즈 → SNR<1 → gradient 파괴)
             # 실제 배포 시 RGB-D 카메라 출력으로 대체
             box_pos = self.box.data.root_pos_w             # (N, 3)
-            noise   = torch.randn_like(box_pos) * 0.03
+            noise   = torch.randn_like(box_pos) * self._camera_noise_std.unsqueeze(1)
             box_rel_noisy = (box_pos - ee_pos) + noise
             obs = torch.cat([
                 ee_pos,                          # (N, 3)
@@ -370,6 +373,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._prev_dist_box_goal[env_ids_t] = 999.0
         self._frozen_box_state[env_ids_t]   = 0.0
         self._grasp_ee_offset[env_ids_t]    = 0.0
+        # 카메라 노이즈 DR: 에피소드마다 [1cm, 6cm] 균일 샘플
+        self._camera_noise_std[env_ids_t] = (
+            torch.rand(n, device=self.device) * 0.05 + 0.01
+        )
 
     # ------------------------------------------------------------------
     # Helper
