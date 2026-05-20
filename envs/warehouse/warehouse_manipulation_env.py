@@ -94,6 +94,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
+    camera_noise_min: float = 0.005      # 카메라 노이즈 DR 하한 [m]
+    camera_noise_max: float = 0.02       # 카메라 노이즈 DR 상한 [m]
+
     student_mode: bool = False    # True면 Student 관측 반환
 
 
@@ -102,6 +105,9 @@ class WarehouseManipulationStudentEnvCfg(WarehouseManipulationEnvCfg):
     """Student 훈련용 — 특권 정보 없음."""
     observation_space = STUDENT_OBS_DIM
     student_mode = True
+    grasp_dist_threshold: float = 0.35   # 카메라 노이즈 보정 (Teacher 0.25 → Student 0.35)
+    camera_noise_min: float = 0.005      # 0.5cm
+    camera_noise_max: float = 0.02       # 2cm (RealSense 수준)
 
 
 class WarehouseManipulationEnv(DirectRLEnv):
@@ -374,9 +380,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._prev_dist_box_goal[env_ids_t] = 999.0
         self._frozen_box_state[env_ids_t]   = 0.0
         self._grasp_ee_offset[env_ids_t]    = 0.0
-        # 카메라 노이즈 DR: 에피소드마다 [1cm, 6cm] 균일 샘플
+        # 카메라 노이즈 DR: 에피소드마다 [noise_min, noise_max] 균일 샘플
+        noise_range = self.cfg.camera_noise_max - self.cfg.camera_noise_min
         self._camera_noise_std[env_ids_t] = (
-            torch.rand(n, device=self.device) * 0.05 + 0.01
+            torch.rand(n, device=self.device) * noise_range + self.cfg.camera_noise_min
         )
 
     # ------------------------------------------------------------------
