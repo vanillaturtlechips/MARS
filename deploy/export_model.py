@@ -43,16 +43,16 @@ PHASE_CONFIGS: dict[str, dict] = {
         "desc": "Phase 1.5 장애물 내비게이션 (7→3)",
     },
     "2t": {
-        "obs_dim": 33,
-        "act_dim": 9,
+        "obs_dim": 30,
+        "act_dim": 4,
         "hidden_dims": [512, 256, 128],
-        "desc": "Phase 2 Teacher (33→9, 특권 정보)",
+        "desc": "Phase 2 Teacher/Student (30→4, Cartesian delta)",
     },
     "2s": {
-        "obs_dim": 25,
-        "act_dim": 9,
+        "obs_dim": 30,
+        "act_dim": 4,
         "hidden_dims": [512, 256, 128],
-        "desc": "Phase 2 Student (25→9, 센서 관측)",
+        "desc": "Phase 2 Student (30→4, Teacher=Student 전략)",
     },
     "3": {
         "obs_dim": 9,    # OBS_PER_ROBOT = 7 + (N_ROBOTS-1) = 9

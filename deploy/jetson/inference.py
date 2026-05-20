@@ -1,7 +1,11 @@
 """Jetson 추론 엔진 — TorchScript actor 로드 후 관측 → 행동 변환.
 
-단독 실행 시 더미 관측으로 10회 추론해 latency 측정.
+단독 실행 시 더미 관측으로 latency 측정.
 ros2_bridge.py 에서 import 해 사용.
+
+Phase 1.5 (nav):        obs=7,  act=3
+Phase 2   (manip):      obs=30, act=4
+Phase 3   (marl actor): obs=17, act=3
 """
 
 from __future__ import annotations
@@ -15,9 +19,6 @@ import torch
 MAX_VX    = 1.5   # m/s
 MAX_VY    = 1.0   # m/s
 MAX_OMEGA = 2.0   # rad/s
-
-OBS_DIM = 7
-ACT_DIM = 3
 
 # 기본 모델 경로 (ros2_bridge 또는 단독 실행 시 오버라이드 가능)
 DEFAULT_MODEL = Path(__file__).parent / "actor_phase15.pt"
@@ -48,7 +49,7 @@ class WarehousePolicy:
         omega_z:     float,
         min_obs_dist: float,
     ) -> tuple[float, float, float]:
-        """관측 7개 → (cmd_vx, cmd_vy, cmd_omega) [m/s, m/s, rad/s]."""
+        """관측 7개 → (cmd_vx, cmd_vy, cmd_omega) [m/s, m/s, rad/s]. Phase 1.5 전용."""
         obs = torch.tensor(
             [[goal_x_body, goal_y_body, goal_dist, vx_body, vy_body, omega_z, min_obs_dist]],
             dtype=torch.float32,
@@ -59,6 +60,11 @@ class WarehousePolicy:
         cmd_omega = float(action[2]) * MAX_OMEGA
         return cmd_vx, cmd_vy, cmd_omega
 
+    @torch.inference_mode()
+    def act_raw(self, obs: torch.Tensor) -> torch.Tensor:
+        """범용 추론 — obs tensor → action tensor (tanh 출력, 스케일 미적용)."""
+        return self._model(obs.unsqueeze(0) if obs.dim() == 1 else obs)
+
 
 # ---------------------------------------------------------------------------
 # 단독 실행: latency 벤치마크
@@ -67,23 +73,27 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Jetson 추론 latency 측정")
-    parser.add_argument("--model", default=str(DEFAULT_MODEL))
-    parser.add_argument("--n", type=int, default=100, help="반복 횟수")
+    parser.add_argument("--model",   default=str(DEFAULT_MODEL))
+    parser.add_argument("--obs_dim", type=int, default=7,   help="관측 차원 (Phase 1.5=7, Phase 2=30, Phase 3=17)")
+    parser.add_argument("--act_dim", type=int, default=3,   help="행동 차원 (nav=3, manip=4)")
+    parser.add_argument("--n",       type=int, default=1000, help="반복 횟수")
     args = parser.parse_args()
 
     policy = WarehousePolicy(args.model)
+    dummy_obs = torch.zeros(args.obs_dim)
 
     # 워밍업
     for _ in range(10):
-        policy.act(1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0)
+        policy.act_raw(dummy_obs)
 
     t0 = time.perf_counter()
     for _ in range(args.n):
-        cmd_vx, cmd_vy, cmd_omega = policy.act(1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0)
+        action = policy.act_raw(dummy_obs)
     elapsed = (time.perf_counter() - t0) * 1000
 
     print(f"\n--- 추론 결과 ---")
-    print(f"cmd_vx={cmd_vx:.3f} m/s  cmd_vy={cmd_vy:.3f} m/s  cmd_omega={cmd_omega:.3f} rad/s")
+    print(f"obs_dim={args.obs_dim}  act_dim={args.act_dim}")
+    print(f"action={action[0].tolist()}")
     print(f"\n--- Latency ({args.n}회 평균) ---")
-    print(f"{elapsed / args.n:.2f} ms/iter  ({1000 * args.n / elapsed:.0f} Hz)")
+    print(f"{elapsed / args.n:.3f} ms/iter  ({1000 * args.n / elapsed:.0f} Hz)")
     print(f"목표: < 10 ms (100 Hz)  — Jetson Orin Nano Super 기준 충분히 달성 가능")

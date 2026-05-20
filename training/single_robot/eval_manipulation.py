@@ -164,7 +164,7 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
 @torch.inference_mode()
 def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, device: str):
     actor, ckpt_obs_dim, ckpt_act_dim = load_actor(ckpt_path, device)
-    env_obs_dim = TEACHER_OBS_DIM  # Teacher == Student == 28-dim
+    env_obs_dim = TEACHER_OBS_DIM  # Teacher == Student == 30-dim
     env_act_dim = 4   # Cartesian [dx,dy,dz,gripper]
 
     obs_mismatch = (ckpt_obs_dim != env_obs_dim or ckpt_act_dim != env_act_dim)
