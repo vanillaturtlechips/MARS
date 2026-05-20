@@ -1,15 +1,7 @@
-"""Phase 2 — Teacher PPO 훈련.
+"""Phase 2 — Pick & Place 훈련 (카메라 DR 직접 훈련).
 
 실행:
-  # Teacher 훈련 (특권 정보 사용)
-  python training/single_robot/train_manipulation.py
-
-  # Student 훈련 (Teacher 체크포인트에서)
-  python training/single_robot/train_manipulation.py \
-    --student --teacher_ckpt logs/warehouse_manipulation_teacher/model_XXX.pt
-
-  # 헤드리스
-  python training/single_robot/train_manipulation.py --headless
+  python training/single_robot/train_manipulation.py --headless --num_envs 2048
 """
 
 from __future__ import annotations
@@ -23,11 +15,12 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Phase 2 Pick & Place 훈련")
 parser.add_argument("--num_envs",      type=int,   default=256)
 parser.add_argument("--max_iter",      type=int,   default=3000)
-parser.add_argument("--student",       action="store_true", default=False)
-parser.add_argument("--teacher_ckpt",  type=str,   default=None)
-parser.add_argument("--resume_ckpt",   type=str,   default=None, help="이어서 훈련할 체크포인트 경로")
+parser.add_argument("--resume_ckpt",   type=str,   default=None)
 parser.add_argument("--lr",            type=float, default=1e-4,  help="PPO learning rate")
 parser.add_argument("--save_interval", type=int,   default=300,   help="체크포인트 저장 주기")
+# 하위 호환 — 무시됨
+parser.add_argument("--student",       action="store_true", default=False)
+parser.add_argument("--teacher_ckpt",  type=str,   default=None)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -67,47 +60,24 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
 
 
 def main():
-    if args.student:
-        env_cfg  = WarehouseManipulationStudentEnvCfg()
-        mode     = "student"
-        log_dir  = "logs/warehouse_manipulation_student"
-        obs_dim  = STUDENT_OBS_DIM
-    else:
-        env_cfg  = WarehouseManipulationEnvCfg()
-        mode     = "teacher"
-        log_dir  = "logs/warehouse_manipulation_teacher"
-        obs_dim  = TEACHER_OBS_DIM
-
+    env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env = WarehouseManipulationEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
 
-    runner_cfg = make_runner_cfg(obs_dim, mode, args.max_iter)
+    runner_cfg = make_runner_cfg(TEACHER_OBS_DIM, "manipulation", args.max_iter)
     cfg_dict = runner_cfg.to_dict()
-    cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
-    cfg_dict["algorithm"]["entropy_coef"] = 0.001  # noise_std 발산 억제
+    cfg_dict["algorithm"]["class_name"] = "PPO"
+    cfg_dict["algorithm"]["entropy_coef"] = 0.001
     cfg_dict["algorithm"]["learning_rate"] = args.lr
-    runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
+    runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_manipulation", device=env.device)
 
     if args.resume_ckpt:
-        print(f"[Resume] 체크포인트에서 이어서 훈련: {args.resume_ckpt}")
+        print(f"[Resume] {args.resume_ckpt}")
         runner.load(args.resume_ckpt)
-        # runner.current_learning_iteration 이 로드된 iter로 설정됨
-        # runner.learn()은 max_iter가 아니라 num_learning_iterations만큼 추가 진행
-    elif args.student and args.teacher_ckpt:
-        print(f"[Student] Teacher 체크포인트에서 hidden layer 초기화: {args.teacher_ckpt}")
-        ckpt       = torch.load(args.teacher_ckpt, map_location=runner.device, weights_only=False)
-        teacher_sd = ckpt["model_state_dict"]
-        student_sd = runner.alg.policy.state_dict()
-        # shape 일치하는 레이어만 로드 (입력 레이어 Teacher 33차원 vs Student 25차원 제외)
-        filtered = {k: v for k, v in teacher_sd.items()
-                    if k in student_sd and v.shape == student_sd[k].shape}
-        runner.alg.policy.load_state_dict(filtered, strict=False)
-        print(f"  로드 완료 — {len(filtered)}/{len(teacher_sd)} keys 매칭")
 
-    print(f"\n[{mode.upper()}] obs_dim={obs_dim}, {args.num_envs} envs, {args.max_iter} iter")
-    print(f"조기 진단: 50 iter 안에 rew_grasp 상승 확인")
-    print(f"없으면 grasp_dist_threshold 또는 박스 초기 위치 범위 조정\n")
+    print(f"\n[MANIPULATION] obs_dim={TEACHER_OBS_DIM}, {args.num_envs} envs, {args.max_iter} iter")
+    print(f"카메라 DR: σ ∈ [{env_cfg.camera_noise_min*100:.1f}cm, {env_cfg.camera_noise_max*100:.1f}cm] per-episode\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()

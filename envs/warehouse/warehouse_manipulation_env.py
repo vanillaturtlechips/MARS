@@ -3,21 +3,12 @@
 로봇: Franka Panda (7-DOF 암 + 평행 그리퍼)
 임무: 박스를 집어 지정 선반 위치에 내려놓기
 
-Teacher 관측 (특권 정보, 훈련 전용):
-  box_pos(3) + box_quat(4) + box_mass(1) +
-  ee_pos(3) + gripper_width(1) + goal_pos(3) +
-  joint_pos(9) + joint_vel(9) = 33차원
+관측 (28-dim, 훈련 + 배포 동일):
+  ee_pos(3) + gripper_width(1) + goal_rel(3) +
+  noisy_box_rel(3) + joint_pos(9) + joint_vel(9)
 
-Student 관측 (배포용, 실제 센서):
-  ee_pos(3) + gripper_width(1) + goal_pos_approx(3) +
-  noisy_box_rel(3, σ=0.03m, 카메라 감지 시뮬레이션) +
-  joint_pos(9) + joint_vel(9) = 28차원
-
-Teacher-Student 증류 순서:
-  1. Teacher PPO 훈련 → place_success_rate > 90%
-  2. Teacher 궤적 수집 (10만 에피소드)
-  3. Student 모방학습
-  4. Student 단독 평가 (unseen 박스 크기)
+box_quat / box_mass 특권 정보 제거 — 카메라 DR로 직접 훈련.
+배포 시 noisy_box_rel → RGB-D 카메라 추정값으로 교체.
 """
 
 from __future__ import annotations
@@ -60,8 +51,9 @@ PLACE_GOALS = [
     (0.50, -0.32, 0.53),
 ]
 
-TEACHER_OBS_DIM = 30   # box_rel(3)+quat(4)+mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)
-STUDENT_OBS_DIM = 28   # ee_pos(3)+gripper(1)+goal_rel(3)+noisy_box_rel(3)+jpos(9)+jvel(9)
+OBS_DIM = 28  # ee_pos(3)+gripper(1)+goal_rel(3)+noisy_box_rel(3)+jpos(9)+jvel(9)
+TEACHER_OBS_DIM = OBS_DIM  # 하위 호환
+STUDENT_OBS_DIM = OBS_DIM  # 하위 호환
 
 
 @configclass
@@ -69,7 +61,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
     episode_length_s = 15.0
     action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
-    observation_space = TEACHER_OBS_DIM   # Teacher 모드 기본
+    observation_space = OBS_DIM
     state_space = 0
 
     sim: SimulationCfg = SimulationCfg(
@@ -106,20 +98,14 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
-    camera_noise_min: float = 0.005      # 카메라 노이즈 DR 하한 [m]
-    camera_noise_max: float = 0.02       # 카메라 노이즈 DR 상한 [m]
-
-    student_mode: bool = False    # True면 Student 관측 반환
+    camera_noise_min: float = 0.005   # 카메라 노이즈 DR 하한 [m] (0.5cm)
+    camera_noise_max: float = 0.02    # 카메라 노이즈 DR 상한 [m] (2cm, RealSense 수준)
 
 
 @configclass
 class WarehouseManipulationStudentEnvCfg(WarehouseManipulationEnvCfg):
-    """Student 훈련용 — 특권 정보 없음."""
-    observation_space = STUDENT_OBS_DIM
-    student_mode = True
-    grasp_dist_threshold: float = 0.25   # Teacher와 동일 (grasp은 진짜 박스 위치 기준)
-    camera_noise_min: float = 0.005      # 0.5cm
-    camera_noise_max: float = 0.02       # 2cm (RealSense 수준)
+    """하위 호환용 alias — Teacher와 동일."""
+    pass
 
 
 class WarehouseManipulationEnv(DirectRLEnv):
@@ -273,41 +259,25 @@ class WarehouseManipulationEnv(DirectRLEnv):
     # Observations
     # ------------------------------------------------------------------
     def _get_observations(self) -> dict:
-        ee_pos, _  = self._get_ee_pose()
-        joint_pos  = self.robot.data.joint_pos        # (N, 9)
-        joint_vel  = self.robot.data.joint_vel        # (N, 9)
-        gripper_w  = (joint_pos[:, 7:8] + joint_pos[:, 8:9])  # 그리퍼 폭
+        ee_pos, _ = self._get_ee_pose()
+        joint_pos = self.robot.data.joint_pos   # (N, 9)
+        joint_vel = self.robot.data.joint_vel   # (N, 9)
+        gripper_w = joint_pos[:, 7:8] + joint_pos[:, 8:9]
 
-        if self.cfg.student_mode:
-            # Student: box 위치는 카메라 감지 시뮬레이션 (Domain Randomization)
-            # 노이즈 레벨은 에피소드 시작 시 [1cm, 6cm] 균일 샘플 — per-step 샘플 금지
-            # (per-step이면 3cm 이동 vs 최대 6cm 노이즈 → SNR<1 → gradient 파괴)
-            # 실제 배포 시 RGB-D 카메라 출력으로 대체
-            box_pos = self.box.data.root_pos_w             # (N, 3)
-            noise   = torch.randn_like(box_pos) * self._camera_noise_std.unsqueeze(1)
-            box_rel_noisy = (box_pos - ee_pos) + noise
-            ee_pos_local = ee_pos - self.robot.data.root_pos_w  # 로봇 베이스 기준 상대좌표
-            obs = torch.cat([
-                ee_pos_local,                    # (N, 3) EE 위치 (베이스 프레임)
-                gripper_w,                       # (N, 1)
-                self._goal_pos_w - ee_pos,       # (N, 3) goal 상대좌표
-                box_rel_noisy,                   # (N, 3) 카메라 기반 box 위치 (노이즈 포함)
-                joint_pos[:, :9],                # (N, 9)
-                joint_vel[:, :9],                # (N, 9)
-            ], dim=1)   # (N, 28)
-        else:
-            # Teacher: 특권 정보 포함 (box/goal 모두 EE 기준 상대좌표)
-            box_pos  = self.box.data.root_pos_w            # (N, 3)
-            box_quat = self.box.data.root_quat_w           # (N, 4)
-            obs = torch.cat([
-                box_pos - ee_pos,                # (N, 3) box 상대좌표 ← 핵심
-                box_quat,                        # (N, 4)
-                self._box_mass.unsqueeze(1),     # (N, 1)
-                gripper_w,                       # (N, 1)
-                self._goal_pos_w - ee_pos,       # (N, 3) goal 상대좌표
-                joint_pos[:, :9],                # (N, 9)
-                joint_vel[:, :9],                # (N, 9)
-            ], dim=1)   # (N, 30)
+        box_pos = self.box.data.root_pos_w      # (N, 3)
+        # per-step 샘플 금지 — per-episode σ 고정으로 SNR 보장
+        noise = torch.randn_like(box_pos) * self._camera_noise_std.unsqueeze(1)
+        box_rel_noisy = (box_pos - ee_pos) + noise
+        ee_pos_local  = ee_pos - self.robot.data.root_pos_w
+
+        obs = torch.cat([
+            ee_pos_local,               # (N, 3)
+            gripper_w,                  # (N, 1)
+            self._goal_pos_w - ee_pos,  # (N, 3)
+            box_rel_noisy,              # (N, 3)
+            joint_pos[:, :9],           # (N, 9)
+            joint_vel[:, :9],           # (N, 9)
+        ], dim=1)   # (N, 28)
 
         return {"policy": obs}
 

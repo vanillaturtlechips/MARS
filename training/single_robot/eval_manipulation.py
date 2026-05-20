@@ -163,7 +163,7 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
 @torch.inference_mode()
 def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, device: str):
     actor, ckpt_obs_dim, ckpt_act_dim = load_actor(ckpt_path, device)
-    env_obs_dim = STUDENT_OBS_DIM if args.student else TEACHER_OBS_DIM
+    env_obs_dim = TEACHER_OBS_DIM  # Teacher == Student == 28-dim
     env_act_dim = 4   # Cartesian [dx,dy,dz,gripper]
 
     obs_mismatch = (ckpt_obs_dim != env_obs_dim or ckpt_act_dim != env_act_dim)
@@ -210,7 +210,7 @@ def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, devic
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    env_cfg = WarehouseManipulationStudentEnvCfg() if args.student else WarehouseManipulationEnvCfg()
+    env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env = EvalManipulationEnv(env_cfg)
 
