@@ -141,13 +141,25 @@ model_0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400, 2700, 2999
 
 ---
 
-### 다음 단계
+### 중간 체크포인트 eval 결과 (부분)
+
+eval 도중 RunPod 종료로 중단. 확인된 결과:
+
+| 체크포인트 | place% | timeout% | avg_len | 비고 |
+|-----------|--------|----------|---------|------|
+| model_300 | 2.3% | 97.7% | 882.4 | 학습 초반, 예상된 낮은 성능 |
+| model_600 | (중단) | — | — | — |
+
+**반성**: model_300은 iter 518 정점 이전 구간이라 처음부터 제외했어야 함.
+
+### 다음 RunPod 재시작 시 eval 명령어
 
 ```bash
-# RunPod: 중간 체크포인트 비교 eval
+git pull origin main
+
+# model_300 제외, 정점 구간 집중
 python training/single_robot/eval_manipulation.py \
-    --ckpt logs/warehouse_manipulation_student/model_300.pt \
-           logs/warehouse_manipulation_student/model_600.pt \
+    --ckpt logs/warehouse_manipulation_student/model_600.pt \
            logs/warehouse_manipulation_student/model_900.pt \
            logs/warehouse_manipulation_student/model_1200.pt \
            logs/warehouse_manipulation_student/model_1500.pt \
@@ -155,8 +167,10 @@ python training/single_robot/eval_manipulation.py \
 ```
 
 - **목표**: place_rate > 80% 체크포인트 확정
-- **실패 시**: 학습률 조정(lr 낮춤) 또는 조기 종료(early stop) 적용 후 4차 훈련
+- **실패 시**: lr 낮추거나 (1e-4 → 3e-5) early stop 적용 후 4차 훈련
 - **통과 시**: Phase 4 (LLM 오케스트레이터) 진입
+
+> **체크포인트 위치**: RunPod `/workspace/MARS/logs/warehouse_manipulation_student/` → GitHub push로 보존 (model_0~2700 포함)
 
 ---
 
@@ -310,4 +324,4 @@ RunPod: A6000, /workspace/isaac_venv
 
 ---
 
-*최종 업데이트: 2026-05-20 — 창고 시각 씬 정비 완료, Student 3차 훈련 완료(39.2%), 중간 체크포인트 best 탐색 중*
+*최종 업데이트: 2026-05-20 — 창고 시각 씬 정비 완료, Student 3차 훈련 완료(model_2999 39.2%), 중간 체크포인트 eval 미완료(RunPod 종료)*
