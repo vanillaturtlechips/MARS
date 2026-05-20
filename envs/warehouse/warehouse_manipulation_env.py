@@ -200,9 +200,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.scene.articulations["robot"] = self.robot
         self.scene.rigid_objects["box"]   = self.box
 
-        # 배경/조명은 GUI 시각화 시에만 활성화 (headless 훈련 속도 보존)
-        if not self.sim.is_playing() and hasattr(self, '_background_loaded'):
-            pass
         if self.cfg.enable_background:
             warehouse_cfg = UsdFileCfg(
                 usd_path=f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd",
