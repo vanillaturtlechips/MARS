@@ -131,6 +131,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # grasp 시 EE→박스 offset (박스가 EE를 따라 이동하도록)
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
 
+        # place_rate 실시간 추적
+        self._stat_placed   = 0
+        self._stat_episodes = 0
+
         # 뷰포트 카메라: 로봇 왼쪽 뒤에서 작업대 방향으로
         # super().__init__ 이후 호출해야 viewport가 준비됨
         # 로봇 뒤 우측에서 통로 방향(+x)으로 — 선반 양쪽, 로봇+테이블 전경
@@ -347,9 +351,15 @@ class WarehouseManipulationEnv(DirectRLEnv):
         dropped = self._grasped & (box_pos[:, 2] < 0.30)
 
         # dropped는 termination 조건에서 제외 — placed만 종료
-        # (dropped penalty로 policy가 박스 회피 전략을 학습하는 것 방지)
         terminated = placed
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
+
+        done = terminated | timed_out
+        self._stat_placed   += placed.sum().item()
+        self._stat_episodes += done.sum().item()
+        if self._stat_episodes > 0:
+            self.extras["log"]["place_rate"] = self._stat_placed / self._stat_episodes * 100
+
         return terminated, timed_out
 
     # ------------------------------------------------------------------
