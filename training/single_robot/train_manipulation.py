@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser(description="Phase 2 Pick & Place 훈련")
 parser.add_argument("--num_envs",      type=int,   default=256)
 parser.add_argument("--max_iter",      type=int,   default=3000)
 parser.add_argument("--resume_ckpt",   type=str,   default=None)
-parser.add_argument("--lr",            type=float, default=1e-4,  help="PPO learning rate")
+parser.add_argument("--lr",            type=float, default=1e-3,  help="PPO learning rate")
 parser.add_argument("--save_interval", type=int,   default=300,   help="체크포인트 저장 주기")
 # 하위 호환 — 무시됨
 parser.add_argument("--student",       action="store_true", default=False)
