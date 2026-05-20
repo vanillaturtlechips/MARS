@@ -25,7 +25,7 @@ parser.add_argument("--num_eval_envs",  type=int, default=16, help="병렬 eval 
 parser.add_argument("--tag",            type=str, default="model")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
-args.headless = True
+args.headless = getattr(args, "headless", False)
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
