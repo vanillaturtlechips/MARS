@@ -21,11 +21,13 @@ from pathlib import Path
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Phase 2 Pick & Place 훈련")
-parser.add_argument("--num_envs",     type=int,   default=256)
-parser.add_argument("--max_iter",     type=int,   default=3000)
-parser.add_argument("--student",      action="store_true", default=False)
-parser.add_argument("--teacher_ckpt", type=str,   default=None)
-parser.add_argument("--resume_ckpt",  type=str,   default=None, help="이어서 훈련할 체크포인트 경로")
+parser.add_argument("--num_envs",      type=int,   default=256)
+parser.add_argument("--max_iter",      type=int,   default=3000)
+parser.add_argument("--student",       action="store_true", default=False)
+parser.add_argument("--teacher_ckpt",  type=str,   default=None)
+parser.add_argument("--resume_ckpt",   type=str,   default=None, help="이어서 훈련할 체크포인트 경로")
+parser.add_argument("--lr",            type=float, default=1e-4,  help="PPO learning rate")
+parser.add_argument("--save_interval", type=int,   default=300,   help="체크포인트 저장 주기")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -50,7 +52,7 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
     runner_cfg = RslRlOnPolicyRunnerCfg()
     runner_cfg.num_steps_per_env  = 32
     runner_cfg.max_iterations     = max_iter
-    runner_cfg.save_interval      = 300
+    runner_cfg.save_interval      = args.save_interval
     runner_cfg.experiment_name    = f"warehouse_manipulation_{mode}"
     runner_cfg.logger             = "tensorboard"
     runner_cfg.empirical_normalization = False
@@ -84,6 +86,7 @@ def main():
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"   # rsl_rl 3.x 필수
     cfg_dict["algorithm"]["entropy_coef"] = 0.001  # noise_std 발산 억제
+    cfg_dict["algorithm"]["learning_rate"] = args.lr
     runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
 
     if args.resume_ckpt:
