@@ -353,7 +353,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._stat_placed   += placed.sum().item()
         self._stat_episodes += done.sum().item()
         if self._stat_episodes > 0:
-            self.extras["log"]["place_rate"] = self._stat_placed / self._stat_episodes * 100
+            self.extras.setdefault("log", {})["place_rate"] = self._stat_placed / self._stat_episodes * 100
 
         return terminated, timed_out
 
