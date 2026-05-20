@@ -3,12 +3,12 @@
 로봇: Franka Panda (7-DOF 암 + 평행 그리퍼)
 임무: 박스를 집어 지정 선반 위치에 내려놓기
 
-관측 (28-dim, 훈련 + 배포 동일):
-  ee_pos(3) + gripper_width(1) + goal_rel(3) +
-  noisy_box_rel(3) + joint_pos(9) + joint_vel(9)
+관측 (30-dim, Teacher 포맷 + 카메라 DR):
+  noisy_box_rel(3) + box_quat(4) + box_mass(1) +
+  gripper(1) + goal_rel(3) + jpos(9) + jvel(9)
 
-box_quat / box_mass 특권 정보 제거 — 카메라 DR로 직접 훈련.
-배포 시 noisy_box_rel → RGB-D 카메라 추정값으로 교체.
+Teacher 수렴 검증 포맷 유지, box_rel에만 카메라 노이즈 DR 적용.
+Jetson 배포 시: noisy_box_rel → RGB-D 추정값, box_quat → 카메라 추정, box_mass → 1.0
 """
 
 from __future__ import annotations
@@ -51,9 +51,9 @@ PLACE_GOALS = [
     (0.50, -0.32, 0.53),
 ]
 
-OBS_DIM = 28  # ee_pos(3)+gripper(1)+goal_rel(3)+noisy_box_rel(3)+jpos(9)+jvel(9)
-TEACHER_OBS_DIM = OBS_DIM  # 하위 호환
-STUDENT_OBS_DIM = OBS_DIM  # 하위 호환
+OBS_DIM = 30  # noisy_box_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)
+TEACHER_OBS_DIM = OBS_DIM
+STUDENT_OBS_DIM = OBS_DIM
 
 
 @configclass
@@ -61,7 +61,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
     episode_length_s = 15.0
     action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
-    observation_space = OBS_DIM
+    observation_space = OBS_DIM  # 30-dim
     state_space = 0
 
     sim: SimulationCfg = SimulationCfg(
@@ -263,20 +263,23 @@ class WarehouseManipulationEnv(DirectRLEnv):
         joint_vel = self.robot.data.joint_vel   # (N, 9)
         gripper_w = joint_pos[:, 7:8] + joint_pos[:, 8:9]
 
-        box_pos = self.box.data.root_pos_w      # (N, 3)
-        # per-step 샘플 금지 — per-episode σ 고정으로 SNR 보장
+        box_pos  = self.box.data.root_pos_w     # (N, 3)
+        box_quat = self.box.data.root_quat_w    # (N, 4)
+
+        # box_rel에만 노이즈 — Teacher 포맷 유지하면서 카메라 DR 적용
+        # per-step 샘플 금지 (SNR 보장)
         noise = torch.randn_like(box_pos) * self._camera_noise_std.unsqueeze(1)
         box_rel_noisy = (box_pos - ee_pos) + noise
-        ee_pos_local  = ee_pos - self.robot.data.root_pos_w
 
         obs = torch.cat([
-            ee_pos_local,               # (N, 3)
-            gripper_w,                  # (N, 1)
-            self._goal_pos_w - ee_pos,  # (N, 3)
-            box_rel_noisy,              # (N, 3)
-            joint_pos[:, :9],           # (N, 9)
-            joint_vel[:, :9],           # (N, 9)
-        ], dim=1)   # (N, 28)
+            box_rel_noisy,                   # (N, 3) ← Teacher의 box_rel 자리, 노이즈 추가
+            box_quat,                        # (N, 4)
+            self._box_mass.unsqueeze(1),     # (N, 1)
+            gripper_w,                       # (N, 1)
+            self._goal_pos_w - ee_pos,       # (N, 3)
+            joint_pos[:, :9],                # (N, 9)
+            joint_vel[:, :9],                # (N, 9)
+        ], dim=1)   # (N, 30)
 
         return {"policy": obs}
 
