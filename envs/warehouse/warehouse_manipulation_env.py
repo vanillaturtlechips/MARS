@@ -105,7 +105,7 @@ class WarehouseManipulationStudentEnvCfg(WarehouseManipulationEnvCfg):
     """Student 훈련용 — 특권 정보 없음."""
     observation_space = STUDENT_OBS_DIM
     student_mode = True
-    grasp_dist_threshold: float = 0.35   # 카메라 노이즈 보정 (Teacher 0.25 → Student 0.35)
+    grasp_dist_threshold: float = 0.25   # Teacher와 동일 (grasp은 진짜 박스 위치 기준)
     camera_noise_min: float = 0.005      # 0.5cm
     camera_noise_max: float = 0.02       # 2cm (RealSense 수준)
 
