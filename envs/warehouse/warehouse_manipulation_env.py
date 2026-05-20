@@ -33,7 +33,10 @@ from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObj
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
-from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
+from isaaclab.sim.spawners.from_files import GroundPlaneCfg, UsdFileCfg, spawn_ground_plane
+
+# NVIDIA 클라우드 에셋 베이스 URL (Isaac Sim 5.1)
+_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 from isaaclab.utils import configclass
 from isaaclab.utils.math import sample_uniform, subtract_frame_transforms
 
@@ -146,34 +149,35 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 actuator.damping   = 40.0
         self.robot = Articulation(franka_cfg)
 
-        # 박스 (크기는 reset에서 DR 적용)
+        # 박스 → YCB 003_cracker_box (로컬 설치본, 사실적인 골판지 박스)
+        _YCB_CRACKER = (
+            "/home/user/ai-engineering-from-scratch/.venv-isaac/lib/python3.11/site-packages"
+            "/isaacsim/extscache/omni.replicator.core-1.12.27+107.3.3.lx64.r.cp311"
+            "/omni/replicator/core/tests/data/objects/003_cracker_box_physics.usd"
+        )
         box_cfg = RigidObjectCfg(
             prim_path="/World/envs/env_.*/Box",
-            spawn=sim_utils.CuboidCfg(
-                size=(0.06, 0.06, 0.06),
+            spawn=UsdFileCfg(
+                usd_path=_YCB_CRACKER,
+                scale=(0.7, 0.7, 0.7),  # 원본 ~7×5×20cm → ~5×3.5×14cm
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=True),
                 mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
                 collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
-                visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=(0.9, 0.6, 0.1), metallic=0.0
-                ),
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5, 0.0, 0.03)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5, 0.0, 0.50)),
         )
         self.box = RigidObject(box_cfg)
 
         spawn_ground_plane("/World/ground", GroundPlaneCfg())
 
-        # 테이블: 상면 z=0.5m, 박스와 EE가 같은 높이에서 상호작용
-        table_cfg = sim_utils.CuboidCfg(
-            size=(0.8, 0.8, 0.5),
+        # 테이블 → PackingTable USD (산업용 작업대)
+        # 테이블 상면이 z=0.5m에 오도록: packing_table 높이 ≈1.0m → z_center = -0.5+0.5=0.0
+        table_spawn = UsdFileCfg(
+            usd_path=f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-            mass_props=sim_utils.MassPropertiesCfg(mass=500.0),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.5, 0.35, 0.15), metallic=0.0),
         )
-        table_cfg.func("/World/envs/env_0/Table", table_cfg,
-                       translation=(0.45, 0.0, 0.25), orientation=(1.0, 0.0, 0.0, 0.0))
+        table_spawn.func("/World/envs/env_0/Table", table_spawn,
+                         translation=(0.45, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
@@ -181,8 +185,20 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.scene.articulations["robot"] = self.robot
         self.scene.rigid_objects["box"]   = self.box
 
-        light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.8, 0.8, 0.8))
-        light_cfg.func("/World/Light", light_cfg)
+        # 창고 배경 (글로벌 — 복제 없음, 시각 전용)
+        warehouse_spawn = UsdFileCfg(
+            usd_path=f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd",
+        )
+        warehouse_spawn.func("/World/Warehouse", warehouse_spawn,
+                             translation=(4.0, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
+
+        # 산업용 천장 조명
+        dome_light = sim_utils.DomeLightCfg(intensity=1500.0, color=(0.9, 0.95, 1.0))
+        dome_light.func("/World/DomeLight", dome_light)
+        sphere_light = sim_utils.SphereLightCfg(intensity=8000.0, color=(1.0, 0.97, 0.9), radius=0.1)
+        sphere_light.func("/World/Light1", sphere_light, translation=(0.5, 0.0, 2.5))
+        sphere_light.func("/World/Light2", sphere_light, translation=(0.5, 1.5, 2.5))
+        sphere_light.func("/World/Light3", sphere_light, translation=(0.5, -1.5, 2.5))
 
     # ------------------------------------------------------------------
     # Actions: 관절 위치 목표 전달
@@ -361,7 +377,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state = self.box.data.default_root_state[env_ids_t].clone()
         box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
         box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
-        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.53  # 테이블 위 (상면 0.5m + 박스 반경 0.03m)
+        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50  # 테이블 상면 (YCB origin = 바닥 중앙)
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         # 박스 질량 DR
