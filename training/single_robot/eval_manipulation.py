@@ -25,7 +25,8 @@ parser = argparse.ArgumentParser(description="Phase 2 Teacher/Student eval")
 parser.add_argument("--ckpt",        type=str, nargs="+", required=True)
 parser.add_argument("--num_episodes", type=int, default=100)
 parser.add_argument("--num_envs",    type=int, default=64)
-parser.add_argument("--student",     action="store_true", default=False)
+parser.add_argument("--background",  action="store_true", default=False, help="창고 배경 로드 (GUI 시각화용)")
+parser.add_argument("--student",     action="store_true", default=False)  # 하위 호환
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 if args.livestream == 0 and not getattr(args, "headless", False):
@@ -212,6 +213,7 @@ def main():
 
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
+    env_cfg.enable_background = args.background
     env = EvalManipulationEnv(env_cfg)
 
     print(f"\n[Eval] 에피소드: {args.num_episodes}, 병렬 env: {args.num_envs}\n")
