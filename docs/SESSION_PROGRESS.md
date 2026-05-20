@@ -1,4 +1,4 @@
-# 세션 진행 현황 (2026-05-19)
+# 세션 진행 현황 (최종 업데이트: 2026-05-20)
 
 ## 완료된 작업
 
@@ -75,6 +75,88 @@
 | `rew_place` | 800.0 | 대형 터미널 보상 |
 | `rew_time` | -0.02/step | |
 | Teacher obs | 30-dim | box_rel+quat+mass+gripper+goal_rel+jpos+jvel |
+
+---
+
+---
+
+## 2026-05-20 세션
+
+### Phase 2 시각 씬 정비 ✅
+
+**문제**: Isaac Sim GUI에서 선반이 로봇을 덮치는 "엉망진창" 상태
+
+**원인 및 수정**:
+
+| 문제 | 원인 | 수정 |
+|------|------|------|
+| 선반이 로봇 위치(x=0)에 겹침 | 커스텀 ShelfB0/B1 prim 배치 오류 | 선반 제거 후 warehouse USD 전체 사용 |
+| 로봇이 창고 바닥 타일 밖에 위치 | warehouse USD 좌표계 미확인 | SM_floor47 prim Properties 확인 (X=2.9519, Y=3.0, Z=0.0) → offset `(-2.95, -3.0, 0.0)` |
+| 카메라 `lookat` 파라미터 오류 | IsaacLab API는 `target` 사용 | `set_camera_view(eye, target)` |
+| `_setup_scene`에서 카메라 설정 무효 | 뷰포트가 아직 준비 안 됨 | `__init__`에서 `super().__init__()` 호출 후 설정 |
+
+**최종 씬 설정**:
+```python
+# warehouse_multiple_shelves.usd — SM_floor47 타일이 로봇 원점(0,0,0)에 정렬
+warehouse_cfg.func("/World/Warehouse", ..., translation=(-2.95, -3.0, 0.0))
+
+# 조명
+DomeLightCfg(intensity=1000)  # 전체 배경
+SphereLightCfg(intensity=15000) × 3  # 작업대 상단
+
+# 카메라 (로봇 + 테이블 + 창고 한 프레임)
+set_camera_view(eye=[-1.5, -2.0, 1.5], target=[1.5, 0.5, 0.3])
+```
+
+---
+
+### Phase 2 Student 3차 훈련 결과 (RunPod A5000, 3000 iter)
+
+| iter | reward | ep_len | 비고 |
+|------|--------|--------|------|
+| ~518 | **691** | **520** | 훈련 중 최고점 |
+| 2999 | 578 | 581 | 수렴 후 소폭 하락 |
+
+**eval (model_2999.pt, 500에피소드 × 128 env)**:
+```
+place 39.2%  drop 0.0%  timeout 60.8%  avg_len 669.4
+```
+→ 이전 54%보다 하락. 3000 iter 학습이 오히려 최고점을 지나쳐 성능 저하.
+
+**저장된 체크포인트**:
+```
+model_0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400, 2700, 2999
+```
+최고 성능 구간(iter ~518)은 model_300~model_600 사이 → 중간 체크포인트 eval 예정.
+
+---
+
+### 버그 수정
+
+| 커밋 | 문제 | 수정 |
+|------|------|------|
+| `a625976` | eval GUI 강제 headless | `--headless` 명시 시만 headless 처리 |
+| `a625976` | Teacher 체크포인트 obs/act 불일치 (33dim/9act) | 체크포인트에서 아키텍처 자동 감지 (`load_actor`), obs 불일치 시 zero-action fallback |
+| `2cd14eb` | YCB 박스 USD 로컬 하드코딩 경로 → RunPod에서 FileNotFoundError | `importlib + glob`으로 isaacsim extscache 동적 탐색 |
+
+---
+
+### 다음 단계
+
+```bash
+# RunPod: 중간 체크포인트 비교 eval
+python training/single_robot/eval_manipulation.py \
+    --ckpt logs/warehouse_manipulation_student/model_300.pt \
+           logs/warehouse_manipulation_student/model_600.pt \
+           logs/warehouse_manipulation_student/model_900.pt \
+           logs/warehouse_manipulation_student/model_1200.pt \
+           logs/warehouse_manipulation_student/model_1500.pt \
+    --student --num_envs 128 --num_episodes 200 --headless
+```
+
+- **목표**: place_rate > 80% 체크포인트 확정
+- **실패 시**: 학습률 조정(lr 낮춤) 또는 조기 종료(early stop) 적용 후 4차 훈련
+- **통과 시**: Phase 4 (LLM 오케스트레이터) 진입
 
 ---
 
@@ -179,7 +261,7 @@ bash /workspace/MARS/deploy/runpod/setup.sh
 |------|------|
 | Phase 3 Low-level Controller (model_9999.pt) | ✅ 완료 |
 | Phase 2 Teacher (model_2999.pt, 100% place) | ✅ 완료 |
-| Phase 2 Student (28dim obs, 재훈련 중) | 🔄 진행 중 |
+| Phase 2 Student (28dim obs, 3차 훈련 완료 — best ckpt 탐색 중) | 🔄 진행 중 |
 | Phase 4 에이전트 레이어 (LLM 오케스트레이터) | 다음 단계 |
 | Phase 5 통합 테스트 | Phase 4 완료 후 |
 
@@ -228,4 +310,4 @@ RunPod: A6000, /workspace/isaac_venv
 
 ---
 
-*최종 업데이트: 2026-05-19 — Phase 2 Teacher 100% place 달성(avg_len=183), Student 3차 훈련 시작 (28dim obs + per-episode 카메라 DR)*
+*최종 업데이트: 2026-05-20 — 창고 시각 씬 정비 완료, Student 3차 훈련 완료(39.2%), 중간 체크포인트 best 탐색 중*
