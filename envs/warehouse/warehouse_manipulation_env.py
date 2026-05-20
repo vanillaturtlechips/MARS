@@ -98,8 +98,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
-    camera_noise_min: float = 0.005   # 카메라 노이즈 DR 하한 [m] (0.5cm)
-    camera_noise_max: float = 0.02    # 카메라 노이즈 DR 상한 [m] (2cm, RealSense 수준)
+    camera_noise_min: float = 0.0   # 카메라 노이즈 DR 하한 [m] — 0: 노이즈 없음 (Teacher 동등)
+    camera_noise_max: float = 0.0   # 카메라 노이즈 DR 상한 [m] — grasp 반경 25cm >> 카메라 오차 2cm
     enable_background: bool = False   # True: 창고 배경+조명 로드 (GUI 시각화용, 훈련 시 False)
 
 
