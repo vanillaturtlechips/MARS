@@ -176,7 +176,8 @@ uv pip install \
     warp-lang \
     tensorboard \
     "onnx>=1.14.0" \
-    "onnxruntime>=1.16.0"
+    "onnxruntime>=1.16.0" \
+    setuptools
 
 # rsl-rl-lib이 gymnasium을 다운그레이드하므로 isaaclab 요구 버전으로 복구
 uv pip install "gymnasium==1.2.1"

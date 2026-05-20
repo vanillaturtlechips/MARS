@@ -233,8 +233,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
             box_pos = self.box.data.root_pos_w             # (N, 3)
             noise   = torch.randn_like(box_pos) * self._camera_noise_std.unsqueeze(1)
             box_rel_noisy = (box_pos - ee_pos) + noise
+            ee_pos_local = ee_pos - self.robot.data.root_pos_w  # 로봇 베이스 기준 상대좌표
             obs = torch.cat([
-                ee_pos,                          # (N, 3)
+                ee_pos_local,                    # (N, 3) EE 위치 (베이스 프레임)
                 gripper_w,                       # (N, 1)
                 self._goal_pos_w - ee_pos,       # (N, 3) goal 상대좌표
                 box_rel_noisy,                   # (N, 3) 카메라 기반 box 위치 (노이즈 포함)
