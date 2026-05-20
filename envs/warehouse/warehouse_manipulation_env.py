@@ -72,7 +72,13 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     observation_space = TEACHER_OBS_DIM   # Teacher 모드 기본
     state_space = 0
 
-    sim: SimulationCfg = SimulationCfg(dt=1.0 / 120.0, render_interval=decimation)
+    sim: SimulationCfg = SimulationCfg(
+        dt=1.0 / 120.0,
+        render_interval=decimation,
+        physx=sim_utils.PhysxCfg(
+            gpu_collision_stack_size=2 ** 27,  # 128MB — 대규모 env 충돌 스택 오버플로 방지
+        ),
+    )
 
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=256, env_spacing=3.0, replicate_physics=True
