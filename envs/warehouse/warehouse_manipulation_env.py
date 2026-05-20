@@ -22,7 +22,10 @@ Teacher-Student 증류 순서:
 
 from __future__ import annotations
 
+import glob
+import importlib.util
 import math
+import os
 from collections.abc import Sequence
 
 import torch
@@ -157,12 +160,20 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 actuator.damping   = 40.0
         self.robot = Articulation(franka_cfg)
 
-        # 박스 → YCB 003_cracker_box (로컬 설치본, 사실적인 골판지 박스)
-        _YCB_CRACKER = (
-            "/home/user/ai-engineering-from-scratch/.venv-isaac/lib/python3.11/site-packages"
-            "/isaacsim/extscache/omni.replicator.core-1.12.27+107.3.3.lx64.r.cp311"
-            "/omni/replicator/core/tests/data/objects/003_cracker_box_physics.usd"
-        )
+        # 박스 → YCB 003_cracker_box (isaacsim 패키지 위치에서 동적 탐색)
+        def _find_ycb_cracker() -> str:
+            spec = importlib.util.find_spec("isaacsim")
+            if spec and spec.submodule_search_locations:
+                isaacsim_dir = list(spec.submodule_search_locations)[0]
+                matches = glob.glob(os.path.join(
+                    isaacsim_dir, "extscache", "omni.replicator.core-*",
+                    "omni", "replicator", "core", "tests", "data", "objects",
+                    "003_cracker_box_physics.usd"
+                ))
+                if matches:
+                    return matches[0]
+            raise FileNotFoundError("003_cracker_box_physics.usd not found in isaacsim extscache")
+        _YCB_CRACKER = _find_ycb_cracker()
         box_cfg = RigidObjectCfg(
             prim_path="/World/envs/env_.*/Box",
             spawn=UsdFileCfg(
