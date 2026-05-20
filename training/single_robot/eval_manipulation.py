@@ -21,10 +21,11 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
-parser = argparse.ArgumentParser(description="Phase 2 Teacher eval")
+parser = argparse.ArgumentParser(description="Phase 2 Teacher/Student eval")
 parser.add_argument("--ckpt",        type=str, nargs="+", required=True)
 parser.add_argument("--num_episodes", type=int, default=100)
 parser.add_argument("--num_envs",    type=int, default=64)
+parser.add_argument("--student",     action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 if args.livestream == 0:
@@ -44,7 +45,9 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_manipulation_env import (
     WarehouseManipulationEnv,
     WarehouseManipulationEnvCfg,
+    WarehouseManipulationStudentEnvCfg,
     TEACHER_OBS_DIM,
+    STUDENT_OBS_DIM,
 )
 
 
@@ -117,11 +120,13 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     raw  = ckpt.get("model_state_dict", ckpt)
 
+    obs_dim = STUDENT_OBS_DIM if args.student else TEACHER_OBS_DIM
+
     class ActorMLP(nn.Module):
         def __init__(self):
             super().__init__()
             layers: list[nn.Module] = []
-            in_dim = TEACHER_OBS_DIM
+            in_dim = obs_dim
             for h in [512, 256, 128]:
                 layers += [nn.Linear(in_dim, h), nn.ELU()]
                 in_dim = h
@@ -189,7 +194,7 @@ def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, devic
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    env_cfg = WarehouseManipulationEnvCfg()
+    env_cfg = WarehouseManipulationStudentEnvCfg() if args.student else WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env = EvalManipulationEnv(env_cfg)
 
