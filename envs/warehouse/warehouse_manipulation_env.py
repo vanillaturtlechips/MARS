@@ -136,6 +136,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # grasp 시 EE→박스 offset (박스가 EE를 따라 이동하도록)
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
 
+        # 뷰포트 카메라: 로봇 왼쪽 뒤에서 작업대 방향으로
+        # super().__init__ 이후 호출해야 viewport가 준비됨
+        # 로봇 뒤 우측에서 통로 방향(+x)으로 — 선반 양쪽, 로봇+테이블 전경
+        self.sim.set_camera_view(
+            eye=[-1.5, -2.0, 1.5],
+            target=[1.5, 0.5, 0.3],
+        )
+
     # ------------------------------------------------------------------
     # Scene
     # ------------------------------------------------------------------
@@ -171,7 +179,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         spawn_ground_plane("/World/ground", GroundPlaneCfg())
 
         # 테이블 → PackingTable USD (산업용 작업대)
-        # 테이블 상면이 z=0.5m에 오도록: packing_table 높이 ≈1.0m → z_center = -0.5+0.5=0.0
         table_spawn = UsdFileCfg(
             usd_path=f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -185,20 +192,27 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.scene.articulations["robot"] = self.robot
         self.scene.rigid_objects["box"]   = self.box
 
-        # 창고 배경 (글로벌 — 복제 없음, 시각 전용)
-        warehouse_spawn = UsdFileCfg(
+        # ── 창고 배경: NVIDIA warehouse_multiple_shelves.usd ──────────
+        # 로봇(0,0,0) → 창고 로컬 좌표 (+8, -2, 0)
+        # y=-2 offset → 선반 열 사이 통로 중앙
+        warehouse_cfg = UsdFileCfg(
             usd_path=f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd",
         )
-        warehouse_spawn.func("/World/Warehouse", warehouse_spawn,
-                             translation=(4.0, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
+        # SM_floor47 로컬(2.9519, 3.0, 0) → 로봇 월드(0,0,0) 아래로
+        # offset = (0-2.9519, 0-3.0, 0) = (-2.95, -3.0, 0)
+        warehouse_cfg.func(
+            "/World/Warehouse", warehouse_cfg,
+            translation=(-2.95, -3.0, 0.0),
+            orientation=(1.0, 0.0, 0.0, 0.0),
+        )
 
-        # 산업용 천장 조명
-        dome_light = sim_utils.DomeLightCfg(intensity=1500.0, color=(0.9, 0.95, 1.0))
+        # 작업구역 보조 조명
+        dome_light = sim_utils.DomeLightCfg(intensity=1000.0, color=(0.9, 0.92, 1.0))
         dome_light.func("/World/DomeLight", dome_light)
-        sphere_light = sim_utils.SphereLightCfg(intensity=8000.0, color=(1.0, 0.97, 0.9), radius=0.1)
-        sphere_light.func("/World/Light1", sphere_light, translation=(0.5, 0.0, 2.5))
-        sphere_light.func("/World/Light2", sphere_light, translation=(0.5, 1.5, 2.5))
-        sphere_light.func("/World/Light3", sphere_light, translation=(0.5, -1.5, 2.5))
+        sl = sim_utils.SphereLightCfg(intensity=15000.0, color=(1.0, 0.97, 0.88), radius=0.08)
+        sl.func("/World/SL0", sl, translation=(0.5,  0.0, 2.5))
+        sl.func("/World/SL1", sl, translation=(0.5,  1.5, 2.5))
+        sl.func("/World/SL2", sl, translation=(0.5, -1.5, 2.5))
 
     # ------------------------------------------------------------------
     # Actions: 관절 위치 목표 전달

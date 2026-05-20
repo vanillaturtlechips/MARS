@@ -28,8 +28,8 @@ parser.add_argument("--num_envs",    type=int, default=64)
 parser.add_argument("--student",     action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
-if args.livestream == 0:
-    args.headless = True
+if args.livestream == 0 and not getattr(args, "headless", False):
+    args.headless = False   # GUI 기본값 유지 — --headless 명시 시만 헤드리스
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
@@ -120,23 +120,7 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     raw  = ckpt.get("model_state_dict", ckpt)
 
-    obs_dim = STUDENT_OBS_DIM if args.student else TEACHER_OBS_DIM
-
-    class ActorMLP(nn.Module):
-        def __init__(self):
-            super().__init__()
-            layers: list[nn.Module] = []
-            in_dim = obs_dim
-            for h in [512, 256, 128]:
-                layers += [nn.Linear(in_dim, h), nn.ELU()]
-                in_dim = h
-            layers.append(nn.Linear(in_dim, 4))
-            self.net = nn.Sequential(*layers)
-
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return self.net(x).tanh()
-
-    actor = ActorMLP().to(device)
+    # 체크포인트 키 정규화 (actor.net.* → net.*)
     sd = {}
     for k, v in raw.items():
         if k.startswith("actor.net."):
@@ -144,11 +128,33 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
         elif k.startswith("actor."):
             sd["net." + k[len("actor."):]] = v
 
-    missing, unexpected = actor.load_state_dict(sd, strict=False)
-    if missing:
-        print(f"  [경고] 누락 가중치: {missing[:3]}")
+    # 체크포인트에서 실제 네트워크 차원 자동 감지
+    w_keys = sorted([k for k in sd if k.endswith(".weight")],
+                    key=lambda k: int(k.split(".")[1]))
+    in_dim     = sd[w_keys[0]].shape[1]   # 첫 레이어 입력 차원
+    out_dim    = sd[w_keys[-1]].shape[0]  # 마지막 레이어 출력 차원
+    hidden     = [sd[k].shape[0] for k in w_keys[:-1]]  # 히든 레이어 크기
+
+    print(f"  [아키텍처] obs={in_dim}, hidden={hidden}, act={out_dim}")
+
+    class ActorMLP(nn.Module):
+        def __init__(self):
+            super().__init__()
+            layers: list[nn.Module] = []
+            d = in_dim
+            for h in hidden:
+                layers += [nn.Linear(d, h), nn.ELU()]
+                d = h
+            layers.append(nn.Linear(d, out_dim))
+            self.net = nn.Sequential(*layers)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.net(x).tanh()
+
+    actor = ActorMLP().to(device)
+    missing, _ = actor.load_state_dict(sd, strict=True)
     actor.eval()
-    return actor
+    return actor, in_dim, out_dim
 
 
 # ------------------------------------------------------------------
@@ -156,7 +162,14 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
 # ------------------------------------------------------------------
 @torch.inference_mode()
 def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, device: str):
-    actor = load_actor(ckpt_path, device)
+    actor, ckpt_obs_dim, ckpt_act_dim = load_actor(ckpt_path, device)
+    env_obs_dim = STUDENT_OBS_DIM if args.student else TEACHER_OBS_DIM
+    env_act_dim = 4   # Cartesian [dx,dy,dz,gripper]
+
+    obs_mismatch = (ckpt_obs_dim != env_obs_dim or ckpt_act_dim != env_act_dim)
+    if obs_mismatch:
+        print(f"  [경고] 체크포인트({ckpt_obs_dim}→{ckpt_act_dim})와 "
+              f"현재 env({env_obs_dim}→{env_act_dim}) 불일치 → 랜덤 policy 사용")
 
     obs_dict, _ = env.reset()
     env.reset_stats()          # 초기 reset 이후에 카운터 초기화
@@ -167,7 +180,10 @@ def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, devic
         time.sleep(40)
 
     while env.total_episodes < num_episodes:
-        actions = actor(obs)
+        if obs_mismatch:
+            actions = torch.zeros(obs.shape[0], env_act_dim, device=device)
+        else:
+            actions = actor(obs)
         # DirectRLEnv.step: tensor 입력, (obs, rew, terminated, truncated, extras) 반환
         obs_dict, _, terminated, truncated, _ = env.step(actions)
         obs = obs_dict["policy"]
