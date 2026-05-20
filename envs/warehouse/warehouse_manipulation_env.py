@@ -100,6 +100,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
 
     camera_noise_min: float = 0.005   # 카메라 노이즈 DR 하한 [m] (0.5cm)
     camera_noise_max: float = 0.02    # 카메라 노이즈 DR 상한 [m] (2cm, RealSense 수준)
+    enable_background: bool = False   # True: 창고 배경+조명 로드 (GUI 시각화용, 훈련 시 False)
 
 
 @configclass
@@ -199,27 +200,24 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.scene.articulations["robot"] = self.robot
         self.scene.rigid_objects["box"]   = self.box
 
-        # ── 창고 배경: NVIDIA warehouse_multiple_shelves.usd ──────────
-        # 로봇(0,0,0) → 창고 로컬 좌표 (+8, -2, 0)
-        # y=-2 offset → 선반 열 사이 통로 중앙
-        warehouse_cfg = UsdFileCfg(
-            usd_path=f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd",
-        )
-        # SM_floor47 로컬(2.9519, 3.0, 0) → 로봇 월드(0,0,0) 아래로
-        # offset = (0-2.9519, 0-3.0, 0) = (-2.95, -3.0, 0)
-        warehouse_cfg.func(
-            "/World/Warehouse", warehouse_cfg,
-            translation=(-2.95, -3.0, 0.0),
-            orientation=(1.0, 0.0, 0.0, 0.0),
-        )
-
-        # 작업구역 보조 조명
-        dome_light = sim_utils.DomeLightCfg(intensity=1000.0, color=(0.9, 0.92, 1.0))
-        dome_light.func("/World/DomeLight", dome_light)
-        sl = sim_utils.SphereLightCfg(intensity=15000.0, color=(1.0, 0.97, 0.88), radius=0.08)
-        sl.func("/World/SL0", sl, translation=(0.5,  0.0, 2.5))
-        sl.func("/World/SL1", sl, translation=(0.5,  1.5, 2.5))
-        sl.func("/World/SL2", sl, translation=(0.5, -1.5, 2.5))
+        # 배경/조명은 GUI 시각화 시에만 활성화 (headless 훈련 속도 보존)
+        if not self.sim.is_playing() and hasattr(self, '_background_loaded'):
+            pass
+        if self.cfg.enable_background:
+            warehouse_cfg = UsdFileCfg(
+                usd_path=f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd",
+            )
+            warehouse_cfg.func(
+                "/World/Warehouse", warehouse_cfg,
+                translation=(-2.95, -3.0, 0.0),
+                orientation=(1.0, 0.0, 0.0, 0.0),
+            )
+            dome_light = sim_utils.DomeLightCfg(intensity=1000.0, color=(0.9, 0.92, 1.0))
+            dome_light.func("/World/DomeLight", dome_light)
+            sl = sim_utils.SphereLightCfg(intensity=15000.0, color=(1.0, 0.97, 0.88), radius=0.08)
+            sl.func("/World/SL0", sl, translation=(0.5,  0.0, 2.5))
+            sl.func("/World/SL1", sl, translation=(0.5,  1.5, 2.5))
+            sl.func("/World/SL2", sl, translation=(0.5, -1.5, 2.5))
 
     # ------------------------------------------------------------------
     # Actions: 관절 위치 목표 전달
