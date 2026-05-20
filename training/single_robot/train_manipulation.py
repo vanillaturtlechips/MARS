@@ -56,7 +56,7 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
     runner_cfg.empirical_normalization = False
 
     runner_cfg.policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0 if mode == "teacher" else 0.5,
+        init_noise_std=1.0,
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",
