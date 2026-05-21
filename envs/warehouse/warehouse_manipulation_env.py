@@ -57,7 +57,7 @@ STUDENT_OBS_DIM = OBS_DIM
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
-    episode_length_s = 15.0
+    episode_length_s = 10.0     # 15s→10s: 리턴 분산 감소, VF 수렴 가속
     action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
     observation_space = OBS_DIM  # 30-dim
     state_space = 0
@@ -75,19 +75,20 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    # Approach   : Exp(-dist_ee_box*5)   — EE가 박스 가까울수록 연속 유인
-    # Transport  : Progress Delta        — 박스가 goal 방향으로 이동한 만큼
-    # Goal Prox  : Exp(-dist_box_goal*5) — grasped 상태에서 goal 근처에 있으면 지속 보상
-    #   Progress Delta만 쓰면 정지 시 reward=0 → VF가 포지션 가치 학습 불가
-    #   Goal Prox 추가로 VF 수렴, advantage 신호 복원
-    #   V(hover@0.12m) ≈ 550/ep, V(place@step50) ≈ 826 → hover exploit 없음 ✓
-    rew_approach:  float =  1.0    # Exp(-dist_ee_box*5) 배율
-    rew_grasp:     float = 30.0    # 단발 grasp 유인
-    rew_transport: float = 10.0    # delta * 100 배율 → 3cm 이동 시 +30/step
-    rew_goal_prox: float =  1.0    # Exp(-dist_box_goal*5) 배율 — grasped 시 goal 근처 지속 보상
-    rew_place:     float = 800.0   # 대형 터미널 보상 유지
-    rew_drop:      float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
-    rew_time:      float = -0.02   # 스텝 패널티 축소 (탐색 장려)
+    # Approach      : Exp(-dist_ee_box*5)    — EE가 박스 가까울수록 연속 유인 (비파지 시)
+    # Transport     : Progress Delta         — 박스가 goal 방향으로 이동한 만큼 (이동 인센티브)
+    # Goal Prox     : Exp(-dist_box_goal*5)  — grasped 시 goal 근처일수록 지속 보상 (포지션 가치)
+    # Transport Dst : -dist_box_goal         — grasped 시 goal까지 거리 패널티 (dense gradient)
+    #   Goal Prox + Transport Dst 조합: VF가 "얼마나 가까운가" 를 직접 학습
+    #   hover exploit 검증: V(hover@0.12m,600step) = 329-36-12 = 281 << V(place@50) = 823 ✓
+    rew_approach:      float =  1.0    # Exp(-dist_ee_box*5) 배율
+    rew_grasp:         float = 30.0    # 단발 grasp 유인
+    rew_transport:     float = 10.0    # delta * 100 배율 → 3cm 이동 시 +30/step
+    rew_goal_prox:     float =  1.0    # Exp(-dist_box_goal*5) 배율 — grasped 시 goal 근처 지속
+    rew_transport_dst: float =  0.5    # dist_box_goal 패널티 — grasped 시 goal 거리 dense 페널티
+    rew_place:         float = 800.0   # 대형 터미널 보상 유지
+    rew_drop:          float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
+    rew_time:          float = -0.02   # 스텝 패널티
 
     # 박스 Domain Randomization
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
@@ -319,10 +320,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
         delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * 100.0 * self._grasped.float()
 
-        # Goal Proximity: grasped 상태에서 박스가 goal 근처일수록 지속 보상
-        # Progress Delta만으로는 정지 시 0 → VF가 포지션 가치 구분 불가
-        # 이 항이 value landscape에 기울기를 만들어 surrogate_loss 복원
-        goal_prox = self.cfg.rew_goal_prox * torch.exp(-dist_box_goal * 5.0) * self._grasped.float()
+        grasped_f = self._grasped.float()
+
+        # Goal Proximity: Exp(-dist*5) — grasped 시 goal 가까울수록 지속 보상
+        goal_prox = self.cfg.rew_goal_prox * torch.exp(-dist_box_goal * 5.0) * grasped_f
+
+        # Transport Dense: -dist_box_goal — grasped 시 거리 직접 패널티 (dense gradient)
+        # Goal Prox는 먼 곳에서 gradient가 약해지므로, dense 패널티로 보완
+        transport_dst = -self.cfg.rew_transport_dst * dist_box_goal * grasped_f
 
         self._prev_dist_box_goal = dist_box_goal.detach()
 
@@ -330,10 +335,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
             approach
             + transport
             + goal_prox
+            + transport_dst
             + self.cfg.rew_grasp * newly_grasped.float()
             + self.cfg.rew_place * placed.float()
             + self.cfg.rew_drop  * dropped.float()
-            + self.cfg.rew_time  # 매 스텝 고정 패널티
+            + self.cfg.rew_time
         )
         return rew
 
