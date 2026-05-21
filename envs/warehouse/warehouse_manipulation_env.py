@@ -89,7 +89,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     #   hover exploit 검증: V(hover@0.12m,600step) = -252 + 208 - 12 = -56 << V(place) = 800 ✓
     rew_approach:      float =  1.0    # Exp(-dist_ee_box*5) 배율
     rew_grasp:         float = 30.0    # 단발 grasp 유인
-    rew_transport:     float = 50.0    # potential shaping 배율 — 3cm 이동 시 +1.5/step
+    rew_transport:     float = 200.0   # potential shaping 배율 — 3cm 이동 시 +6.0/step (VF noise 대비 4× 강화)
     rew_goal_prox:     float =  5.0    # Exp(-dist_box_goal*3) 배율 — scale 증가로 먼 거리서도 gradient
     rew_transport_dst: float =  0.0    # 제거 — 매 스텝 -0.8 쌓여 VF baseline을 -96으로 고정, advantage 학습 방해
     rew_place:         float = 800.0   # 대형 터미널 보상 유지
