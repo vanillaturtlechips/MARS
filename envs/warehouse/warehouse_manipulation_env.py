@@ -85,22 +85,17 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    # 보상 가중치
-    # Approach      : Exp(-dist_ee_box*5)    — EE가 박스 가까울수록 연속 유인 (비파지 시)
-    # Transport     : Potential-based shaping — 박스가 goal 방향으로 이동한 만큼
-    #                 shaping = rew_transport * (prev_dist - cur_dist)
-    #                 3cm 직선 이동 시 +1.5/step (scale=50), random walk → E=0
-    # Goal Prox     : Exp(-dist_box_goal*3)  — grasped 시 goal 근처일수록 지속 보상
-    #                 scale=3 (5에서 축소): dist=0.35m에서 exp(-1.05)=0.35 (학습 가능 범위)
-    # Transport Dst : -dist_box_goal * 3.0   — grasped 시 거리 패널티, VF 수렴 가속
-    #                 scale×6: dist=0.35m → -1.05/step (기존 -0.175의 6배, gradient 강화)
-    #   hover exploit 검증: V(hover@0.12m,600step) = -252 + 208 - 12 = -56 << V(place) = 800 ✓
-    rew_approach:      float =  0.0    # 비활성화 — grasp_dist_threshold=999으로 즉시 grasp, approach 불필요
-    rew_grasp:         float =  0.0    # 비활성화 — 즉시 grasp이므로 grasp reward 불필요
-    rew_transport:     float = 200.0   # potential shaping 배율 — 3cm 이동 시 +6.0/step
-    rew_goal_prox:     float =  5.0    # Exp(-dist*1) — 먼 거리서도 gradient
-    rew_transport_dst: float =  2.0    # -2*dist_box_goal/step — dense gradient, 0.28m에서 -0.56/step
-    rew_place:         float = 800.0   # 대형 터미널 보상
+    # 보상: 순수 거리 패널티 + 소형 터미널 보너스
+    # goal_prox(Exp)와 potential shaping 제거 이유:
+    #   EE home(dist=0.296m)이 goal_prox 최고점 → "집에 머물기" 로컬 옵티멈 형성
+    #   → 정책이 home에서 dense reward 수집(3.11/step*239=743)에 안주, transport 안 함
+    # 해결: -dist*scale만 남겨 home도 패널티, goal(dist=0)만 최적 상태로 만들기
+    rew_approach:      float =  0.0    # 비활성화
+    rew_grasp:         float =  0.0    # 비활성화
+    rew_transport:     float =  0.0    # potential shaping 제거 — home 로컬 옵티멈 방지
+    rew_goal_prox:     float =  0.0    # Exp 항 제거 — home 근방 reward 핫스팟 제거
+    rew_transport_dst: float = 15.0    # -15*dist/step — 순수 거리 패널티 (홈 0.296m → -4.44/step)
+    rew_place:         float = 100.0   # 소형 터미널 보너스 (분산 최소화, 800→100)
     rew_drop:          float =  0.0    # 낙하 패널티 제거
     rew_time:          float = -0.02   # 스텝 패널티
 
