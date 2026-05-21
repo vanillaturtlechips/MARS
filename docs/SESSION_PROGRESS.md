@@ -324,4 +324,59 @@ RunPod: A6000, /workspace/isaac_venv
 
 ---
 
-*최종 업데이트: 2026-05-20 — 창고 시각 씬 정비 완료, Student 3차 훈련 완료(model_2999 39.2%), 중간 체크포인트 eval 미완료(RunPod 종료)*
+---
+
+## 2026-05-21 세션
+
+### Phase 2 근본 원인 진단 및 전면 재설계
+
+이전 Teacher(model_2999.pt) 기반 Student 훈련 전략 폐기.
+`dist_box_goal`이 0.78~0.80m에서 250+ iter 고착 → 근본 원인 집중 디버깅.
+
+#### 발견된 버그 및 수정 (상세: `docs/phase2_transport_debug.md`)
+
+| # | 커밋 | 문제 | 수정 |
+|---|------|------|------|
+| 1 | `3f8a4a5` | `transport_rel` 부호 반전 — goal 반대 방향 이동 | `goal - box_carried` (양수 방향) |
+| 2 | `3f8a4a5` | 물리 bounce — EE home z < table z → 박스 폭발 | `grasp_ee_offset[2] = 0.06m` |
+| 3 | `5d9c86f` | home 로컬 옵티멈 — `goal_prox + shaping`으로 home이 최고 reward 지점 | `rew_goal_prox = 0`, `rew_transport = 0` |
+| 4 | `7b50e8f` | surrogate_loss ≈ 0 — IK 효율 2mm/step → 정책 gradient 없음 | alignment reward `cos_sim(action, goal_dir) × 3.0/step` |
+| 5 | (동일) | Joint control entropy trap — noise_std 0.54→0.90 폭발 | Cartesian IK 복귀, entropy_coef 0.001 |
+| 6 | (동일) | `rew_place=800` → VF loss 137,921 | `rew_place=100` |
+| 7 | `7b40faf` | `inference.py` act_dim=8 (joint control 잔재) | act_dim=4 수정 |
+| 8 | `dcd3672` | MARL stationary 패널티 — goal 도달 로봇도 -0.3/step | `not_at_goal` 마스킹 |
+
+#### 현재 상태 (2026-05-21 세션 종료)
+
+- Phase 2 재훈련 대기 중 (RunPod에서 `git pull` 후 시작 필요)
+- **근본 원인 확정**: IK 효율 저하로 인한 `surrogate_loss ≈ 0` deadlock
+- **수정 완료**: alignment reward 추가 (commit 7b50e8f, push 완료)
+
+```bash
+# RunPod 재시작 명령
+git pull
+pkill -f train_manipulation
+nohup python training/single_robot/train_manipulation.py \
+  --num_envs 5096 --max_iter 3000 --lr 1e-3 --headless \
+  > train.log 2>&1 &
+tail -f train.log
+```
+
+**iter 20-30 확인 기준**:
+- `surrogate_loss` > 0.001 → gradient 발생 확인
+- `dist_box_goal` 0.75m 이하로 감소 → transport 학습 시작
+- `place_rate` 상승 → 수렴 중
+
+#### 전체 남은 작업 (업데이트)
+
+| 항목 | 상태 |
+|------|------|
+| Phase 3 Low-level Controller (model_9999.pt) | ✅ 완료 |
+| Phase 2 환경 재설계 + 버그 수정 | ✅ 완료 |
+| Phase 2 훈련 수렴 | 🔄 재훈련 대기 (alignment reward 적용) |
+| Phase 4 에이전트 레이어 (LLM 오케스트레이터) | Phase 2 완료 후 |
+| Phase 5 통합 테스트 | Phase 4 완료 후 |
+
+---
+
+*최종 업데이트: 2026-05-21 — Phase 2 transport 근본 원인(surrogate_loss≈0) 진단 완료, alignment reward 수정 push. 재훈련 대기 중.*
