@@ -94,8 +94,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_grasp:         float =  0.0    # 비활성화
     rew_transport:     float =  0.0    # potential shaping 제거 — home 로컬 옵티멈 방지
     rew_goal_prox:     float =  0.0    # Exp 항 제거 — home 근방 reward 핫스팟 제거
-    rew_transport_dst: float = 15.0    # -15*dist/step — 순수 거리 패널티 (홈 0.296m → -4.44/step)
-    rew_place:         float = 100.0   # 소형 터미널 보너스 (분산 최소화, 800→100)
+    rew_transport_dst: float = 15.0    # -15*dist/step — 순수 거리 패널티
+    rew_align:         float =  3.0    # cos_sim(action, goal_dir)/step — IK 우회, 즉각 gradient
+    rew_place:         float = 100.0   # 소형 터미널 보너스
     rew_drop:          float =  0.0    # 낙하 패널티 제거
     rew_time:          float = -0.02   # 스텝 패널티
 
@@ -362,9 +363,17 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # dist=0.12m → exp(-0.12)=0.89, 5*0.89=4.44/step
         goal_prox = self.cfg.rew_goal_prox * torch.exp(-dist_box_goal * 1.0) * grasped_f
 
-        # Transport Dense: -dist_box_goal — grasped 시 거리 패널티 (dense gradient)
-        # scale 3.0 (기존 0.5의 6배): dist=0.35m → -1.05/step (VF 학습 신호 강화)
         transport_dst = -self.cfg.rew_transport_dst * dist_box_goal * grasped_f
+
+        # Action-Goal 정렬 보상: IK 효율과 무관하게 즉각 gradient 제공
+        # cos_sim(action, goal_dir) = 1 → +3/step, -1 → -3/step
+        # surrogate_loss≈0 문제 해결: PPO가 "좋은 액션"을 즉시 구별 가능
+        goal_dir = (self._goal_pos_w - box_pos_carried).detach()
+        a3 = self._actions[:, :3]
+        cos_sim = (a3 * goal_dir).sum(dim=1) / (
+            a3.norm(dim=1).clamp(min=1e-6) * goal_dir.norm(dim=1).clamp(min=1e-6)
+        )
+        alignment = cos_sim * grasped_f * self.cfg.rew_align
 
         # grasped 상태에서만 prev 업데이트 (비파지 시 오염 방지)
         self._prev_dist_box_goal = torch.where(
@@ -382,6 +391,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             + transport
             + goal_prox
             + transport_dst
+            + alignment
             + self.cfg.rew_grasp * newly_grasped.float()
             + self.cfg.rew_place * placed.float()
             + self.cfg.rew_drop  * dropped.float()
