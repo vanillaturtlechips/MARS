@@ -42,14 +42,14 @@ except ImportError:
     # isaaclab_assets 패키지 경로가 다를 경우 대비
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
-# 목표 위치 — EE home pose (0.307, 0, 0.487) 기준 0.14m
-# place_threshold=0.12m보다 0.02m 위 → 초기 place_rate 30%+ 목표
-# PPO가 학습 시작하면 curriculum으로 goal 거리를 점차 늘릴 것
+# 목표 위치 — EE home pose (0.307, 0, 0.487) 기준 ~0.36m
+# place_threshold=0.12m이므로 실제 transport 이동 필요 (~0.24m 이상)
+# box spawn: x=0.45~0.55, y=±0.15 → goal: x=0.35~0.40, y=±0.35 (다른 방향으로 이동 요구)
 PLACE_GOALS = [
-    (0.38,  0.07, 0.53),   # dist from EE home ≈ 0.142m
-    (0.38, -0.07, 0.53),
-    (0.36,  0.07, 0.53),   # dist from EE home ≈ 0.136m
-    (0.36, -0.07, 0.53),
+    (0.38,  0.35, 0.53),   # dist from EE home ≈ 0.362m
+    (0.38, -0.35, 0.53),
+    (0.35,  0.35, 0.53),   # dist from EE home ≈ 0.358m
+    (0.35, -0.35, 0.53),
 ]
 
 OBS_DIM = 31  # box_or_goal_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)+grasped(1)
@@ -60,7 +60,7 @@ STUDENT_OBS_DIM = OBS_DIM
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
-    episode_length_s = 2.0      # 120steps: 업데이트당 에피소드 5× 증가, VF 수렴 가속
+    episode_length_s = 4.0      # 240steps: transport 이동 시간 확보 (~0.36m @ 3cm/step = 12steps 이상)
     action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
     observation_space = OBS_DIM  # 31-dim
     state_space = 0
