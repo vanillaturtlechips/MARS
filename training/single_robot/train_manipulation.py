@@ -43,7 +43,7 @@ from envs.warehouse.warehouse_manipulation_env import (
 
 def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunnerCfg:
     runner_cfg = RslRlOnPolicyRunnerCfg()
-    runner_cfg.num_steps_per_env  = 32
+    runner_cfg.num_steps_per_env  = 128
     runner_cfg.max_iterations     = max_iter
     runner_cfg.save_interval      = args.save_interval
     runner_cfg.experiment_name    = f"warehouse_manipulation_{mode}"

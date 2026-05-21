@@ -97,7 +97,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     # PackingTable 상면 z≈1.0m, box spawn z=1.0m, goal z=1.03m
     # reach_pose [0,0,0,-π/2,0,π/2,π/4] → EE z≈0.89m, dist_to_box≈0.11~0.19m (<0.25m)
     # → 에피소드 시작 즉시 grasp 발동, 학습은 순수 transport에 집중
-    grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
+    grasp_dist_threshold: float = 0.35   # ee ~ box 거리 [m] — reset 후 max 초기거리 0.286m → 0.35m으로 전 env 즉시 grasp 보장
     place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
     camera_noise_min: float = 0.0   # 카메라 노이즈 DR 하한 [m] — 0: 노이즈 없음 (Teacher 동등)
