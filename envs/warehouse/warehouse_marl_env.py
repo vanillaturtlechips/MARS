@@ -255,10 +255,13 @@ class WarehouseMARLEnv(DirectRLEnv):
                 per_robot[:, i] += col
                 per_robot[:, j] += col
 
-        # per-robot 정지 패널티 — 본인이 안 움직이면 본인만 패널티
+        # per-robot 정지 패널티 — 목표 미도달 시에만 패널티 (이미 도달한 로봇 제외)
+        # 마스킹 없으면: 먼저 도달한 로봇이 다른 로봇 기다리는 동안 -0.3*N step → -87점 가능
         for i, robot in enumerate(self.robots):
             speed = robot.data.root_lin_vel_w[:, :2].norm(dim=1)
-            per_robot[:, i] += (speed < 0.1).float() * self.cfg.rew_stationary
+            dist_i = (robot.data.root_pos_w[:, :2] - self._goal_pos_w[:, i]).norm(dim=1)
+            not_at_goal = (dist_i > self.cfg.goal_radius).float()
+            per_robot[:, i] += (speed < 0.1).float() * not_at_goal * self.cfg.rew_stationary
 
         # wrapper가 per-robot 보상을 각 actor에 분배
         self.extras["per_robot_rewards"] = per_robot  # (N, N_ROBOTS)
