@@ -42,15 +42,14 @@ except ImportError:
     # isaaclab_assets 패키지 경로가 다를 경우 대비
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
-# 목표 위치 — box spawn(x=0.45~0.55) 앞쪽(+x 방향)에 배치
-# approach에서 학습한 +x 이동이 transport에도 그대로 적용 → gradient 충돌 제거
-# EE home(0.307,0,0.487) → goal까지 +x, ±y 이동 (approach 방향과 일치)
-# dist from EE home ≈ 0.39~0.45m, Franka reach 0.855m 이내
+# 목표 위치 — EE home(0.307,0,0.487)에서 ~0.28m (transport only 학습용)
+# grasp_dist_threshold=999 → 에피소드 시작 즉시 grasp → 순수 transport 학습
+# place_threshold=0.12m이므로 이동 필요 거리=0.16m (~6step 최소)
 PLACE_GOALS = [
-    (0.55,  0.30, 0.55),   # dist from EE home ≈ 0.388m
-    (0.55, -0.30, 0.55),
-    (0.58,  0.25, 0.55),   # dist from EE home ≈ 0.392m
-    (0.58, -0.25, 0.55),
+    (0.50,  0.20, 0.55),   # dist from EE home ≈ 0.271m
+    (0.50, -0.20, 0.55),
+    (0.48,  0.22, 0.55),   # dist from EE home ≈ 0.265m
+    (0.48, -0.22, 0.55),
 ]
 
 OBS_DIM = 31  # box_or_goal_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)+grasped(1)
@@ -88,13 +87,13 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     # Transport Dst : -dist_box_goal * 3.0   — grasped 시 거리 패널티, VF 수렴 가속
     #                 scale×6: dist=0.35m → -1.05/step (기존 -0.175의 6배, gradient 강화)
     #   hover exploit 검증: V(hover@0.12m,600step) = -252 + 208 - 12 = -56 << V(place) = 800 ✓
-    rew_approach:      float =  1.0    # Exp(-dist_ee_box*5) 배율
-    rew_grasp:         float = 30.0    # 단발 grasp 유인
-    rew_transport:     float = 200.0   # potential shaping 배율 — 3cm 이동 시 +6.0/step (VF noise 대비 4× 강화)
-    rew_goal_prox:     float =  5.0    # Exp(-dist_box_goal*3) 배율 — scale 증가로 먼 거리서도 gradient
-    rew_transport_dst: float =  0.0    # 제거 — 매 스텝 -0.8 쌓여 VF baseline을 -96으로 고정, advantage 학습 방해
-    rew_place:         float = 800.0   # 대형 터미널 보상 유지
-    rew_drop:          float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
+    rew_approach:      float =  0.0    # 비활성화 — grasp_dist_threshold=999으로 즉시 grasp, approach 불필요
+    rew_grasp:         float =  0.0    # 비활성화 — 즉시 grasp이므로 grasp reward 불필요
+    rew_transport:     float = 200.0   # potential shaping 배율 — 3cm 이동 시 +6.0/step
+    rew_goal_prox:     float =  5.0    # Exp(-dist*1) — 먼 거리서도 gradient
+    rew_transport_dst: float =  2.0    # -2*dist_box_goal/step — dense gradient, 0.28m에서 -0.56/step
+    rew_place:         float = 800.0   # 대형 터미널 보상
+    rew_drop:          float =  0.0    # 낙하 패널티 제거
     rew_time:          float = -0.02   # 스텝 패널티
 
     # 박스 Domain Randomization
@@ -104,7 +103,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     # PackingTable 상면 z≈0.5m, box spawn z=0.5m, goal z=0.53m
     # reach_pose → EE z≈0.487m, dist_to_box≈0.013~0.159m (<0.35m)
     # → 에피소드 시작 즉시 grasp 발동, 학습은 순수 transport에 집중
-    grasp_dist_threshold: float = 0.35   # ee ~ box 거리 [m] — reset 후 max 초기거리 0.159m → 0.35m으로 전 env 즉시 grasp 보장
+    grasp_dist_threshold: float = 999.0  # 즉시 grasp — transport only 학습, approach 제거
     place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
     camera_noise_min: float = 0.0   # 카메라 노이즈 DR 하한 [m] — 0: 노이즈 없음 (Teacher 동등)
