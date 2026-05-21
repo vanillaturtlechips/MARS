@@ -42,14 +42,15 @@ except ImportError:
     # isaaclab_assets 패키지 경로가 다를 경우 대비
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
-# 목표 위치 — EE home pose (0.307, 0, 0.487) 기준 ~0.36m
-# place_threshold=0.12m이므로 실제 transport 이동 필요 (~0.24m 이상)
-# box spawn: x=0.45~0.55, y=±0.15 → goal: x=0.35~0.40, y=±0.35 (다른 방향으로 이동 요구)
+# 목표 위치 — box spawn(x=0.45~0.55) 앞쪽(+x 방향)에 배치
+# approach에서 학습한 +x 이동이 transport에도 그대로 적용 → gradient 충돌 제거
+# EE home(0.307,0,0.487) → goal까지 +x, ±y 이동 (approach 방향과 일치)
+# dist from EE home ≈ 0.39~0.45m, Franka reach 0.855m 이내
 PLACE_GOALS = [
-    (0.38,  0.35, 0.53),   # dist from EE home ≈ 0.362m
-    (0.38, -0.35, 0.53),
-    (0.35,  0.35, 0.53),   # dist from EE home ≈ 0.358m
-    (0.35, -0.35, 0.53),
+    (0.55,  0.30, 0.55),   # dist from EE home ≈ 0.388m
+    (0.55, -0.30, 0.55),
+    (0.58,  0.25, 0.55),   # dist from EE home ≈ 0.392m
+    (0.58, -0.25, 0.55),
 ]
 
 OBS_DIM = 31  # box_or_goal_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)+grasped(1)
