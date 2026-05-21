@@ -55,10 +55,10 @@ PHASE_CONFIGS: dict[str, dict] = {
         "desc": "Phase 2 Student (30→4, Teacher=Student 전략)",
     },
     "3": {
-        "obs_dim": 9,    # OBS_PER_ROBOT = 7 + (N_ROBOTS-1) = 9
+        "obs_dim": 17,   # OBS_PER_ROBOT = 7 + 5*(N_ROBOTS-1) = 17 (N_ROBOTS=3)
         "act_dim": 3,
         "hidden_dims": [256, 128, 64],
-        "desc": "Phase 3 MARL per-robot actor (9→3)",
+        "desc": "Phase 3 MARL per-robot actor (17→3)",
     },
 }
 
@@ -86,7 +86,8 @@ class ActorMLP(nn.Module):
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _load_actor_weights(ckpt_path: Path, model: ActorMLP) -> None:
+def _load_actor_weights(ckpt_path: Path, model: ActorMLP) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    """actor 가중치 로드. normalizer (mean, var) 도 반환 (없으면 None)."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     raw: dict = ckpt.get("model_state_dict", ckpt)
 
@@ -94,7 +95,7 @@ def _load_actor_weights(ckpt_path: Path, model: ActorMLP) -> None:
     for k, v in raw.items():
         if k.startswith("actor.net."):
             actor_sd[k[len("actor."):]] = v
-        elif k.startswith("actor."):
+        elif k.startswith("actor.") and not k.startswith("actor_"):
             actor_sd["net." + k[len("actor."):]] = v
 
     if not actor_sd:
@@ -113,6 +114,10 @@ def _load_actor_weights(ckpt_path: Path, model: ActorMLP) -> None:
     if unexpected:
         print(f"[경고] 예상 외 키: {unexpected}")
 
+    norm_mean = raw.get("actor_normalizer.running_mean", None)
+    norm_var  = raw.get("actor_normalizer.running_var",  None)
+    return norm_mean, norm_var
+
 
 def export(phase: str, checkpoint: str, output: str) -> None:
     cfg = PHASE_CONFIGS[phase]
@@ -124,12 +129,32 @@ def export(phase: str, checkpoint: str, output: str) -> None:
     print(f"  체크포인트: {ckpt_path}")
     print(f"  출력: {out_path}")
 
-    model = ActorMLP(cfg["obs_dim"], cfg["act_dim"], cfg["hidden_dims"])
-    _load_actor_weights(ckpt_path, model)
-    model.eval()
+    base_model = ActorMLP(cfg["obs_dim"], cfg["act_dim"], cfg["hidden_dims"])
+    norm_mean, norm_var = _load_actor_weights(ckpt_path, base_model)
+    base_model.eval()
+
+    # empirical_normalization=True 로 훈련된 경우 normalizer를 모델에 bake-in
+    if norm_mean is not None and norm_var is not None:
+        _mean = norm_mean
+        _std  = (norm_var + 1e-8).sqrt()
+
+        class NormalizedActorMLP(nn.Module):
+            def __init__(self, base: ActorMLP):
+                super().__init__()
+                self.base = base
+                self.register_buffer("mean", _mean)
+                self.register_buffer("std",  _std)
+
+            def forward(self, obs: torch.Tensor) -> torch.Tensor:
+                return self.base((obs - self.mean) / self.std)
+
+        export_model: nn.Module = NormalizedActorMLP(base_model)
+        print(f"  [normalizer] bake-in 완료 (mean shape: {_mean.shape})")
+    else:
+        export_model = base_model
 
     dummy = torch.zeros(1, cfg["obs_dim"])
-    scripted = torch.jit.trace(model, dummy)
+    scripted = torch.jit.trace(export_model, dummy)
     scripted = torch.jit.freeze(scripted)
     torch.jit.save(scripted, str(out_path))
 

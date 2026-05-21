@@ -25,8 +25,7 @@ parser = argparse.ArgumentParser(description="Phase 2 Teacher/Student eval")
 parser.add_argument("--ckpt",        type=str, nargs="+", required=True)
 parser.add_argument("--num_episodes", type=int, default=100)
 parser.add_argument("--num_envs",    type=int, default=64)
-parser.add_argument("--background",  action="store_true", default=False, help="창고 배경 로드 (GUI 시각화용)")
-parser.add_argument("--student",     action="store_true", default=False)  # 하위 호환
+parser.add_argument("--student",     action="store_true", default=False)  # 하위 호환 (미사용)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 if args.livestream == 0 and not getattr(args, "headless", False):
@@ -117,26 +116,31 @@ class EvalManipulationEnv(WarehouseManipulationEnv):
 # ------------------------------------------------------------------
 # Actor 로드
 # ------------------------------------------------------------------
-def load_actor(ckpt_path: str, device: str) -> nn.Module:
+def load_actor(ckpt_path: str, device: str):
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     raw  = ckpt.get("model_state_dict", ckpt)
 
-    # 체크포인트 키 정규화 (actor.net.* → net.*)
+    # empirical_normalization=True 로 훈련된 경우 normalizer 파라미터 추출
+    norm_mean = raw.get("actor_normalizer.running_mean", None)
+    norm_var  = raw.get("actor_normalizer.running_var",  None)
+
+    # 체크포인트 키 정규화 (actor.net.* 또는 actor.* → net.*)
     sd = {}
     for k, v in raw.items():
         if k.startswith("actor.net."):
             sd[k[len("actor."):]] = v
-        elif k.startswith("actor."):
+        elif k.startswith("actor.") and not k.startswith("actor_"):
             sd["net." + k[len("actor."):]] = v
 
     # 체크포인트에서 실제 네트워크 차원 자동 감지
     w_keys = sorted([k for k in sd if k.endswith(".weight")],
                     key=lambda k: int(k.split(".")[1]))
-    in_dim     = sd[w_keys[0]].shape[1]   # 첫 레이어 입력 차원
-    out_dim    = sd[w_keys[-1]].shape[0]  # 마지막 레이어 출력 차원
-    hidden     = [sd[k].shape[0] for k in w_keys[:-1]]  # 히든 레이어 크기
+    in_dim  = sd[w_keys[0]].shape[1]
+    out_dim = sd[w_keys[-1]].shape[0]
+    hidden  = [sd[k].shape[0] for k in w_keys[:-1]]
+    has_norm = norm_mean is not None
 
-    print(f"  [아키텍처] obs={in_dim}, hidden={hidden}, act={out_dim}")
+    print(f"  [아키텍처] obs={in_dim}, hidden={hidden}, act={out_dim}, normalizer={has_norm}")
 
     class ActorMLP(nn.Module):
         def __init__(self):
@@ -153,8 +157,24 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
             return self.net(x).tanh()
 
     actor = ActorMLP().to(device)
-    missing, _ = actor.load_state_dict(sd, strict=True)
+    actor.load_state_dict(sd, strict=True)
     actor.eval()
+
+    # normalizer 래퍼: 훈련과 동일한 obs 정규화 적용
+    if has_norm:
+        _mean = norm_mean.to(device)
+        _std  = (norm_var.to(device) + 1e-8).sqrt()
+
+        class NormalizedActor(nn.Module):
+            def __init__(self, base: nn.Module):
+                super().__init__()
+                self.base = base
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.base((x - _mean) / _std)
+
+        return NormalizedActor(actor).to(device), in_dim, out_dim
+
     return actor, in_dim, out_dim
 
 
@@ -164,7 +184,7 @@ def load_actor(ckpt_path: str, device: str) -> nn.Module:
 @torch.inference_mode()
 def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, device: str):
     actor, ckpt_obs_dim, ckpt_act_dim = load_actor(ckpt_path, device)
-    env_obs_dim = TEACHER_OBS_DIM  # Teacher == Student == 30-dim
+    env_obs_dim = TEACHER_OBS_DIM  # 30-dim (Student는 25-dim 별도)
     env_act_dim = 4   # Cartesian [dx,dy,dz,gripper]
 
     obs_mismatch = (ckpt_obs_dim != env_obs_dim or ckpt_act_dim != env_act_dim)
@@ -213,7 +233,6 @@ def main():
 
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
-    env_cfg.enable_background = args.background
     env = EvalManipulationEnv(env_cfg)
 
     print(f"\n[Eval] 에피소드: {args.num_episodes}, 병렬 env: {args.num_envs}\n")
