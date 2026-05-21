@@ -4,7 +4,7 @@
 ros2_bridge.py 에서 import 해 사용.
 
 Phase 1.5 (nav):        obs=7,  act=3
-Phase 2   (manip):      obs=31, act=8
+Phase 2   (manip):      obs=31, act=4
 Phase 3   (marl actor): obs=17, act=3
 """
 
