@@ -25,7 +25,7 @@ def main():
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = 4
     env_cfg.grasp_dist_threshold = 999.0   # 즉시 grasp
-    env_cfg.place_dist_threshold = 0.12
+    env_cfg.place_dist_threshold = 0.15
     env = WarehouseManipulationEnv(env_cfg)
 
     # goal을 4개 env에 각각 고정 할당
@@ -63,7 +63,7 @@ def main():
         dists = (box_carried - env._goal_pos_w).norm(dim=1)
 
         for i in range(4):
-            if not placed[i] and dists[i].item() < 0.12:
+            if not placed[i] and dists[i].item() < 0.15:
                 placed[i] = True
                 place_step[i] = step
 

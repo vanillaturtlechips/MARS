@@ -32,13 +32,15 @@ except ImportError:
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
 # 목표 위치 4곳
-# box spawn: x=[0.45,0.55], y=[-0.15,0.15]
-# goals:     y=±0.32-0.35 (측면) → 측방 운반 필수
+# box spawn: x=[0.45,0.55], y=[-0.15,0.15], z=0.53
+# goals: spawn 범위 밖 + DLS IK 도달 가능 (debug_transport 검증 완료)
+# y=±0.10~0.15: 측방 소폭 이동만 요구 (DLS IK 한계 내)
+# x=0.62(전방) / x=0.36(후방): box spawn과 겹치지 않음
 PLACE_GOALS = [
-    (0.48,  0.35, 0.53),
-    (0.48, -0.35, 0.53),
-    (0.50,  0.32, 0.53),
-    (0.50, -0.32, 0.53),
+    (0.62,  0.0,  0.53),   # 정면 전방
+    (0.62,  0.12, 0.53),   # 전방 우측
+    (0.36,  0.0,  0.53),   # 정면 후방
+    (0.36, -0.12, 0.53),   # 후방 좌측
 ]
 
 TEACHER_OBS_DIM = 30
@@ -65,12 +67,11 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    # Approach: Exp decay=5.0 (중거리 hover 억제)
-    # Transport: Progress Delta × 100 (실제 이동량에 비례)
-    rew_approach:  float =  0.5
-    rew_grasp:     float = 30.0
-    rew_transport: float = 10.0    # delta × 100 → 3cm 이동 시 +30/step
-    rew_place:     float = 800.0
+    rew_approach:  float =  0.5    # exp(-dist*5) * not_grasped
+    rew_grasp:     float = 30.0   # one-time grasp bonus
+    rew_transport: float = 10.0   # delta_dist × 100 × grasped
+    rew_align:     float =  3.0   # cos_sim(action, goal_dir) × grasped
+    rew_place:     float = 100.0  # terminal bonus (800→100: VF 스케일 안정화)
     rew_drop:      float =   0.0
     rew_time:      float = -0.02
 
@@ -78,7 +79,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_mass_range: tuple[float, float] = (0.3, 2.0)
 
     grasp_dist_threshold: float = 0.25
-    place_dist_threshold: float = 0.12
+    place_dist_threshold: float = 0.15
 
     student_mode: bool = False
 
@@ -245,6 +246,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
         delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * 100.0 * grasped_f
 
+        # action-goal alignment: IK 효율 낮아도 즉각 gradient 제공
+        goal_dir  = (self._goal_pos_w - box_pos_carried).clone()
+        goal_norm = goal_dir.norm(dim=1, keepdim=True).clamp(min=1e-6)
+        act_dir   = self._actions[:, :3]
+        act_norm  = act_dir.norm(dim=1, keepdim=True).clamp(min=1e-6)
+        cos_sim   = (act_dir / act_norm * (goal_dir / goal_norm)).sum(dim=1)
+        alignment = self.cfg.rew_align * cos_sim * grasped_f
+
         self._prev_dist_box_goal = dist_box_goal.detach()
 
         log = self.extras.setdefault("log", {})
@@ -255,6 +264,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         return (
             approach
             + transport
+            + alignment
             + self.cfg.rew_grasp  * newly_grasped.float()
             + self.cfg.rew_place  * placed.float()
             + self.cfg.rew_drop   * dropped.float()
