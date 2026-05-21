@@ -85,17 +85,19 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    # 보상: 순수 거리 패널티 + 소형 터미널 보너스
-    # goal_prox(Exp)와 potential shaping 제거 이유:
-    #   EE home(dist=0.296m)이 goal_prox 최고점 → "집에 머물기" 로컬 옵티멈 형성
-    #   → 정책이 home에서 dense reward 수집(3.11/step*239=743)에 안주, transport 안 함
-    # 해결: -dist*scale만 남겨 home도 패널티, goal(dist=0)만 최적 상태로 만들기
+    # 보상: potential shaping + 소형 터미널 보너스
+    # rew_transport_dst(-dist/step) 제거 이유:
+    #   같은 거리에 있는 모든 action이 동일 reward → advantage 차이 없음 → surrogate_loss≈0
+    # rew_transport(potential shaping) 복구 이유:
+    #   goal_prox=0으로 home 로컬옵티멈 소멸 → 실제 이동량에 비례한 reward로 gradient 생성
+    # rew_align 축소(3.0→1.0) 이유:
+    #   3.0에서 "항상 goal 방향 unit vector" 포화 local optimum 형성 → advantage≈0 → surrogate_loss≈0
     rew_approach:      float =  0.0    # 비활성화
     rew_grasp:         float =  0.0    # 비활성화
-    rew_transport:     float =  0.0    # potential shaping 제거 — home 로컬 옵티멈 방지
+    rew_transport:     float = 50.0    # potential shaping — 실제 이동량 비례 reward (복구)
     rew_goal_prox:     float =  0.0    # Exp 항 제거 — home 근방 reward 핫스팟 제거
-    rew_transport_dst: float = 15.0    # -15*dist/step — 순수 거리 패널티
-    rew_align:         float =  3.0    # cos_sim(action, goal_dir)/step — IK 우회, 즉각 gradient
+    rew_transport_dst: float =  0.0    # 제거 — advantage signal 없음
+    rew_align:         float =  1.0    # cos_sim(action, goal_dir)/step — 보조 신호 (3.0→1.0)
     rew_place:         float = 100.0   # 소형 터미널 보너스
     rew_drop:          float =  0.0    # 낙하 패널티 제거
     rew_time:          float = -0.02   # 스텝 패널티
