@@ -9,7 +9,7 @@
 
   box_or_goal_rel:
     not grasped → box_pos - ee_pos  (approach 방향)
-    grasped     → box_pos_carried - goal_pos  (transport 방향, goal까지 벡터)
+    grasped     → goal_pos - box_pos_carried  (transport 방향, goal까지 벡터)
   grasped(1): 파지 여부 플래그 — 정책이 phase를 명시적으로 구분
 
 Jetson 배포 시: box_or_goal_rel → RGB-D 추정값, box_quat → 카메라 추정, box_mass → 1.0
@@ -354,10 +354,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         delta_goal = self._prev_dist_box_goal - dist_box_goal  # 양수 = goal에 가까워짐
         transport  = self.cfg.rew_transport * delta_goal * grasped_f
 
-        # Goal Proximity: Exp(-dist*3) — grasped 시 goal 근처일수록 지속 보상
-        # scale=3 (기존 5→3): dist=0.35m에서 exp(-1.05)=0.35 (학습 가능한 gradient 범위)
-        # scale=5이면 dist=0.35m에서 exp(-1.75)=0.17 (너무 작아 먼 거리서 gradient 거의 없음)
-        goal_prox = self.cfg.rew_goal_prox * torch.exp(-dist_box_goal * 3.0) * grasped_f
+        # Goal Proximity: Exp(-dist*1) — decay 완화로 먼 거리(0.75m)에서도 gradient 확보
+        # decay=1.0: dist=0.75m → exp(-0.75)=0.47, 5*0.47=2.36/step (기존 3.0→0.53/step 대비 4.5×)
+        # dist=0.12m → exp(-0.12)=0.89, 5*0.89=4.44/step
+        goal_prox = self.cfg.rew_goal_prox * torch.exp(-dist_box_goal * 1.0) * grasped_f
 
         # Transport Dense: -dist_box_goal — grasped 시 거리 패널티 (dense gradient)
         # scale 3.0 (기존 0.5의 6배): dist=0.35m → -1.05/step (VF 학습 신호 강화)
