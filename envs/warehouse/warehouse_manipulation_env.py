@@ -61,7 +61,7 @@ STUDENT_OBS_DIM = OBS_DIM
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
-    episode_length_s = 10.0     # 15s→10s: 리턴 분산 감소, VF 수렴 가속
+    episode_length_s = 2.0      # 120steps: 업데이트당 에피소드 5× 증가, VF 수렴 가속
     action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
     observation_space = OBS_DIM  # 31-dim
     state_space = 0
@@ -92,7 +92,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_grasp:         float = 30.0    # 단발 grasp 유인
     rew_transport:     float = 50.0    # potential shaping 배율 — 3cm 이동 시 +1.5/step
     rew_goal_prox:     float =  5.0    # Exp(-dist_box_goal*3) 배율 — scale 증가로 먼 거리서도 gradient
-    rew_transport_dst: float =  3.0    # dist_box_goal 패널티 배율 — 6배 증가로 dense gradient 강화
+    rew_transport_dst: float =  1.0    # dist_box_goal 패널티 — 리턴 분산 감소
     rew_place:         float = 800.0   # 대형 터미널 보상 유지
     rew_drop:          float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
     rew_time:          float = -0.02   # 스텝 패널티
