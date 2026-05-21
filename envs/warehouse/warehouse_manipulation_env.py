@@ -42,14 +42,14 @@ except ImportError:
     # isaaclab_assets 패키지 경로가 다를 경우 대비
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
-# 목표 위치 — EE home pose (0.307, 0, 0.487) 기준 ~0.20m 이내
-# place_rate ≥ 5% 확보 → PPO advantage 학습 가능 → noise 안정화
-# 이후 place_rate >30% 달성 시 goal 원래 위치(±0.35m)로 복원할 것
+# 목표 위치 — EE home pose (0.307, 0, 0.487) 기준 0.14m
+# place_threshold=0.12m보다 0.02m 위 → 초기 place_rate 30%+ 목표
+# PPO가 학습 시작하면 curriculum으로 goal 거리를 점차 늘릴 것
 PLACE_GOALS = [
-    (0.42,  0.15, 0.53),   # dist from EE home ≈ 0.197m
-    (0.42, -0.15, 0.53),
-    (0.40,  0.15, 0.53),   # dist from EE home ≈ 0.183m
-    (0.40, -0.15, 0.53),
+    (0.38,  0.07, 0.53),   # dist from EE home ≈ 0.142m
+    (0.38, -0.07, 0.53),
+    (0.36,  0.07, 0.53),   # dist from EE home ≈ 0.136m
+    (0.36, -0.07, 0.53),
 ]
 
 OBS_DIM = 31  # box_or_goal_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)+grasped(1)
@@ -91,7 +91,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_grasp:         float = 30.0    # 단발 grasp 유인
     rew_transport:     float = 50.0    # potential shaping 배율 — 3cm 이동 시 +1.5/step
     rew_goal_prox:     float =  5.0    # Exp(-dist_box_goal*3) 배율 — scale 증가로 먼 거리서도 gradient
-    rew_transport_dst: float =  1.0    # dist_box_goal 패널티 — 리턴 분산 감소
+    rew_transport_dst: float =  0.0    # 제거 — 매 스텝 -0.8 쌓여 VF baseline을 -96으로 고정, advantage 학습 방해
     rew_place:         float = 800.0   # 대형 터미널 보상 유지
     rew_drop:          float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
     rew_time:          float = -0.02   # 스텝 패널티
