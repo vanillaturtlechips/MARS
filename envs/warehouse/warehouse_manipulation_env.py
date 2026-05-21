@@ -43,10 +43,10 @@ except ImportError:
 # goals:     y=±0.32-0.35 (측면) → 측방 운반 필수, trivial place 없음
 # min box-goal dist: box(0.55,0.15)↔goal(0.50,0.32) = 0.177m > 0.12m ✓
 PLACE_GOALS = [
-    (0.48,  0.35, 1.03),
-    (0.48, -0.35, 1.03),
-    (0.50,  0.32, 1.03),
-    (0.50, -0.32, 1.03),
+    (0.48,  0.35, 0.53),
+    (0.48, -0.35, 0.53),
+    (0.50,  0.32, 0.53),
+    (0.50, -0.32, 0.53),
 ]
 
 OBS_DIM = 30  # noisy_box_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)
@@ -306,8 +306,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos_carried = ee_pos + self._grasp_ee_offset  # grasped 아닌 env는 의미없음
         dist_box_goal = (box_pos_carried - self._goal_pos_w).norm(dim=1)
 
-        # 낙하 판정 — EE가 테이블 아래(z<0.85)로 내려가며 박스를 끌고 가는 경우
-        dropped = self._grasped & (box_pos[:, 2] < 0.85)
+        # 낙하 판정 — 박스가 테이블 아래(z<0.30)로 떨어진 경우
+        dropped = self._grasped & (box_pos[:, 2] < 0.30)
 
         # 거치 성공: 박스 위치가 goal에 도달 (EE가 박스를 실제로 운반해야 함)
         placed = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
@@ -363,7 +363,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos_carried = ee_pos + self._grasp_ee_offset
         dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (box_pos[:, 2] < 0.85)
+        dropped = self._grasped & (box_pos[:, 2] < 0.30)
 
         # dropped는 termination 조건에서 제외 — placed만 종료
         terminated = placed
@@ -391,11 +391,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
             env_ids_t = env_ids.long()
         n = env_ids_t.shape[0]
 
-        # Franka "table reach" 자세: EE z≈0.89m (검증된 FK 결과)
-        # [0,0,0,-π/2,0,π/2,π/4]: 팔을 앞으로 뻗고 팔꿈치 90° → EE≈(0.507,0,0.89)
-        # 박스(z=1.0m)까지 dist≈0.11~0.19m < grasp_threshold(0.25m) → 즉시 grasp
+        # Franka home-ish 자세: EE z≈0.487m — PackingTable 상면(z≈0.5m) 근접
+        # [0,-0.785,0,-2.356,0,1.571,0.785]: 박스(z=0.5m)까지 dist≈0.05~0.15m < grasp_threshold
         reach_pose = torch.tensor(
-            [0.0, 0.0, 0.0, -1.5708, 0.0, 1.5708, 0.7854, 0.04, 0.04],
+            [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04],
             device=self.device
         ).unsqueeze(0).expand(n, -1)
         self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
@@ -405,7 +404,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state = self.box.data.default_root_state[env_ids_t].clone()
         box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
         box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
-        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 1.0   # PackingTable 상면 z≈1.0m
+        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.5    # PackingTable 상면 z≈0.5m
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         # 박스 질량 DR
