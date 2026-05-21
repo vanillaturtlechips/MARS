@@ -97,7 +97,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_transport:     float = 50.0    # potential shaping — 실제 이동량 비례 reward (복구)
     rew_goal_prox:     float =  0.0    # Exp 항 제거 — home 근방 reward 핫스팟 제거
     rew_transport_dst: float =  0.0    # 제거 — advantage signal 없음
-    rew_align:         float =  1.0    # cos_sim(action, goal_dir)/step — 보조 신호 (3.0→1.0)
+    rew_align:         float =  0.0    # 제거 — "에피소드 유지가 place보다 유리" local optimum 유발
     rew_place:         float = 100.0   # 소형 터미널 보너스
     rew_drop:          float =  0.0    # 낙하 패널티 제거
     rew_time:          float = -0.02   # 스텝 패널티
