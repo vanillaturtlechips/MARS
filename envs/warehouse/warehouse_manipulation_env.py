@@ -75,13 +75,16 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    # Approach: Exp(-dist*5) 지수형 — 박스 가까울수록 연속 유인 (dist=0m: 0.5, dist=0.3m: 0.11)
-    # Transport: Progress Delta (박스→goal 가까워진 만큼)
-    #   이동한 만큼만 보상, 가만히 서있으면 0, 뒤로 가면 음수
-    #   V(hover@goal) = transport(이동분) + 0(정지) << V(place) = transport + 800
-    rew_approach:  float =  0.5    # Exp(-dist*5) 배율
+    # Approach   : Exp(-dist_ee_box*5)   — EE가 박스 가까울수록 연속 유인
+    # Transport  : Progress Delta        — 박스가 goal 방향으로 이동한 만큼
+    # Goal Prox  : Exp(-dist_box_goal*5) — grasped 상태에서 goal 근처에 있으면 지속 보상
+    #   Progress Delta만 쓰면 정지 시 reward=0 → VF가 포지션 가치 학습 불가
+    #   Goal Prox 추가로 VF 수렴, advantage 신호 복원
+    #   V(hover@0.12m) ≈ 550/ep, V(place@step50) ≈ 826 → hover exploit 없음 ✓
+    rew_approach:  float =  1.0    # Exp(-dist_ee_box*5) 배율
     rew_grasp:     float = 30.0    # 단발 grasp 유인
     rew_transport: float = 10.0    # delta * 100 배율 → 3cm 이동 시 +30/step
+    rew_goal_prox: float =  1.0    # Exp(-dist_box_goal*5) 배율 — grasped 시 goal 근처 지속 보상
     rew_place:     float = 800.0   # 대형 터미널 보상 유지
     rew_drop:      float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
     rew_time:      float = -0.02   # 스텝 패널티 축소 (탐색 장려)
@@ -309,19 +312,24 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         not_grasped = (~self._grasped).float()
 
-        # Approach: Exp(-dist*5) — 박스 가까울수록 지수적으로 큰 보상 (초기 탐색 유인)
+        # Approach: Exp(-dist*5) — EE가 박스에 가까울수록 지수적 보상 (비파지 시만)
         approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
 
-        # Transport: Progress Delta — "어제보다 오늘 더 다가간 만큼만" 보상
-        # clamp(-0.1, 0.1): 첫 스텝 prev=999 튀는 현상 방지, 최대 이동 제한
+        # Transport: Progress Delta — 박스가 goal 방향으로 이동한 만큼
         delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * 100.0 * self._grasped.float()
+
+        # Goal Proximity: grasped 상태에서 박스가 goal 근처일수록 지속 보상
+        # Progress Delta만으로는 정지 시 0 → VF가 포지션 가치 구분 불가
+        # 이 항이 value landscape에 기울기를 만들어 surrogate_loss 복원
+        goal_prox = self.cfg.rew_goal_prox * torch.exp(-dist_box_goal * 5.0) * self._grasped.float()
 
         self._prev_dist_box_goal = dist_box_goal.detach()
 
         rew = (
             approach
             + transport
+            + goal_prox
             + self.cfg.rew_grasp * newly_grasped.float()
             + self.cfg.rew_place * placed.float()
             + self.cfg.rew_drop  * dropped.float()
