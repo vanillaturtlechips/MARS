@@ -15,12 +15,10 @@ from __future__ import annotations
 
 import glob
 import importlib.util
-import math
 import os
 from collections.abc import Sequence
 
 import torch
-import torch.nn.functional as F
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
@@ -32,7 +30,7 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, UsdFileCfg, spawn_g
 # NVIDIA 클라우드 에셋 베이스 URL (Isaac Sim 5.1)
 _ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 from isaaclab.utils import configclass
-from isaaclab.utils.math import sample_uniform, subtract_frame_transforms
+from isaaclab.utils.math import sample_uniform
 
 try:
     from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG
@@ -45,10 +43,10 @@ except ImportError:
 # goals:     y=±0.32-0.35 (측면) → 측방 운반 필수, trivial place 없음
 # min box-goal dist: box(0.55,0.15)↔goal(0.50,0.32) = 0.177m > 0.12m ✓
 PLACE_GOALS = [
-    (0.48,  0.35, 0.53),
-    (0.48, -0.35, 0.53),
-    (0.50,  0.32, 0.53),
-    (0.50, -0.32, 0.53),
+    (0.48,  0.35, 1.03),
+    (0.48, -0.35, 1.03),
+    (0.50,  0.32, 1.03),
+    (0.50, -0.32, 1.03),
 ]
 
 OBS_DIM = 30  # noisy_box_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)
@@ -76,12 +74,12 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    # 보상 가중치 — Progress Delta 통일 설계
-    # Approach: Progress Delta (EE→박스 가까워진 만큼) — Cartesian delta 제어에 적합
+    # 보상 가중치
+    # Approach: Exp(-dist*5) 지수형 — 박스 가까울수록 연속 유인 (dist=0m: 0.5, dist=0.3m: 0.11)
     # Transport: Progress Delta (박스→goal 가까워진 만큼)
     #   이동한 만큼만 보상, 가만히 서있으면 0, 뒤로 가면 음수
     #   V(hover@goal) = transport(이동분) + 0(정지) << V(place) = transport + 800
-    rew_approach:  float =  1.0    # delta * 100 배율 → 3cm 이동 시 +30/step
+    rew_approach:  float =  0.5    # Exp(-dist*5) 배율
     rew_grasp:     float = 30.0    # 단발 grasp 유인
     rew_transport: float = 10.0    # delta * 100 배율 → 3cm 이동 시 +30/step
     rew_place:     float = 800.0   # 대형 터미널 보상 유지
@@ -92,9 +90,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # Franka max reach @z=0.53: x_max=0.671m → box x≤0.55 (89% reach, IK 안정)
-    # EE x≈0.307 ~ box x=0.45: dist=0.155m < threshold → 일부 즉시 grasp (OK, transport 학습)
-    # EE x≈0.307 ~ box x=0.55,y=0.15: dist=0.292m > threshold → approach 학습 필요
+    # PackingTable 상면 z≈1.0m, box spawn z=1.0m, goal z=1.03m
+    # reach_pose EE z≈0.95m → box 중심까지 초기 dist≈0.1~0.3m (approach 학습 적합)
     grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
@@ -125,7 +122,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._box_mass    = torch.ones(n, device=d)
         self._grasped     = torch.zeros(n, dtype=torch.bool, device=d)
         self._actions     = torch.zeros(n, 4, device=d)
-        self._prev_dist_ee_box   = torch.full((n,), 999.0, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
         self._camera_noise_std   = torch.full((n,), 0.03, device=d)  # 에피소드당 카메라 노이즈 레벨
@@ -292,8 +288,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         dist_ee_box  = (ee_pos - box_pos).norm(dim=1)
 
-        dist_ee_goal = (ee_pos - self._goal_pos_w).norm(dim=1)
-
         # 파지 판정
         newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
         self._grasped |= newly_grasped
@@ -307,24 +301,22 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos_carried = ee_pos + self._grasp_ee_offset  # grasped 아닌 env는 의미없음
         dist_box_goal = (box_pos_carried - self._goal_pos_w).norm(dim=1)
 
-        # 낙하 판정 (proximity grasp에서는 박스가 날아가지 않으므로 거의 발생 안 함)
-        dropped = self._grasped & (box_pos[:, 2] < 0.30)
+        # 낙하 판정 — EE가 테이블 아래(z<0.85)로 내려가며 박스를 끌고 가는 경우
+        dropped = self._grasped & (box_pos[:, 2] < 0.85)
 
         # 거치 성공: 박스 위치가 goal에 도달 (EE가 박스를 실제로 운반해야 함)
         placed = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
 
         not_grasped = (~self._grasped).float()
 
-        # Approach: Progress Delta — EE가 박스에 가까워진 만큼만 보상 (Cartesian delta 제어 적합)
-        delta_ee_box = (self._prev_dist_ee_box - dist_ee_box).clamp(-0.1, 0.1)
-        approach = self.cfg.rew_approach * delta_ee_box * 100.0 * not_grasped
+        # Approach: Exp(-dist*5) — 박스 가까울수록 지수적으로 큰 보상 (초기 탐색 유인)
+        approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
 
         # Transport: Progress Delta — "어제보다 오늘 더 다가간 만큼만" 보상
         # clamp(-0.1, 0.1): 첫 스텝 prev=999 튀는 현상 방지, 최대 이동 제한
         delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * 100.0 * self._grasped.float()
 
-        self._prev_dist_ee_box   = dist_ee_box.detach()
         self._prev_dist_box_goal = dist_box_goal.detach()
 
         rew = (
@@ -347,7 +339,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos_carried = ee_pos + self._grasp_ee_offset
         dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (box_pos[:, 2] < 0.30)
+        dropped = self._grasped & (box_pos[:, 2] < 0.85)
 
         # dropped는 termination 조건에서 제외 — placed만 종료
         terminated = placed
@@ -375,9 +367,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
             env_ids_t = env_ids.long()
         n = env_ids_t.shape[0]
 
-        # Franka "ready" 자세: ee가 테이블 앞 ~40cm 높이 (default 수직 자세 대비 박스에 훨씬 가까움)
+        # Franka "ready" 자세: EE z≈0.95m (PackingTable 상면 1.0m에 근접)
+        # q2=-0.3, q4=-1.8, q6=1.6: 어깨를 세우고 팔꿈치를 덜 굽혀 EE를 높임
         reach_pose = torch.tensor(
-            [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04],
+            [0.0, -0.3, 0.0, -1.8, 0.0, 1.6, 0.785, 0.04, 0.04],
             device=self.device
         ).unsqueeze(0).expand(n, -1)
         self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
@@ -387,7 +380,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state = self.box.data.default_root_state[env_ids_t].clone()
         box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
         box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
-        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50  # 테이블 상면 (YCB origin = 바닥 중앙)
+        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 1.0   # PackingTable 상면 z≈1.0m
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         # 박스 질량 DR
@@ -402,7 +395,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # 상태 리셋
         self._grasped[env_ids_t] = False
-        self._prev_dist_ee_box[env_ids_t]   = 999.0
         self._prev_dist_box_goal[env_ids_t] = 999.0
         self._frozen_box_state[env_ids_t]   = 0.0
         self._grasp_ee_offset[env_ids_t]    = 0.0
