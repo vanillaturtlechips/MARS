@@ -80,7 +80,7 @@ def main():
     env = WarehouseMARLEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
     env = IPPOReshapeWrapper(env, N_ROBOTS, OBS_PER_ROBOT)
-    # actor obs=9 (per-robot) — IPPO 체크포인트와 호환
+    # actor obs=OBS_PER_ROBOT per-robot — IPPO 체크포인트와 호환
 
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
     cfg_dict = runner_cfg.to_dict()

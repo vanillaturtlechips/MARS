@@ -1,7 +1,8 @@
 """True CTDE 래퍼 (Centralized Training, Decentralized Execution).
 
-Actor : per-robot obs (17-dim) — 각 로봇 독립 실행
-Critic: global obs (51-dim)   — 전체 상태 중앙 평가
+N_ROBOTS=3 기준:
+  Actor : per-robot obs (17-dim) — 각 로봇 독립 실행
+  Critic: global obs (51-dim)   — 전체 상태 중앙 평가 (17×3)
 
 rsl_rl 3.x는 get_observations() / step() 이 'policy' 키를 가진
 TensorDict 를 반환하길 기대함. 'critic' 키를 추가해 CTDE 구현.
@@ -41,7 +42,7 @@ class IPPOReshapeWrapper:
 
     @property
     def num_obs(self) -> int:
-        return self.obs_per_robot          # actor: 9-dim per-robot
+        return self.obs_per_robot          # actor: obs_per_robot-dim per-robot
 
     @property
     def num_actions(self) -> int:
@@ -49,7 +50,7 @@ class IPPOReshapeWrapper:
 
     @property
     def num_privileged_obs(self) -> int:
-        return self.obs_per_robot * self.n  # critic: 27-dim global state
+        return self.obs_per_robot * self.n  # critic: obs_per_robot*n-dim global state
 
     @property
     def observation_space(self) -> gym.spaces.Box:
@@ -107,7 +108,7 @@ class IPPOReshapeWrapper:
 
     # ── 내부 유틸 ─────────────────────────────────────────────────
     def _build_obs_dict(self, obs) -> "TensorDict":
-        """raw obs → TensorDict{"policy": (E*N,17), "critic": (E*N,51)}.
+        """raw obs → TensorDict{"policy": (E*N, obs_per_robot), "critic": (E*N, obs_per_robot*N)}.
 
         TensorDict로 반환해야 .to(device) 호출이 동작함.
         rsl_rl이 "policy" in TensorDict 로 키를 자동 감지함.
@@ -123,12 +124,12 @@ class IPPOReshapeWrapper:
         )
 
     def _split_actor_obs(self, obs) -> torch.Tensor:
-        """(E, 51) → (E*N, 17): per-robot actor 입력."""
+        """(E, obs_per_robot*N) → (E*N, obs_per_robot): per-robot actor 입력."""
         tensor = self._extract_tensor(obs, key="policy")
         return tensor.reshape(self._E * self.n, self.obs_per_robot)
 
     def _expand_critic_obs(self, obs) -> torch.Tensor:
-        """(E, 51) → (E*N, 51): global state 복제."""
+        """(E, obs_per_robot*N) → (E*N, obs_per_robot*N): global state 복제."""
         tensor = self._extract_tensor(obs, key="critic")
         return tensor.repeat_interleave(self.n, dim=0)
 

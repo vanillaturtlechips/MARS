@@ -77,6 +77,9 @@ def load_policy(ckpt_path: str, device: str):
 
     import torch.nn as nn
 
+    norm_mean = raw.get("actor_normalizer.running_mean", None)
+    norm_var  = raw.get("actor_normalizer.running_var",  None)
+
     class ActorMLP(nn.Module):
         def __init__(self):
             super().__init__()
@@ -103,6 +106,22 @@ def load_policy(ckpt_path: str, device: str):
     if missing:
         print(f"[경고] 누락 가중치: {missing[:5]}")
     actor.eval()
+
+    if norm_mean is not None and norm_var is not None:
+        _mean = norm_mean.to(device)
+        _std  = (norm_var.to(device) + 1e-8).sqrt()
+
+        class NormalizedActor(nn.Module):
+            def __init__(self, base: nn.Module):
+                super().__init__()
+                self.base = base
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.base((x - _mean) / _std)
+
+        print(f"  [normalizer] empirical normalization 적용")
+        return NormalizedActor(actor).to(device)
+
     return actor
 
 

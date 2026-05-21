@@ -52,7 +52,7 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     episode_length_s = 20.0
     action_space = 3 * N_ROBOTS          # 각 로봇 [vx, vy, omega]
     observation_space = OBS_PER_ROBOT * N_ROBOTS
-    state_space = OBS_PER_ROBOT * N_ROBOTS  # 27 — centralized critic global state
+    state_space = OBS_PER_ROBOT * N_ROBOTS  # 51 — centralized critic global state (17*3)
 
     sim: SimulationCfg = SimulationCfg(dt=1.0 / 60.0, render_interval=decimation)
 

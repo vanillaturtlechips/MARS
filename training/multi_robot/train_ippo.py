@@ -86,7 +86,7 @@ def main():
 
     eff_batch = args.num_envs * N_ROBOTS
     print(f"\n[IPPO] 로봇 {N_ROBOTS}대, {args.num_envs} envs (유효 배치 {eff_batch}), {args.max_iter} iter")
-    print(f"[IPPO] Actor obs=9, act=3 (per-robot) — true IPPO with parameter sharing")
+    print(f"[IPPO] Actor obs={OBS_PER_ROBOT}, act=3 (per-robot) — true IPPO with parameter sharing")
     print(f"[IPPO] 조기 진단: 30 iter 안에 mean_reward 상승세 확인\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
