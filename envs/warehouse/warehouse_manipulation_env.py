@@ -3,8 +3,7 @@
 로봇: Franka Panda (7-DOF 암 + 평행 그리퍼)
 임무: 박스를 집어 지정 선반 위치에 내려놓기
 
-행동 (8-dim): [dq0..dq6, gripper] — joint delta control (0.05 rad/step)
-  IK 제거: Cartesian delta → joint space direct control
+행동 (4-dim): [dx, dy, dz, gripper] — Cartesian delta + DLS IK (3cm/step)
   grasp z-offset=0.06m: 박스가 EE보다 6cm 위 → 테이블 충돌/물리 폭발 방지
 
 관측 (31-dim):
@@ -70,7 +69,7 @@ _FRANKA_Q_UPPER = [ 2.8973,  1.7628,  2.8973, -0.0698,  2.8973,  3.7525,  2.8973
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
     episode_length_s = 4.0      # 240steps: transport 이동 시간 확보 (~0.36m @ 3cm/step = 12steps 이상)
-    action_space = 8             # [dq0..dq6, gripper] Joint delta control — IK 제거
+    action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
     observation_space = OBS_DIM  # 31-dim
     state_space = 0
 
@@ -141,9 +140,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._goal_pos_w  = torch.zeros(n, 3, device=d)
         self._box_mass    = torch.ones(n, device=d)
         self._grasped     = torch.zeros(n, dtype=torch.bool, device=d)
-        self._actions     = torch.zeros(n, 8, device=d)
-        self._q_lower     = torch.tensor(_FRANKA_Q_LOWER, device=d)
-        self._q_upper     = torch.tensor(_FRANKA_Q_UPPER, device=d)
+        self._actions     = torch.zeros(n, 4, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
         self._camera_noise_std   = torch.full((n,), 0.03, device=d)  # 에피소드당 카메라 노이즈 레벨
@@ -241,15 +238,23 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # Joint delta control: actions[:, :7] = Δq [rad], actions[:, 7] = gripper
-        # IK 제거 — 직접 관절 공간 제어로 특이점·수렴 속도 문제 해결
-        delta_q      = self._actions[:, :7] * 0.05   # max 0.05 rad/step
+        n = self.num_envs
+        delta_pos = self._actions[:, :3] * 0.03  # max 3cm/step
+
+        # DLS IK: Δq = J^T (J J^T + λI)^{-1} Δx
+        jac = self.robot.root_physx_view.get_jacobians()
+        J   = jac[:, self._jac_body_idx, :3, :7]
+        lam = 0.01
+        JT      = J.transpose(-2, -1)
+        JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
+        J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
+        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
+
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
-        joint_target = joint_target.clamp(self._q_lower, self._q_upper)
         self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
 
-        # Gripper: action[:, 7] ∈ [-1, 1] → [0, 0.04]m
-        gripper_pos = ((self._actions[:, 7:8] + 1.0) / 2.0) * 0.04
+        # Gripper: action[:, 3] ∈ [-1, 1] → [0, 0.04]m
+        gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
         self.robot.set_joint_position_target(
             gripper_pos.expand(-1, 2).clone(), joint_ids=[7, 8]
         )

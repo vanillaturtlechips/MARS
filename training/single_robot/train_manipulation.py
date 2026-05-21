@@ -73,7 +73,7 @@ def main():
     # entropy_coef 증가: transport phase에서 탐색 유지 (0.001 → 0.01)
     # 초기 surrogate_loss≈0은 entropy 부족으로 정책이 조기 수렴한 것
     # 0.01이면 탐색을 유지하면서도 place reward로 수렴 가능
-    cfg_dict["algorithm"]["entropy_coef"] = 0.01
+    cfg_dict["algorithm"]["entropy_coef"] = 0.001
     cfg_dict["algorithm"]["learning_rate"] = args.lr
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_manipulation", device=env.device)
 
