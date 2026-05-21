@@ -42,15 +42,14 @@ except ImportError:
     # isaaclab_assets 패키지 경로가 다를 경우 대비
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
-# 목표 선반 위치 4곳 (world frame, 로봇 베이스 기준)
-# box spawn: x=[0.45,0.55], y=[-0.15,0.15] (정면)
-# goals:     y=±0.32-0.35 (측면) → 측방 운반 필수, trivial place 없음
-# min box-goal dist: box(0.55,0.15)↔goal(0.50,0.32) = 0.177m > 0.12m ✓
+# 목표 위치 — EE home pose (0.307, 0, 0.487) 기준 ~0.20m 이내
+# place_rate ≥ 5% 확보 → PPO advantage 학습 가능 → noise 안정화
+# 이후 place_rate >30% 달성 시 goal 원래 위치(±0.35m)로 복원할 것
 PLACE_GOALS = [
-    (0.48,  0.35, 0.53),
-    (0.48, -0.35, 0.53),
-    (0.50,  0.32, 0.53),
-    (0.50, -0.32, 0.53),
+    (0.42,  0.15, 0.53),   # dist from EE home ≈ 0.197m
+    (0.42, -0.15, 0.53),
+    (0.40,  0.15, 0.53),   # dist from EE home ≈ 0.183m
+    (0.40, -0.15, 0.53),
 ]
 
 OBS_DIM = 31  # box_or_goal_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)+grasped(1)
