@@ -317,11 +317,13 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 파지 판정
         newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
         self._grasped |= newly_grasped
-        # grasp 발동 순간: 박스 state 저장 + EE→박스 offset 계산
+        # grasp 발동 순간: offset=0 → box_pos_carried = ee_pos (항상)
+        # threshold=0.35m이라 랜덤 offset 시 goal까지 목표 EE 위치가 불확정 → 학습 불가
+        # offset=0이면 "EE를 goal로 이동"이라는 단순하고 일관된 task로 고정됨
         if newly_grasped.any():
             new_ids = newly_grasped.nonzero(as_tuple=True)[0]
             self._frozen_box_state[new_ids] = self.box.data.root_state_w[new_ids].clone()
-            self._grasp_ee_offset[new_ids]  = box_pos[new_ids] - ee_pos[new_ids]
+            self._grasp_ee_offset[new_ids]  = 0.0  # offset 제거: box = EE 위치
 
         # 박스 현재 위치 (EE + offset으로 운반 중)
         box_pos_carried = ee_pos + self._grasp_ee_offset  # grasped 아닌 env는 의미없음
