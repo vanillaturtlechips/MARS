@@ -76,12 +76,12 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    # 보상 가중치 — 하이브리드 설계
-    # Approach: Exp 금속탐지기 (박스 찾기), decay=5.0으로 중거리 hover 억제
-    # Transport: Progress Delta (성과급) — 월급 루팡 방지
+    # 보상 가중치 — Progress Delta 통일 설계
+    # Approach: Progress Delta (EE→박스 가까워진 만큼) — Cartesian delta 제어에 적합
+    # Transport: Progress Delta (박스→goal 가까워진 만큼)
     #   이동한 만큼만 보상, 가만히 서있으면 0, 뒤로 가면 음수
     #   V(hover@goal) = transport(이동분) + 0(정지) << V(place) = transport + 800
-    rew_approach:  float =  0.5    # Exp decay=5.0 적용
+    rew_approach:  float =  1.0    # delta * 100 배율 → 3cm 이동 시 +30/step
     rew_grasp:     float = 30.0    # 단발 grasp 유인
     rew_transport: float = 10.0    # delta * 100 배율 → 3cm 이동 시 +30/step
     rew_place:     float = 800.0   # 대형 터미널 보상 유지
@@ -315,8 +315,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         not_grasped = (~self._grasped).float()
 
-        # Approach: Exp 금속탐지기 — decay=5.0으로 근거리에만 집중
-        approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
+        # Approach: Progress Delta — EE가 박스에 가까워진 만큼만 보상 (Cartesian delta 제어 적합)
+        delta_ee_box = (self._prev_dist_ee_box - dist_ee_box).clamp(-0.1, 0.1)
+        approach = self.cfg.rew_approach * delta_ee_box * 100.0 * not_grasped
 
         # Transport: Progress Delta — "어제보다 오늘 더 다가간 만큼만" 보상
         # clamp(-0.1, 0.1): 첫 스텝 prev=999 튀는 현상 방지, 최대 이동 제한
