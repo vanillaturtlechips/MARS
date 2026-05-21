@@ -278,8 +278,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         #   grasped     → box_pos_carried - goal_pos  (transport 방향: goal까지 남은 벡터)
         # 이렇게 하면 정책이 항상 "다음에 가야 할 방향"을 obs[0:3]에서 직접 읽을 수 있음
         box_pos_carried = ee_pos + self._grasp_ee_offset  # grasped 아닌 env는 의미없음
-        approach_rel = box_pos - ee_pos                   # not grasped: EE→box
-        transport_rel = box_pos_carried - self._goal_pos_w  # grasped: box→goal (잔여 벡터)
+        approach_rel = box_pos - ee_pos                   # not grasped: EE→box (target-current)
+        transport_rel = self._goal_pos_w - box_pos_carried  # grasped: EE→goal (target-current) ← 부호 수정
 
         grasped_f = self._grasped.float().unsqueeze(1)    # (N, 1)
         box_or_goal_rel = (
