@@ -95,7 +95,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
     # PackingTable 상면 z≈1.0m, box spawn z=1.0m, goal z=1.03m
-    # reach_pose EE z≈0.95m → box 중심까지 초기 dist≈0.1~0.3m (approach 학습 적합)
+    # reach_pose [0,0,0,-π/2,0,π/2,π/4] → EE z≈0.89m, dist_to_box≈0.11~0.19m (<0.25m)
+    # → 에피소드 시작 즉시 grasp 발동, 학습은 순수 transport에 집중
     grasp_dist_threshold: float = 0.25   # ee ~ box 거리 [m]
     place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
@@ -329,7 +330,16 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # Goal Prox는 먼 곳에서 gradient가 약해지므로, dense 패널티로 보완
         transport_dst = -self.cfg.rew_transport_dst * dist_box_goal * grasped_f
 
-        self._prev_dist_box_goal = dist_box_goal.detach()
+        # grasped 상태에서만 prev 업데이트 (비파지 시 EE-goal 값으로 오염 방지)
+        self._prev_dist_box_goal = torch.where(
+            self._grasped, dist_box_goal.detach(), self._prev_dist_box_goal
+        )
+
+        # 진단 로그 — tensorboard + 콘솔에서 학습 내부 상태 확인
+        log = self.extras.setdefault("log", {})
+        log["dist_ee_box"]   = dist_ee_box.mean().item()
+        log["grasp_rate"]    = self._grasped.float().mean().item() * 100.0  # %
+        log["dist_box_goal"] = (dist_box_goal * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
 
         rew = (
             approach
@@ -381,10 +391,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
             env_ids_t = env_ids.long()
         n = env_ids_t.shape[0]
 
-        # Franka "ready" 자세: EE z≈0.95m (PackingTable 상면 1.0m에 근접)
-        # q2=-0.3, q4=-1.8, q6=1.6: 어깨를 세우고 팔꿈치를 덜 굽혀 EE를 높임
+        # Franka "table reach" 자세: EE z≈0.89m (검증된 FK 결과)
+        # [0,0,0,-π/2,0,π/2,π/4]: 팔을 앞으로 뻗고 팔꿈치 90° → EE≈(0.507,0,0.89)
+        # 박스(z=1.0m)까지 dist≈0.11~0.19m < grasp_threshold(0.25m) → 즉시 grasp
         reach_pose = torch.tensor(
-            [0.0, -0.3, 0.0, -1.8, 0.0, 1.6, 0.785, 0.04, 0.04],
+            [0.0, 0.0, 0.0, -1.5708, 0.0, 1.5708, 0.7854, 0.04, 0.04],
             device=self.device
         ).unsqueeze(0).expand(n, -1)
         self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
