@@ -3,6 +3,10 @@
 로봇: Franka Panda (7-DOF 암 + 평행 그리퍼)
 임무: 박스를 집어 지정 선반 위치에 내려놓기
 
+행동 (8-dim): [dq0..dq6, gripper] — joint delta control (0.05 rad/step)
+  IK 제거: Cartesian delta → joint space direct control
+  grasp z-offset=0.06m: 박스가 EE보다 6cm 위 → 테이블 충돌/물리 폭발 방지
+
 관측 (31-dim):
   box_or_goal_rel(3) + box_quat(4) + box_mass(1) +
   gripper(1) + goal_rel(3) + jpos(9) + jvel(9) + grasped(1)
@@ -46,22 +50,27 @@ except ImportError:
 # grasp_dist_threshold=999 → 에피소드 시작 즉시 grasp → 순수 transport 학습
 # place_threshold=0.12m이므로 이동 필요 거리=0.16m (~6step 최소)
 PLACE_GOALS = [
-    (0.50,  0.20, 0.55),   # dist from EE home ≈ 0.271m
-    (0.50, -0.20, 0.55),
-    (0.48,  0.22, 0.55),   # dist from EE home ≈ 0.265m
-    (0.48, -0.22, 0.55),
+    (0.50,  0.20, 0.65),   # dist from EE home ≈ 0.30m — z=0.65m: box(EE+0.06) 위치 클리어
+    (0.50, -0.20, 0.65),
+    (0.48,  0.22, 0.65),
+    (0.48, -0.22, 0.65),
 ]
 
 OBS_DIM = 31  # box_or_goal_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)+grasped(1)
 TEACHER_OBS_DIM = OBS_DIM
 STUDENT_OBS_DIM = OBS_DIM
 
+# Franka Panda 관절 한계 (라디안) — joint control clamp용
+# j4(index 3): upper=-0.0698 (항상 음수), j6(index 5): lower=-0.0175
+_FRANKA_Q_LOWER = [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973]
+_FRANKA_Q_UPPER = [ 2.8973,  1.7628,  2.8973, -0.0698,  2.8973,  3.7525,  2.8973]
+
 
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
     episode_length_s = 4.0      # 240steps: transport 이동 시간 확보 (~0.36m @ 3cm/step = 12steps 이상)
-    action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
+    action_space = 8             # [dq0..dq6, gripper] Joint delta control — IK 제거
     observation_space = OBS_DIM  # 31-dim
     state_space = 0
 
@@ -132,7 +141,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._goal_pos_w  = torch.zeros(n, 3, device=d)
         self._box_mass    = torch.ones(n, device=d)
         self._grasped     = torch.zeros(n, dtype=torch.bool, device=d)
-        self._actions     = torch.zeros(n, 4, device=d)
+        self._actions     = torch.zeros(n, 8, device=d)
+        self._q_lower     = torch.tensor(_FRANKA_Q_LOWER, device=d)
+        self._q_upper     = torch.tensor(_FRANKA_Q_UPPER, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
         self._camera_noise_std   = torch.full((n,), 0.03, device=d)  # 에피소드당 카메라 노이즈 레벨
@@ -230,24 +241,15 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        n = self.num_envs
-        # Cartesian delta: actions[:, :3] = [dx, dy, dz] world frame
-        delta_pos = self._actions[:, :3] * 0.03  # max 3cm/step
-
-        # DLS IK: Δq = J^T (J J^T + λI)^{-1} Δx  (λ=0.01: 원래 0.05보다 덜 보수적)
-        jac = self.robot.root_physx_view.get_jacobians()
-        J   = jac[:, self._jac_body_idx, :3, :7]   # [N, 3, 7]
-        lam = 0.01
-        JT      = J.transpose(-2, -1)
-        JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
-        J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
-        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
-
+        # Joint delta control: actions[:, :7] = Δq [rad], actions[:, 7] = gripper
+        # IK 제거 — 직접 관절 공간 제어로 특이점·수렴 속도 문제 해결
+        delta_q      = self._actions[:, :7] * 0.05   # max 0.05 rad/step
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
+        joint_target = joint_target.clamp(self._q_lower, self._q_upper)
         self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
 
-        # Gripper: action[:, 3] ∈ [-1, 1] → [0, 0.04]m
-        gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
+        # Gripper: action[:, 7] ∈ [-1, 1] → [0, 0.04]m
+        gripper_pos = ((self._actions[:, 7:8] + 1.0) / 2.0) * 0.04
         self.robot.set_joint_position_target(
             gripper_pos.expand(-1, 2).clone(), joint_ids=[7, 8]
         )
@@ -322,7 +324,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         if newly_grasped.any():
             new_ids = newly_grasped.nonzero(as_tuple=True)[0]
             self._frozen_box_state[new_ids] = self.box.data.root_state_w[new_ids].clone()
-            self._grasp_ee_offset[new_ids]  = 0.0  # offset 제거: box = EE 위치
+            self._grasp_ee_offset[new_ids]  = 0.0        # x, y = 0
+            self._grasp_ee_offset[new_ids, 2] = 0.06    # z: 박스를 EE보다 6cm 위에 — 테이블 충돌 방지
 
         # 박스 현재 위치 (EE + offset으로 운반 중)
         box_pos_carried = ee_pos + self._grasp_ee_offset  # grasped 아닌 env는 의미없음
