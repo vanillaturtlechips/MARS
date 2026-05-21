@@ -188,16 +188,18 @@ class WarehouseManipulationEnv(DirectRLEnv):
             self.box.write_root_state_to_sim(frozen, grasped_ids)
 
     def _get_observations(self) -> dict:
-        ee_pos, _  = self._get_ee_pose()
-        joint_pos  = self.robot.data.joint_pos
-        joint_vel  = self.robot.data.joint_vel
-        gripper_w  = joint_pos[:, 7:8] + joint_pos[:, 8:9]
+        ee_pos, _      = self._get_ee_pose()
+        joint_pos      = self.robot.data.joint_pos
+        joint_vel      = self.robot.data.joint_vel
+        gripper_w      = joint_pos[:, 7:8] + joint_pos[:, 8:9]
+        # grasped: box_pos_carried = ee + offset; not-grasped: offset=0 → ee_pos
+        box_pos_carried = ee_pos + self._grasp_ee_offset
 
         if self.cfg.student_mode:
             obs = torch.cat([
                 ee_pos,
                 gripper_w,
-                self._goal_pos_w - ee_pos,
+                self._goal_pos_w - box_pos_carried,
                 joint_pos[:, :9],
                 joint_vel[:, :9],
             ], dim=1)   # (N, 25)
@@ -209,7 +211,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 box_quat,
                 self._box_mass.unsqueeze(1),
                 gripper_w,
-                self._goal_pos_w - ee_pos,
+                self._goal_pos_w - box_pos_carried,
                 joint_pos[:, :9],
                 joint_vel[:, :9],
             ], dim=1)   # (N, 30)
