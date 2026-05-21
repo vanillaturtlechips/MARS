@@ -3,12 +3,16 @@
 로봇: Franka Panda (7-DOF 암 + 평행 그리퍼)
 임무: 박스를 집어 지정 선반 위치에 내려놓기
 
-관측 (30-dim, Teacher 포맷 + 카메라 DR):
-  noisy_box_rel(3) + box_quat(4) + box_mass(1) +
-  gripper(1) + goal_rel(3) + jpos(9) + jvel(9)
+관측 (31-dim):
+  box_or_goal_rel(3) + box_quat(4) + box_mass(1) +
+  gripper(1) + goal_rel(3) + jpos(9) + jvel(9) + grasped(1)
 
-Teacher 수렴 검증 포맷 유지, box_rel에만 카메라 노이즈 DR 적용.
-Jetson 배포 시: noisy_box_rel → RGB-D 추정값, box_quat → 카메라 추정, box_mass → 1.0
+  box_or_goal_rel:
+    not grasped → box_pos - ee_pos  (approach 방향)
+    grasped     → box_pos_carried - goal_pos  (transport 방향, goal까지 벡터)
+  grasped(1): 파지 여부 플래그 — 정책이 phase를 명시적으로 구분
+
+Jetson 배포 시: box_or_goal_rel → RGB-D 추정값, box_quat → 카메라 추정, box_mass → 1.0
 """
 
 from __future__ import annotations
@@ -49,7 +53,7 @@ PLACE_GOALS = [
     (0.50, -0.32, 0.53),
 ]
 
-OBS_DIM = 30  # noisy_box_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)
+OBS_DIM = 31  # box_or_goal_rel(3)+box_quat(4)+box_mass(1)+gripper(1)+goal_rel(3)+jpos(9)+jvel(9)+grasped(1)
 TEACHER_OBS_DIM = OBS_DIM
 STUDENT_OBS_DIM = OBS_DIM
 
@@ -59,7 +63,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2               # 120Hz sim / 2 = 60Hz policy
     episode_length_s = 10.0     # 15s→10s: 리턴 분산 감소, VF 수렴 가속
     action_space = 4             # [dx, dy, dz, gripper] Cartesian delta control
-    observation_space = OBS_DIM  # 30-dim
+    observation_space = OBS_DIM  # 31-dim
     state_space = 0
 
     sim: SimulationCfg = SimulationCfg(
@@ -76,16 +80,19 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
 
     # 보상 가중치
     # Approach      : Exp(-dist_ee_box*5)    — EE가 박스 가까울수록 연속 유인 (비파지 시)
-    # Transport     : Progress Delta         — 박스가 goal 방향으로 이동한 만큼 (이동 인센티브)
-    # Goal Prox     : Exp(-dist_box_goal*5)  — grasped 시 goal 근처일수록 지속 보상 (포지션 가치)
-    # Transport Dst : -dist_box_goal         — grasped 시 goal까지 거리 패널티 (dense gradient)
-    #   Goal Prox + Transport Dst 조합: VF가 "얼마나 가까운가" 를 직접 학습
-    #   hover exploit 검증: V(hover@0.12m,600step) = 329-36-12 = 281 << V(place@50) = 823 ✓
+    # Transport     : Potential-based shaping — 박스가 goal 방향으로 이동한 만큼
+    #                 shaping = rew_transport * (prev_dist - cur_dist)
+    #                 3cm 직선 이동 시 +1.5/step (scale=50), random walk → E=0
+    # Goal Prox     : Exp(-dist_box_goal*3)  — grasped 시 goal 근처일수록 지속 보상
+    #                 scale=3 (5에서 축소): dist=0.35m에서 exp(-1.05)=0.35 (학습 가능 범위)
+    # Transport Dst : -dist_box_goal * 3.0   — grasped 시 거리 패널티, VF 수렴 가속
+    #                 scale×6: dist=0.35m → -1.05/step (기존 -0.175의 6배, gradient 강화)
+    #   hover exploit 검증: V(hover@0.12m,600step) = -252 + 208 - 12 = -56 << V(place) = 800 ✓
     rew_approach:      float =  1.0    # Exp(-dist_ee_box*5) 배율
     rew_grasp:         float = 30.0    # 단발 grasp 유인
-    rew_transport:     float = 10.0    # delta * 100 배율 → 3cm 이동 시 +30/step
-    rew_goal_prox:     float =  1.0    # Exp(-dist_box_goal*5) 배율 — grasped 시 goal 근처 지속
-    rew_transport_dst: float =  0.5    # dist_box_goal 패널티 — grasped 시 goal 거리 dense 페널티
+    rew_transport:     float = 50.0    # potential shaping 배율 — 3cm 이동 시 +1.5/step
+    rew_goal_prox:     float =  5.0    # Exp(-dist_box_goal*3) 배율 — scale 증가로 먼 거리서도 gradient
+    rew_transport_dst: float =  3.0    # dist_box_goal 패널티 배율 — 6배 증가로 dense gradient 강화
     rew_place:         float = 800.0   # 대형 터미널 보상 유지
     rew_drop:          float =   0.0   # 낙하 패널티 제거 (박스 회피 전략 방지)
     rew_time:          float = -0.02   # 스텝 패널티
@@ -94,10 +101,10 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)   # m (정육면체 한 변)
     box_mass_range: tuple[float, float] = (0.3, 2.0)     # kg
 
-    # PackingTable 상면 z≈1.0m, box spawn z=1.0m, goal z=1.03m
-    # reach_pose [0,0,0,-π/2,0,π/2,π/4] → EE z≈0.89m, dist_to_box≈0.11~0.19m (<0.25m)
+    # PackingTable 상면 z≈0.5m, box spawn z=0.5m, goal z=0.53m
+    # reach_pose → EE z≈0.487m, dist_to_box≈0.013~0.159m (<0.35m)
     # → 에피소드 시작 즉시 grasp 발동, 학습은 순수 transport에 집중
-    grasp_dist_threshold: float = 0.35   # ee ~ box 거리 [m] — reset 후 max 초기거리 0.286m → 0.35m으로 전 env 즉시 grasp 보장
+    grasp_dist_threshold: float = 0.35   # ee ~ box 거리 [m] — reset 후 max 초기거리 0.159m → 0.35m으로 전 env 즉시 grasp 보장
     place_dist_threshold: float = 0.12   # box ~ goal 거리 [m]
 
     camera_noise_min: float = 0.0   # 카메라 노이즈 DR 하한 [m] — 0: 노이즈 없음 (Teacher 동등)
@@ -267,20 +274,34 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos  = self.box.data.root_pos_w     # (N, 3)
         box_quat = self.box.data.root_quat_w    # (N, 4)
 
-        # box_rel에만 노이즈 — Teacher 포맷 유지하면서 카메라 DR 적용
-        # per-step 샘플 금지 (SNR 보장)
-        noise = torch.randn_like(box_pos) * self._camera_noise_std.unsqueeze(1)
-        box_rel_noisy = (box_pos - ee_pos) + noise
+        # box_or_goal_rel: 상태에 따라 다른 벡터 제공
+        #   not grasped → box_pos - ee_pos  (approach 방향: 박스 찾아가기)
+        #   grasped     → box_pos_carried - goal_pos  (transport 방향: goal까지 남은 벡터)
+        # 이렇게 하면 정책이 항상 "다음에 가야 할 방향"을 obs[0:3]에서 직접 읽을 수 있음
+        box_pos_carried = ee_pos + self._grasp_ee_offset  # grasped 아닌 env는 의미없음
+        approach_rel = box_pos - ee_pos                   # not grasped: EE→box
+        transport_rel = box_pos_carried - self._goal_pos_w  # grasped: box→goal (잔여 벡터)
+
+        grasped_f = self._grasped.float().unsqueeze(1)    # (N, 1)
+        box_or_goal_rel = (
+            approach_rel * (1.0 - grasped_f)             # not grasped: approach 방향
+            + transport_rel * grasped_f                   # grasped: transport 방향
+        )
+
+        # 카메라 DR 노이즈 (box_or_goal_rel에만 적용)
+        noise = torch.randn_like(box_or_goal_rel) * self._camera_noise_std.unsqueeze(1)
+        box_or_goal_rel_noisy = box_or_goal_rel + noise
 
         obs = torch.cat([
-            box_rel_noisy,                   # (N, 3) ← Teacher의 box_rel 자리, 노이즈 추가
+            box_or_goal_rel_noisy,           # (N, 3) — approach 또는 transport 방향
             box_quat,                        # (N, 4)
             self._box_mass.unsqueeze(1),     # (N, 1)
             gripper_w,                       # (N, 1)
-            self._goal_pos_w - ee_pos,       # (N, 3)
+            self._goal_pos_w - ee_pos,       # (N, 3) — goal 위치 (절대 참조)
             joint_pos[:, :9],                # (N, 9)
             joint_vel[:, :9],                # (N, 9)
-        ], dim=1)   # (N, 30)
+            self._grasped.float().unsqueeze(1),  # (N, 1) — 파지 플래그 (phase 구분)
+        ], dim=1)   # (N, 31)
 
         return {"policy": obs}
 
@@ -306,6 +327,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos_carried = ee_pos + self._grasp_ee_offset  # grasped 아닌 env는 의미없음
         dist_box_goal = (box_pos_carried - self._goal_pos_w).norm(dim=1)
 
+        # grasp 첫 step: prev_dist를 현재 dist로 동기화 → transport delta spike 방지
+        # (reset 시 box-goal 거리로 초기화했지만, EE 이동 후 실제 grasp 위치가 다를 수 있음)
+        if newly_grasped.any():
+            new_ids = newly_grasped.nonzero(as_tuple=True)[0]
+            self._prev_dist_box_goal[new_ids] = dist_box_goal[new_ids].detach()
+
         # 낙하 판정 — 박스가 테이블 아래(z<0.30)로 떨어진 경우
         dropped = self._grasped & (box_pos[:, 2] < 0.30)
 
@@ -313,24 +340,29 @@ class WarehouseManipulationEnv(DirectRLEnv):
         placed = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
 
         not_grasped = (~self._grasped).float()
+        grasped_f   = self._grasped.float()
 
         # Approach: Exp(-dist*5) — EE가 박스에 가까울수록 지수적 보상 (비파지 시만)
         approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
 
-        # Transport: Progress Delta — 박스가 goal 방향으로 이동한 만큼
-        delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
-        transport  = self.cfg.rew_transport * delta_goal * 100.0 * self._grasped.float()
+        # Transport: Potential-based shaping — 박스가 goal 방향으로 이동한 만큼
+        # shaping = rew_transport * (prev - cur)
+        # 3cm 직선 이동: 50 * 0.03 = 1.5/step (clamp 불필요, 자연적으로 bounded)
+        # random walk → E[delta] = 0 → E[transport] = 0 (advantage signal 없음)
+        # 올바른 이동 → delta > 0 → 양의 advantage 생성 → gradient 발생
+        delta_goal = self._prev_dist_box_goal - dist_box_goal  # 양수 = goal에 가까워짐
+        transport  = self.cfg.rew_transport * delta_goal * grasped_f
 
-        grasped_f = self._grasped.float()
+        # Goal Proximity: Exp(-dist*3) — grasped 시 goal 근처일수록 지속 보상
+        # scale=3 (기존 5→3): dist=0.35m에서 exp(-1.05)=0.35 (학습 가능한 gradient 범위)
+        # scale=5이면 dist=0.35m에서 exp(-1.75)=0.17 (너무 작아 먼 거리서 gradient 거의 없음)
+        goal_prox = self.cfg.rew_goal_prox * torch.exp(-dist_box_goal * 3.0) * grasped_f
 
-        # Goal Proximity: Exp(-dist*5) — grasped 시 goal 가까울수록 지속 보상
-        goal_prox = self.cfg.rew_goal_prox * torch.exp(-dist_box_goal * 5.0) * grasped_f
-
-        # Transport Dense: -dist_box_goal — grasped 시 거리 직접 패널티 (dense gradient)
-        # Goal Prox는 먼 곳에서 gradient가 약해지므로, dense 패널티로 보완
+        # Transport Dense: -dist_box_goal — grasped 시 거리 패널티 (dense gradient)
+        # scale 3.0 (기존 0.5의 6배): dist=0.35m → -1.05/step (VF 학습 신호 강화)
         transport_dst = -self.cfg.rew_transport_dst * dist_box_goal * grasped_f
 
-        # grasped 상태에서만 prev 업데이트 (비파지 시 EE-goal 값으로 오염 방지)
+        # grasped 상태에서만 prev 업데이트 (비파지 시 오염 방지)
         self._prev_dist_box_goal = torch.where(
             self._grasped, dist_box_goal.detach(), self._prev_dist_box_goal
         )
@@ -419,7 +451,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # 상태 리셋
         self._grasped[env_ids_t] = False
-        self._prev_dist_box_goal[env_ids_t] = 999.0
+        # prev_dist_box_goal: reset 직후 실제 box-goal 거리로 초기화
+        # 999.0으로 두면 grasp 첫 step에서 transport reward가 폭발함 (999 - 0.35 = 998.65)
+        # box spawn 위치와 goal 위치 기반으로 실제 초기 거리를 근사
+        # (정확한 EE 위치는 physics step 전이라 미확정이므로 box_pos 기준)
+        box_pos_reset = box_state[:, :3]
+        goal_pos_reset = self._goal_pos_w[env_ids_t]
+        init_dist = (box_pos_reset - goal_pos_reset).norm(dim=1)
+        self._prev_dist_box_goal[env_ids_t] = init_dist.detach()
         self._frozen_box_state[env_ids_t]   = 0.0
         self._grasp_ee_offset[env_ids_t]    = 0.0
         # 카메라 노이즈 DR: 에피소드마다 [noise_min, noise_max] 균일 샘플

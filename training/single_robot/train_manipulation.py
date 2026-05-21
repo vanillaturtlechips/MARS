@@ -48,7 +48,9 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
     runner_cfg.save_interval      = args.save_interval
     runner_cfg.experiment_name    = f"warehouse_manipulation_{mode}"
     runner_cfg.logger             = "tensorboard"
-    runner_cfg.empirical_normalization = False
+    # obs 정규화 활성화: transport_dst=-3*dist는 grasp phase 내내 음수이므로
+    # VF가 큰 음수 return을 예측해야 함 → 정규화로 스케일 안정화
+    runner_cfg.empirical_normalization = True
 
     runner_cfg.policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
@@ -68,7 +70,10 @@ def main():
     runner_cfg = make_runner_cfg(TEACHER_OBS_DIM, "manipulation", args.max_iter)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
-    cfg_dict["algorithm"]["entropy_coef"] = 0.001
+    # entropy_coef 증가: transport phase에서 탐색 유지 (0.001 → 0.01)
+    # 초기 surrogate_loss≈0은 entropy 부족으로 정책이 조기 수렴한 것
+    # 0.01이면 탐색을 유지하면서도 place reward로 수렴 가능
+    cfg_dict["algorithm"]["entropy_coef"] = 0.01
     cfg_dict["algorithm"]["learning_rate"] = args.lr
     runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_manipulation", device=env.device)
 
