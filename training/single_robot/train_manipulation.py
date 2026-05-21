@@ -81,8 +81,7 @@ def main():
         print(f"[Resume] {args.resume_ckpt}")
         runner.load(args.resume_ckpt)
 
-    print(f"\n[MANIPULATION] obs_dim={TEACHER_OBS_DIM}, {args.num_envs} envs, {args.max_iter} iter")
-    print(f"카메라 DR: σ ∈ [{env_cfg.camera_noise_min*100:.1f}cm, {env_cfg.camera_noise_max*100:.1f}cm] per-episode\n")
+    print(f"\n[MANIPULATION] obs_dim={TEACHER_OBS_DIM}, {args.num_envs} envs, {args.max_iter} iter\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()
