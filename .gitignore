@@ -226,3 +226,4 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .~lock.*
+!logs/warehouse_manipulation_teacher/model_2999.pt
