@@ -444,4 +444,15 @@ tail -f train.log
 
 ---
 
-*최종 업데이트: 2026-05-23 — Phase 3 S5 버그·eval분류버그·cfg.beta 수정 완료, Phase 2 에셋 복원. RunPod S5 재eval 대기 중.*
+*최종 업데이트: 2026-05-23 — Phase 3 버그 수정 완료, Phase 2 Teacher 100% place rate 확정 및 GitHub 저장 완료.*
+
+---
+
+## 다음 세션 할 일
+
+| 순서 | 작업 | 명령어 |
+|------|------|--------|
+| 1 | Phase 2 Student 훈련 | `python training/single_robot/train_manipulation.py --student --teacher_ckpt logs/warehouse_manipulation/model_2999.pt --num_envs 512 --max_iter 3000 --headless` |
+| 2 | Student eval | `python training/single_robot/eval_manipulation.py --student --ckpt logs/warehouse_manipulation_student/model_2999.pt --num_envs 128 --num_episodes 200 --headless` |
+| 3 | Phase 3 S5 재eval | `python training/multi_robot/eval_scenarios.py --ckpt logs/warehouse_mappo/model_9999.pt --num_episodes 100 --num_eval_envs 16 --tag 17dim_s5fix --headless` |
+| 4 | Phase 4 LLM 오케스트레이터 | Student 완료 후 |
