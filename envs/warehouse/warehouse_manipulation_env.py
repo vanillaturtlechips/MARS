@@ -69,7 +69,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_approach:  float =  0.5    # exp(-dist*5) * not_grasped
     rew_grasp:     float = 30.0   # one-time grasp bonus
     rew_transport: float = 10.0   # delta_dist × 100 × grasped
-    rew_align:     float =  3.0   # cos_sim(action, goal_dir) × grasped
+    rew_align:     float =  0.0   # exploit 원인 — 비활성화
     rew_place:     float = 100.0  # terminal bonus (800→100: VF 스케일 안정화)
     rew_drop:      float =   0.0
     rew_time:      float = -0.02
@@ -77,7 +77,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)
     box_mass_range: tuple[float, float] = (0.3, 2.0)
 
-    grasp_dist_threshold: float = 0.25
+    grasp_dist_threshold: float = 0.07
     place_dist_threshold: float = 0.17
 
     student_mode: bool = False
