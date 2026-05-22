@@ -240,7 +240,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         not_grasped = (~self._grasped).float()
         grasped_f   = self._grasped.float()
 
-        approach  = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
+        approach  = self.cfg.rew_approach * torch.exp(-dist_ee_box * 2.0) * not_grasped
 
         delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * 100.0 * grasped_f
