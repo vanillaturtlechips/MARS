@@ -65,19 +65,20 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    rew_approach:  float =  0.5    # -dist_ee_box * not_grasped (negative penalty)
-    rew_grasp:     float = 30.0   # one-time grasp bonus
-    rew_transport: float = 10.0   # delta_dist × 100 × grasped
-    rew_align:     float =  0.0   # exploit 원인 — 비활성화
-    rew_place:     float = 100.0  # terminal bonus
-    rew_drop:      float =   0.0
-    rew_time:      float = -0.50  # -0.02→-0.50: random walk 수렴 방지
+    rew_approach:   float =  0.5    # -dist_ee_box * not_grasped
+    rew_grasp:      float = 30.0   # one-time grasp bonus
+    rew_transport:  float = 10.0   # delta_dist × 100 × grasped
+    rew_align:      float =  0.0   # exploit 원인 — 비활성화
+    rew_goal_dist:  float =  5.0   # -dist_box_goal × grasped (dense shaping)
+    rew_place:      float = 100.0  # terminal bonus
+    rew_drop:       float =   0.0
+    rew_time:       float = -0.50
 
     box_size_range: tuple[float, float] = (0.04, 0.08)
     box_mass_range: tuple[float, float] = (0.3, 2.0)
 
     grasp_dist_threshold: float = 0.11
-    place_dist_threshold: float = 0.17
+    place_dist_threshold: float = 0.13  # 0.17→0.13: random walk 진입 방지
 
     student_mode: bool = False
 
@@ -239,12 +240,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         not_grasped = (~self._grasped).float()
         grasped_f   = self._grasped.float()
 
-        approach  = -self.cfg.rew_approach * dist_ee_box * not_grasped
+        approach   = -self.cfg.rew_approach  * dist_ee_box  * not_grasped
+        goal_dense = -self.cfg.rew_goal_dist * dist_box_goal * grasped_f
 
         delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * 100.0 * grasped_f
 
-        # action-goal alignment: IK 효율 낮아도 즉각 gradient 제공
         goal_dir  = (self._goal_pos_w - box_pos_carried).clone()
         goal_norm = goal_dir.norm(dim=1, keepdim=True).clamp(min=1e-6)
         act_dir   = self._actions[:, :3]
@@ -261,11 +262,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         return (
             approach
+            + goal_dense
             + transport
             + alignment
-            + self.cfg.rew_grasp  * newly_grasped.float()
-            + self.cfg.rew_place  * placed.float()
-            + self.cfg.rew_drop   * dropped.float()
+            + self.cfg.rew_grasp * newly_grasped.float()
+            + self.cfg.rew_place * placed.float()
+            + self.cfg.rew_drop  * dropped.float()
             + self.cfg.rew_time
         )
 
