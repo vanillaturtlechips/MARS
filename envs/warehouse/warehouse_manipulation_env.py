@@ -66,7 +66,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    rew_approach:  float =  0.5    # exp(-dist*5) * not_grasped
+    rew_approach:  float =  2.0    # exp(-dist*5) * not_grasped
     rew_grasp:     float = 30.0   # one-time grasp bonus
     rew_transport: float = 10.0   # delta_dist × 100 × grasped
     rew_align:     float =  0.0   # exploit 원인 — 비활성화
@@ -77,7 +77,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)
     box_mass_range: tuple[float, float] = (0.3, 2.0)
 
-    grasp_dist_threshold: float = 0.07
+    grasp_dist_threshold: float = 0.10
     place_dist_threshold: float = 0.17
 
     student_mode: bool = False
