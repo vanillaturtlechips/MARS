@@ -380,3 +380,68 @@ tail -f train.log
 ---
 
 *최종 업데이트: 2026-05-21 — Phase 2 transport 근본 원인(surrogate_loss≈0) 진단 완료, alignment reward 수정 push. 재훈련 대기 중.*
+
+---
+
+## 2026-05-23 세션
+
+### Phase 3 전면 재검증 및 버그 수정
+
+**커밋**: `8b3b236`
+
+#### 발견 및 수정된 버그 3종
+
+| # | 파일 | 문제 | 수정 |
+|---|------|------|------|
+| 1 | `eval_scenarios.py` | **S5 시나리오 물리적 불가능** — 대각 경로 `(-3,-3)→(3,3)`, `(-3,3)→(3,-3)`이 각각 2개의 선반 내부를 통과 (t≈0.05-0.10, 0.90-0.95). 훈련 실패가 아니라 설계 버그. | y=0 중앙 통로(선반 없음) 교차 경로로 교체: `spawns [(-4,0),(4,0.3),(0,4)] goals [(4,0),(-4,0.3),(0,-4)]` |
+| 2 | `eval_scenarios.py` | **eval 분류 버그** — 마지막 스텝에서 goal 도달 시 `terminated AND timed_out` 동시 True → `if terminated and not timed_out` 조건에서 deadlock으로 오분류 | `if terminated[idx]` 로 변경 후 reached 별도 계산 |
+| 3 | `warehouse_marl_env.py` | **cfg.beta 불일치** — 코드는 `0.5`, docs는 `1.5` 의도. model_9999.pt는 0.5로 학습됨 (pairwise 반발력 의도보다 약함) | `cfg.beta = 1.5` 로 수정 + 주석에 "model_9999.pt는 0.5 훈련" 명기 |
+
+#### Phase 3 최종 확정 — model_9999.pt Freeze
+
+```
+17-dim obs + rew_collision=-200 + SAFE_DIST=2.5 + W_REP=1.5 + cfg.beta=0.5 (실제 훈련값)
+```
+
+| 시나리오 | 충돌률 | 교착률 | 전원도달 |
+|---------|:------:|:------:|:-------:|
+| S1 정면 충돌 | 0% | 7% | **93%** |
+| S2 3-way 교착 | 0% | 16% | **84%** |
+| S3 통로 우선 | 1% | 4% | **95%** |
+| **S1~S3 평균** | **0.3%** | **9%** | **90.7%** |
+| S4 동일 목표 | 0% | 100% | 0% — 구조적 한계, LLM 레이어 해결 |
+| S5 혼합 | 0% | 100% | 0% — 시나리오 버그 수정됨, RunPod 재eval 필요 |
+
+**목표 달성**: 충돌 < 1% ✅ / 교착 < 1% ❌ (9%, 구조적 한계)
+
+---
+
+### Phase 2 시각 에셋 복원
+
+**커밋**: `415bca5`
+
+5월 20일 세션에서 추가했던 에셋 코드가 5월 21일 환경 전면 재설계 시 소실됨. 동일 내용 복원:
+
+| 변경 | 내용 |
+|------|------|
+| 박스 `CuboidCfg` → YCB `003_cracker_box` | `importlib + glob`으로 isaacsim extscache 동적 탐색, `scale=0.7×`, `collision_enabled=False` (훈련 물리 동일) |
+| 테이블 `CuboidCfg` → `PackingTable` USD | kinematic, 상면 z≈0.50m (기존 Cuboid 상면과 동일) |
+| 창고 배경 | `enable_background=True` 시에만 `warehouse_multiple_shelves.usd` + 구체 조명 3개 로드 |
+| 기본값 `enable_background=False` | headless 훈련 속도 영향 없음 (warehouse USD가 PhysX 4× 병목 유발하므로) |
+
+---
+
+### 남은 작업 (업데이트)
+
+| 항목 | 상태 |
+|------|------|
+| Phase 3 Low-level Controller (model_9999.pt) | ✅ Freeze 확정 |
+| Phase 3 S5 재eval (수정된 시나리오) | 🔄 RunPod 필요 |
+| Phase 2 환경 재설계 + 에셋 복원 | ✅ 완료 |
+| Phase 2 훈련 재시작 (alignment reward) | 🔄 RunPod 필요 |
+| Phase 2 Student 중간 체크포인트 eval (model_600~1500) | 🔄 RunPod 필요 |
+| Phase 4 LLM 오케스트레이터 | Phase 2 완료 후 |
+
+---
+
+*최종 업데이트: 2026-05-23 — Phase 3 S5 버그·eval분류버그·cfg.beta 수정 완료, Phase 2 에셋 복원. RunPod S5 재eval 대기 중.*
