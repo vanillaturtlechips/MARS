@@ -48,7 +48,7 @@ STUDENT_OBS_DIM = 25
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 15.0
+    episode_length_s = 5.0   # 15→5s: timeout 비용 증가 + random walk 억제
     action_space = 4             # [dx, dy, dz, gripper]
     observation_space = TEACHER_OBS_DIM
     state_space = 0
@@ -69,9 +69,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_grasp:     float = 30.0   # one-time grasp bonus
     rew_transport: float = 10.0   # delta_dist × 100 × grasped
     rew_align:     float =  0.0   # exploit 원인 — 비활성화
-    rew_place:     float = 100.0  # terminal bonus (800→100: VF 스케일 안정화)
+    rew_place:     float = 100.0  # terminal bonus
     rew_drop:      float =   0.0
-    rew_time:      float = -0.02
+    rew_time:      float = -0.50  # -0.02→-0.50: random walk 수렴 방지
 
     box_size_range: tuple[float, float] = (0.04, 0.08)
     box_mass_range: tuple[float, float] = (0.3, 2.0)
