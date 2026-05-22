@@ -70,6 +70,9 @@ export PIP_CACHE_DIR=/workspace/pip_cache
 export TMPDIR=/workspace/tmp
 mkdir -p /workspace/uv_cache /workspace/pip_cache /workspace/tmp
 
+# pypi.nvidia.com 응답 느림 대비 — 기본 30s → 600s
+export UV_HTTP_TIMEOUT=600
+
 # ── 2. uv ──────────────────────────────────────────────────────
 echo "[2/7] uv 설치..."
 pip install uv -q
