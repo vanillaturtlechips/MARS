@@ -64,9 +64,12 @@ SCENARIOS: dict[str, dict] = {
         "goals":  [( 2.0,  0.0), ( 2.0, 0.0), (-3.0, 0.0)],
     },
     "S5_mixed": {
-        "desc": "장애물 + 다중 로봇 혼합 — 선반 사이 밀집 이동",
-        "spawns": [(-3.0, -3.0), (-3.0, 3.0), (3.0, 0.0)],
-        "goals":  [( 3.0,  3.0), ( 3.0, -3.0), (-3.0, 0.0)],
+        "desc": "혼잡 통로 — y=0 중앙 통로에서 3방향 교차 (선반 환경)",
+        # 이전 대각 경로 [(-3,-3)→(3,3), (-3,3)→(3,-3)]는 선반 내부를 통과:
+        #   t≈0.05-0.10 at bottom-left shelf, t≈0.90-0.95 at top-right shelf
+        # → 물리적으로 해결 불가. y=0 통로(선반 없음)를 교차하는 경로로 교체.
+        "spawns": [(-4.0, 0.0), (4.0, 0.3), (0.0, 4.0)],
+        "goals":  [( 4.0, 0.0), (-4.0, 0.3), (0.0, -4.0)],
     },
 }
 
@@ -202,7 +205,9 @@ def run_scenario(
                     [r.data.root_pos_w[:, :2] for r in env.robots], dim=1
                 )
                 for idx in just_done.nonzero(as_tuple=True)[0]:
-                    if terminated[idx] and not timed_out[idx]:
+                    if terminated[idx]:
+                        # terminated = all_reached | any_oob | collision
+                        # timed_out 여부와 무관하게 마지막 스텝 goal 도달 시 올바르게 분류
                         col = False
                         for ii in range(N_ROBOTS):
                             for jj in range(ii + 1, N_ROBOTS):
@@ -210,7 +215,13 @@ def run_scenario(
                                     col = True
                         collision[idx] = col
                         if not col:
-                            reached[idx] = True
+                            all_r = all(
+                                (env.robots[ii].data.root_pos_w[idx, :2]
+                                 - env._goal_pos_w[idx, ii]).norm() < env.cfg.goal_radius
+                                for ii in range(N_ROBOTS)
+                            )
+                            reached[idx] = all_r
+                    # timed_out only (not terminated) → deadlock (reached/collision 모두 False 유지)
                 recorded |= just_done
 
             # 강제 종료

@@ -115,8 +115,8 @@ class IPPOReshapeWrapper:
         """
         from tensordict import TensorDict
 
-        actor_obs  = self._split_actor_obs(obs)    # (E*N, 9)
-        critic_obs = self._expand_critic_obs(obs)  # (E*N, 27)
+        actor_obs  = self._split_actor_obs(obs)    # (E*N, obs_per_robot)   e.g. 17-dim
+        critic_obs = self._expand_critic_obs(obs)  # (E*N, obs_per_robot*N) e.g. 51-dim
         return TensorDict(
             {"policy": actor_obs, "critic": critic_obs},
             batch_size=[self._E * self.n],

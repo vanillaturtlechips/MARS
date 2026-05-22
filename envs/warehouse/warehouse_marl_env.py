@@ -70,8 +70,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
 
     # MPG 가중치 (SAFE_DIST 마스킹과 조합)
     # alpha↑: goal tracking 강화 / beta: SAFE_DIST 내 반발력만 작동
+    # model_9999.pt는 beta=0.5로 훈련됨 — 재훈련 시 1.5 사용
     alpha: float = 1.0
-    beta: float = 0.5
+    beta: float = 1.5
 
     rew_collision: float  = -200.0  # 충돌 = 즉사 (교착 -90과 확실한 차이)
     rew_goal: float       =    6.0  # 목표 도달 보상
@@ -218,9 +219,9 @@ class WarehouseMARLEnv(DirectRLEnv):
             obs_i = torch.cat([goal_body, goal_dist, vel_body, omega_z, shelf_dist] + other_dists, dim=1)
             obs_list.append(obs_i)
 
-        obs = torch.cat(obs_list, dim=1)   # (N, N_ROBOTS * OBS_PER_ROBOT) = (N, 27)
-        # "policy": per-robot로 분리 (wrapper가 9-dim으로 split)
-        # "critic": 그대로 27-dim global state → centralized critic 입력
+        obs = torch.cat(obs_list, dim=1)   # (N, N_ROBOTS * OBS_PER_ROBOT) = (N, 51)
+        # "policy": per-robot 분리 → wrapper가 (E*N, 17) 로 split
+        # "critic": 그대로 51-dim global state → centralized critic 입력
         return {"policy": obs, "critic": obs}
 
     # ------------------------------------------------------------------

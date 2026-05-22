@@ -87,9 +87,9 @@ r_yield = -(1/d_t - 1/d_{t-1}) * W_REP
 | `rew_collision` | -200 | 교착 패널티(-90)보다 110점 낮게 — 자살 학습 방지 |
 | `rew_goal` | 6.0 | 목표 도달 강한 유인 |
 | `SAFE_DIST` | 2.5m | 물리적 회피 가능 거리 확보 (아래 계산 참고) |
-| `W_REP` | 1.5 | delta repulsion 스케일 |
-| `ALPHA` | 1.0 | 자기 목표 가중치 |
-| `BETA` | 1.5 | 안전 가중치 |
+| `W_REP` | 1.5 | delta repulsion 스케일 (`potential_reward.py` 하드코딩) |
+| `ALPHA` | 1.0 | 자기 목표 가중치 (`cfg.alpha`) |
+| `cfg.beta` | **0.5** (model_9999.pt 실제 훈련값) / **1.5** (재훈련 시 의도값) | pairwise 전체 가중치 — effective = cfg.beta × W_REP |
 
 **SAFE_DIST 물리 계산 근거:**
 ```
@@ -195,43 +195,45 @@ Isaac Sim PhysX가 병목 (GPU 39% 사용). `num_envs=8192`에서 GPU 봉인 해
 
 ---
 
-## 현재 훈련 상태
+## 최종 훈련 결과 — model_9999.pt (Freeze 확정)
 
-**모델**: 17-dim obs + rew_collision=-200 + SAFE_DIST=2.5 + W_REP=1.5, from scratch
-**환경**: 8192 envs × 3 robots = 24,576 virtual envs
-**진행**: ~1022/10000 iter (2026-05-18 기준)
+**모델**: 17-dim obs + rew_collision=-200 + SAFE_DIST=2.5 + W_REP=1.5 + cfg.beta=0.5, 10000 iter
 
+| 시나리오 | 충돌률 | 교착률 | 전원도달 | 비고 |
+|---------|:------:|:------:|:-------:|------|
+| S1 정면 충돌 | 0% | 7% | **93%** | |
+| S2 3-way 교착 | 0% | 16% | **84%** | |
+| S3 통로 우선 | 1% | 4% | **95%** | |
+| **S1~S3 평균** | **0.3%** | **9%** | **90.7%** | 목표: 충돌<1% ✅ / 교착<1% ❌ |
+| S4 동일 목표 | 0% | 100% | 0% | 구조적 한계 — LLM 레이어로 처리 |
+| S5 혼합 | — | — | — | 시나리오 재설계 완료 (아래 참고) |
+
+**참고**: model_11998.pt (계속 훈련) 시 S3 95%→1% 퇴행 → model_9999.pt가 실질적 최고점.
+
+### S4 한계: Qwen 오케스트레이션으로 해결
+동일 목표 할당은 MPG 보상 구조상 훈련으로 해결 불가. Jetson 배포 시 목표 할당 레이어에서 사전에 서로 다른 목표 부여.
+
+### S5 시나리오 버그 수정 (2026-05-23)
+기존 S5 대각 경로 `(-3,-3)→(3,3)`, `(-3,3)→(3,-3)`는 각각 2개의 선반 내부를 통과:
+- t≈0.05-0.10: 출발점 근처 선반 (bottom-left / top-left)
+- t≈0.90-0.95: 도착점 근처 선반 (top-right / bottom-right)
+
+→ 물리적으로 해결 불가능한 시나리오. y=0 중앙 통로(선반 없음)를 교차하는 경로로 교체:
 ```
-Mean reward: +352 ~ +370  ← 이전 훈련 초반 -278에서 대폭 개선
-Episode length: ~248
-Steps/s: ~462,000
+spawns: [(-4.0, 0.0), (4.0, 0.3), (0.0, 4.0)]
+goals:  [( 4.0, 0.0), (-4.0, 0.3), (0.0, -4.0)]
 ```
-
----
-
-## 시나리오별 미해결 과제
-
-| 시나리오 | 현황 | 해결 전략 |
-|---------|------|---------|
-| S1 정면 충돌 | 과거 100%→ 미확인 | SAFE_DIST=2.5m으로 조기 회피 가능 |
-| S2 3-way 교착 | 100% 충돌 | 17-dim 상대속도로 삼각 대치 인식 가능 |
-| S3 통로 우선 | 100% 해결 | 유지 |
-| S4 동일 목표 | 100% 충돌 | **LLM 오케스트레이션 레이어** (훈련으로 해결 불가) |
-| S5 혼합 교착 | 100% 교착 | SAFE_DIST=2.5m으로 조기 감지 |
-
-### S4 전략: Qwen 오케스트레이션
-동일 목표 할당은 훈련 레벨에서 구조적으로 해결 불가 (두 로봇이 같은 목표를 향해 달리면 MPG 보상 자체가 충돌을 유도).  
-**해결**: Jetson 배포 시 목표 할당 레이어에서 사전에 서로 다른 목표 부여.
+새 S5는 RunPod에서 eval 재실행 필요.
 
 ---
 
 ## 다음 단계
 
-1. **현재 훈련 eval** — `model_9998.pt` 또는 신규 완료 후
+1. **S5 재eval** — RunPod에서
    ```bash
    python training/multi_robot/eval_scenarios.py \
-     --ckpt logs/warehouse_mappo/model_XXXX.pt \
-     --num_episodes 100 --num_eval_envs 16 --tag 17dim_final --headless
+     --ckpt logs/warehouse_mappo/model_9999.pt \
+     --num_episodes 100 --num_eval_envs 16 --tag 17dim_s5fix --headless
    ```
 
 2. **Jetson 배포** (Phase 4)
