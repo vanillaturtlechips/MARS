@@ -69,6 +69,7 @@ def main():
     min_d    = init_d.clone()
     reach_st = [None] * N_A
 
+    NE = env.num_envs
     for step in range(MAX_STEPS):
         ee_pos = get_ee(env)
         diff   = targets_w - ee_pos[:N_A]
@@ -79,7 +80,7 @@ def main():
                 min_d[i] = dist[i]
             if reach_st[i] is None and dist[i].item() < GRASP_DIST:
                 reach_st[i] = step
-        action = torch.zeros(N_ENVS, 4, device=env.device)
+        action = torch.zeros(NE, 4, device=env.device)
         action[:N_A, :3] = diff / norm
         action[:, 3] = -1.0
         env.step(action)
@@ -105,10 +106,11 @@ def main():
     min_d2   = torch.full((N_G,), 9999.0, device=env.device)
     place_st = [None] * N_G
 
+    NE = env.num_envs
     for step in range(MAX_STEPS):
         direction = obs[:N_G, 9:12]
         norm      = direction.norm(dim=1, keepdim=True).clamp(min=1e-6)
-        action    = torch.zeros(N_ENVS, 4, device=env.device)
+        action    = torch.zeros(NE, 4, device=env.device)
         action[:N_G, :3] = direction / norm
         action[:, 3] = -1.0
         obs_dict, _, _, _, _ = env.step(action)
