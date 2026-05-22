@@ -192,26 +192,33 @@ class WarehouseManipulationEnv(DirectRLEnv):
         joint_pos      = self.robot.data.joint_pos
         joint_vel      = self.robot.data.joint_vel
         gripper_w      = joint_pos[:, 7:8] + joint_pos[:, 8:9]
-        # grasped: box_pos_carried = ee + offset; not-grasped: offset=0 → ee_pos
         box_pos_carried = ee_pos + self._grasp_ee_offset
+        box_pos  = self.box.data.root_pos_w
+        box_quat = self.box.data.root_quat_w
+
+        # goal direction: actual box pos before grasp, carried pos after grasp
+        # (avoids discontinuity when grasp_ee_offset jumps from 0 to box-ee)
+        goal_rel = self._goal_pos_w - torch.where(
+            self._grasped.unsqueeze(1).expand(-1, 3),
+            box_pos_carried,
+            box_pos,
+        )
 
         if self.cfg.student_mode:
             obs = torch.cat([
                 ee_pos,
                 gripper_w,
-                self._goal_pos_w - box_pos_carried,
+                goal_rel,
                 joint_pos[:, :9],
                 joint_vel[:, :9],
             ], dim=1)   # (N, 25)
         else:
-            box_pos  = self.box.data.root_pos_w
-            box_quat = self.box.data.root_quat_w
             obs = torch.cat([
                 box_pos - ee_pos,
                 box_quat,
                 self._box_mass.unsqueeze(1),
                 gripper_w,
-                self._goal_pos_w - box_pos_carried,
+                goal_rel,
                 joint_pos[:, :9],
                 joint_vel[:, :9],
             ], dim=1)   # (N, 30)
@@ -243,7 +250,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         approach   = -self.cfg.rew_approach  * dist_ee_box  * not_grasped
         goal_dense = -self.cfg.rew_goal_dist * dist_box_goal * grasped_f
 
-        delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
+        # delta tracking: use sim box pos (not ee_pos proxy before grasp)
+        # after grasp, box.data.root_pos_w == box_pos_carried (written in _apply_action)
+        dist_box_real = (box_pos - self._goal_pos_w).norm(dim=1)
+        delta_goal = (self._prev_dist_box_goal - dist_box_real).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * 100.0 * grasped_f
 
         goal_dir  = (self._goal_pos_w - box_pos_carried).clone()
@@ -253,7 +263,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         cos_sim   = (act_dir / act_norm * (goal_dir / goal_norm)).sum(dim=1)
         alignment = self.cfg.rew_align * cos_sim * grasped_f
 
-        self._prev_dist_box_goal = dist_box_goal.detach()
+        self._prev_dist_box_goal = dist_box_real.detach()
 
         log = self.extras.setdefault("log", {})
         log["dist_ee_box"]   = dist_ee_box.mean().item()
@@ -326,9 +336,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._goal_pos_w[env_ids_t] = goals + self.scene.env_origins[env_ids_t]
 
         self._grasped[env_ids_t]            = False
-        self._prev_dist_box_goal[env_ids_t] = 999.0
         self._frozen_box_state[env_ids_t]   = 0.0
         self._grasp_ee_offset[env_ids_t]    = 0.0
+        # initialize with actual box-to-goal distance (no jump at first grasp)
+        self._prev_dist_box_goal[env_ids_t] = (
+            box_state[:, :3] - self._goal_pos_w[env_ids_t]
+        ).norm(dim=1)
 
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
         ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]
