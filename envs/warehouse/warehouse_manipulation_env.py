@@ -36,10 +36,10 @@ except ImportError:
 # Franka reach_pose에서 +x 방향은 관절 한계로 IK 발산 → 전방 goal 불가
 # -x(후방) + 측방(±y) 조합만 DLS IK 정상 동작 (debug_transport 검증)
 PLACE_GOALS = [
-    (0.36, -0.12, 0.53),   # 후방 좌측 (검증됨)
-    (0.36,  0.12, 0.53),   # 후방 우측 (좌우 대칭)
-    (0.38, -0.12, 0.53),   # 후방 좌측 (덜 후방)
-    (0.38,  0.12, 0.53),   # 후방 우측 (덜 후방)
+    (0.33, -0.25, 0.53),
+    (0.33,  0.25, 0.53),
+    (0.36, -0.25, 0.53),
+    (0.36,  0.25, 0.53),
 ]
 
 TEACHER_OBS_DIM = 30
@@ -311,8 +311,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.robot.write_joint_state_to_sim(reach_pose, torch.zeros_like(reach_pose), env_ids=env_ids_t)
 
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
-        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
+        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.30, 0.38, (n,), device=self.device)
+        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
         box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.53
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
