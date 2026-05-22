@@ -66,7 +66,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    rew_approach:  float =  2.0    # exp(-dist*5) * not_grasped
+    rew_approach:  float =  0.5    # -dist_ee_box * not_grasped (negative penalty)
     rew_grasp:     float = 30.0   # one-time grasp bonus
     rew_transport: float = 10.0   # delta_dist × 100 × grasped
     rew_align:     float =  0.0   # exploit 원인 — 비활성화
@@ -240,7 +240,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         not_grasped = (~self._grasped).float()
         grasped_f   = self._grasped.float()
 
-        approach  = self.cfg.rew_approach * torch.exp(-dist_ee_box * 2.0) * not_grasped
+        approach  = -self.cfg.rew_approach * dist_ee_box * not_grasped
 
         delta_goal = (self._prev_dist_box_goal - dist_box_goal).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * 100.0 * grasped_f
