@@ -20,22 +20,24 @@ from envs.warehouse.warehouse_manipulation_env import (
     WarehouseManipulationEnv, WarehouseManipulationEnvCfg, PLACE_GOALS
 )
 
-MAX_STEPS  = 300
+MAX_STEPS  = 400
 PLACE_DIST = 0.17
 GRASP_DIST = 0.11
 
+# reach_pose joint4=-1.571 기준 예상 workspace: x=0.40~0.65
 APPROACH_TARGETS = [
-    (0.32, 0.00, 0.53),
     (0.35, 0.00, 0.53),
-    (0.38, 0.00, 0.53),
     (0.40, 0.00, 0.53),
     (0.45, 0.00, 0.53),
     (0.50, 0.00, 0.53),
+    (0.55, 0.00, 0.53),
+    (0.60, 0.00, 0.53),
+    (0.65, 0.00, 0.53),
 ]
 
-N_A = len(APPROACH_TARGETS)   # 6
+N_A = len(APPROACH_TARGETS)   # 7
 N_G = len(PLACE_GOALS)        # 4
-N_ENVS = max(N_A, N_G)        # 6 — 한 env로 두 테스트 공용
+N_ENVS = max(N_A, N_G)        # 7 — 한 env로 두 테스트 공용
 
 def get_ee(env):
     return env.robot.data.body_pos_w[:, env._ee_body_idx]
@@ -136,14 +138,15 @@ def main():
     env.close()
 
     # ── 판정 ───────────────────────────────────────────────────
-    new_spawn_ok = all(reach_st[i] is not None for i in range(3))  # x=0.32~0.38
-    goals_ok     = all(s is not None for s in place_st)
+    # spawn 범위 x=[0.40,0.50] → 인덱스 1~3 (0.40,0.45,0.50)
+    spawn_ok = all(reach_st[i] is not None for i in range(1, 4))  # x=0.40~0.50
+    goals_ok = all(s is not None for s in place_st)
     print("\n" + "="*62)
     print("[판정]")
-    print(f"  EE 위치: x={local0[0]:.4f}")
-    print(f"  새 스폰 범위(x≤0.38) 접근: {'OK' if new_spawn_ok else 'FAIL'}")
-    print(f"  새 goal 전체 도달:          {'OK' if goals_ok else 'FAIL'}")
-    if new_spawn_ok and goals_ok:
+    print(f"  EE 위치: x={local0[0]:.4f}  y={local0[1]:.4f}  z={local0[2]:.4f}")
+    print(f"  스폰 범위(x=0.40~0.50) 접근: {'OK' if spawn_ok else 'FAIL'}")
+    print(f"  goal 전체 도달:               {'OK' if goals_ok else 'FAIL'}")
+    if spawn_ok and goals_ok:
         print("\n  → 훈련 시작 가능")
     else:
         print("\n  → 환경 재설계 필요 — 위 결과 공유해줘")
