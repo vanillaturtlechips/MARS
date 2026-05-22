@@ -13,6 +13,9 @@ Student 관측 (배포용, 실제 센서):
 
 from __future__ import annotations
 
+import glob
+import importlib.util
+import os
 from collections.abc import Sequence
 
 import torch
@@ -22,9 +25,12 @@ from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObj
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
-from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
+from isaaclab.sim.spawners.from_files import GroundPlaneCfg, UsdFileCfg, spawn_ground_plane
 from isaaclab.utils import configclass
 from isaaclab.utils.math import sample_uniform
+
+# NVIDIA 공개 에셋 S3 (Isaac Sim 5.1 기준)
+_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 
 try:
     from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG
@@ -81,6 +87,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     place_dist_threshold: float = 0.13  # 0.17→0.13: random walk 진입 방지
 
     student_mode: bool = False
+    enable_background: bool = False  # True: 창고 배경+조명 로드 (GUI/eval 시각화용, 훈련 시 False)
 
 
 @configclass
@@ -120,32 +127,42 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 actuator.damping   = 40.0
         self.robot = Articulation(franka_cfg)
 
+        # 박스 → YCB 003_cracker_box (isaacsim extscache 동적 탐색)
+        def _find_ycb_cracker() -> str:
+            spec = importlib.util.find_spec("isaacsim")
+            if spec and spec.submodule_search_locations:
+                isaacsim_dir = list(spec.submodule_search_locations)[0]
+                matches = glob.glob(os.path.join(
+                    isaacsim_dir, "extscache", "omni.replicator.core-*",
+                    "omni", "replicator", "core", "tests", "data", "objects",
+                    "003_cracker_box_physics.usd"
+                ))
+                if matches:
+                    return matches[0]
+            raise FileNotFoundError("003_cracker_box_physics.usd not found in isaacsim extscache")
+
         box_cfg = RigidObjectCfg(
             prim_path="/World/envs/env_.*/Box",
-            spawn=sim_utils.CuboidCfg(
-                size=(0.06, 0.06, 0.06),
+            spawn=UsdFileCfg(
+                usd_path=_find_ycb_cracker(),
+                scale=(0.7, 0.7, 0.7),
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=True),
                 mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
                 collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
-                visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=(0.9, 0.6, 0.1), metallic=0.0
-                ),
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5, 0.0, 0.03)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5, 0.0, 0.50)),
         )
         self.box = RigidObject(box_cfg)
 
         spawn_ground_plane("/World/ground", GroundPlaneCfg())
 
-        table_cfg = sim_utils.CuboidCfg(
-            size=(0.8, 0.8, 0.5),
+        # 테이블 → PackingTable USD (산업용 작업대, 상면 z≈0.50m)
+        table_spawn = UsdFileCfg(
+            usd_path=f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-            mass_props=sim_utils.MassPropertiesCfg(mass=500.0),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.5, 0.35, 0.15), metallic=0.0),
         )
-        table_cfg.func("/World/envs/env_0/Table", table_cfg,
-                       translation=(0.45, 0.0, 0.25), orientation=(1.0, 0.0, 0.0, 0.0))
+        table_spawn.func("/World/envs/env_0/Table", table_spawn,
+                         translation=(0.45, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
@@ -153,8 +170,22 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.scene.articulations["robot"] = self.robot
         self.scene.rigid_objects["box"]   = self.box
 
-        light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.8, 0.8, 0.8))
-        light_cfg.func("/World/Light", light_cfg)
+        dome_light = sim_utils.DomeLightCfg(intensity=1000.0, color=(0.9, 0.92, 1.0))
+        dome_light.func("/World/DomeLight", dome_light)
+
+        if self.cfg.enable_background:
+            warehouse_cfg = UsdFileCfg(
+                usd_path=f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd",
+            )
+            warehouse_cfg.func(
+                "/World/Warehouse", warehouse_cfg,
+                translation=(-2.95, -3.0, 0.0),
+                orientation=(1.0, 0.0, 0.0, 0.0),
+            )
+            sl = sim_utils.SphereLightCfg(intensity=15000.0, color=(1.0, 0.97, 0.88), radius=0.08)
+            sl.func("/World/SL0", sl, translation=(0.5,  0.0, 2.5))
+            sl.func("/World/SL1", sl, translation=(0.5,  1.5, 2.5))
+            sl.func("/World/SL2", sl, translation=(0.5, -1.5, 2.5))
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self._actions = actions.clone().clamp(-1.0, 1.0)
@@ -324,7 +355,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state = self.box.data.default_root_state[env_ids_t].clone()
         box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.25, 0.38, (n,), device=self.device)
         box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
-        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.53
+        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50  # 테이블 상면 (YCB origin = 바닥 중앙)
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         self._box_mass[env_ids_t] = sample_uniform(
