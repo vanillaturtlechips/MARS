@@ -31,15 +31,14 @@ try:
 except ImportError:
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
-# 목표 위치 4곳
-# reach_pose joint4=-1.571로 수정 후 debug_verify로 검증 필요
-# spawn: x=[0.40,0.50], y=[-0.05,0.05]
-# 아래 goal은 debug_verify 결과에 따라 조정
+# 수직 transport 태스크: box spawn z=0.53, goal z=0.75-0.90
+# spawn → goal z차이 ≥ 0.22m > place_dist(0.17m) → free win 구조적 불가
+# 수평 이동 없이 위아래만 → y workspace 한계 무관, table 충돌 없음
 PLACE_GOALS = [
-    (0.50, -0.20, 0.53),
-    (0.50,  0.20, 0.53),
-    (0.55, -0.15, 0.53),
-    (0.55,  0.15, 0.53),
+    (0.28, 0.00, 0.75),
+    (0.32, 0.00, 0.75),
+    (0.28, 0.00, 0.85),
+    (0.32, 0.00, 0.85),
 ]
 
 TEACHER_OBS_DIM = 30
@@ -303,17 +302,15 @@ class WarehouseManipulationEnv(DirectRLEnv):
             env_ids_t = env_ids.long()
         n = env_ids_t.shape[0]
 
-        # joint4=-1.571(-π/2): 이전 -2.356(관절 최솟값 -2.897 근처)에서
-        # 발생한 +x IK 고착 해소 → EE 전방 workspace 확보
         reach_pose = torch.tensor(
-            [0.0, -0.785, 0.0, -1.571, 0.0, 1.571, 0.785, 0.04, 0.04],
+            [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04],
             device=self.device
         ).unsqueeze(0).expand(n, -1)
         self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
         self.robot.write_joint_state_to_sim(reach_pose, torch.zeros_like(reach_pose), env_ids=env_ids_t)
 
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.40, 0.50, (n,), device=self.device)
+        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.25, 0.35, (n,), device=self.device)
         box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
         box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.53
         self.box.write_root_state_to_sim(box_state, env_ids_t)

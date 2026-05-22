@@ -24,15 +24,16 @@ MAX_STEPS  = 400
 PLACE_DIST = 0.17
 GRASP_DIST = 0.11
 
-# reach_pose joint4=-1.571 기준 예상 workspace: x=0.40~0.65
+# reach_pose j4=-2.356, EE=(0.307,0,0.5903) 기준
+# spawn x=[0.25,0.35] 범위 검증
 APPROACH_TARGETS = [
+    (0.25, 0.00, 0.53),
+    (0.28, 0.00, 0.53),
+    (0.30, 0.00, 0.53),
+    (0.32, 0.00, 0.53),
     (0.35, 0.00, 0.53),
+    (0.38, 0.00, 0.53),
     (0.40, 0.00, 0.53),
-    (0.45, 0.00, 0.53),
-    (0.50, 0.00, 0.53),
-    (0.55, 0.00, 0.53),
-    (0.60, 0.00, 0.53),
-    (0.65, 0.00, 0.53),
 ]
 
 N_A = len(APPROACH_TARGETS)   # 7
@@ -138,13 +139,13 @@ def main():
     env.close()
 
     # ── 판정 ───────────────────────────────────────────────────
-    # spawn 범위 x=[0.40,0.50] → 인덱스 1~3 (0.40,0.45,0.50)
-    spawn_ok = all(reach_st[i] is not None for i in range(1, 4))  # x=0.40~0.50
+    # spawn 범위 x=[0.25,0.35] → 인덱스 0~4 (0.25~0.35)
+    spawn_ok = all(reach_st[i] is not None for i in range(5))  # x=0.25~0.35
     goals_ok = all(s is not None for s in place_st)
     print("\n" + "="*62)
     print("[판정]")
     print(f"  EE 위치: x={local0[0]:.4f}  y={local0[1]:.4f}  z={local0[2]:.4f}")
-    print(f"  스폰 범위(x=0.40~0.50) 접근: {'OK' if spawn_ok else 'FAIL'}")
+    print(f"  스폰 범위(x=0.25~0.35) 접근: {'OK' if spawn_ok else 'FAIL'}")
     print(f"  goal 전체 도달:               {'OK' if goals_ok else 'FAIL'}")
     if spawn_ok and goals_ok:
         print("\n  → 훈련 시작 가능")
