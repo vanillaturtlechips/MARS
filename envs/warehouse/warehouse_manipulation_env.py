@@ -77,7 +77,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_size_range: tuple[float, float] = (0.04, 0.08)
     box_mass_range: tuple[float, float] = (0.3, 2.0)
 
-    grasp_dist_threshold: float = 0.10
+    grasp_dist_threshold: float = 0.11
     place_dist_threshold: float = 0.17
 
     student_mode: bool = False

@@ -2,8 +2,8 @@
 
 테스트:
   1. reach_pose에서 EE 실제 위치
-  2. 박스 위치별 EE 접근 가능성 (grasp_dist=0.10m 기준)
-  3. 새 goal 위치 (y=±0.25) transport 가능성
+  2. 박스 위치별 EE 접근 가능성 (grasp_dist=0.11m 기준)
+  3. 새 PLACE_GOALS (y=±0.25) transport 가능성 — debug_transport 방식
 
 실행:
   python training/single_robot/debug_approach.py --headless
@@ -22,154 +22,134 @@ simulation_app = app_launcher.app
 import torch
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_manipulation_env import (
-    WarehouseManipulationEnv, WarehouseManipulationEnvCfg
+    WarehouseManipulationEnv, WarehouseManipulationEnvCfg, PLACE_GOALS
 )
 
-# ── 테스트 파라미터 ──────────────────────────────────────────────
-GRASP_DIST   = 0.10   # 현재 설정값
-PLACE_DIST   = 0.17
-MAX_STEPS    = 600
+GRASP_DIST  = 0.11
+PLACE_DIST  = 0.17
+MAX_STEPS   = 600
 
-# 테스트 1: 박스 위치별 EE 접근 가능 여부
 APPROACH_TARGETS = [
-    (0.32, 0.00, 0.53),  # 새 스폰 범위 (가까운 쪽)
-    (0.35, 0.00, 0.53),  # 새 스폰 범위 (중간)
-    (0.38, 0.00, 0.53),  # 새 스폰 범위 (먼 쪽)
-    (0.40, 0.00, 0.53),  # 경계
-    (0.45, 0.00, 0.53),  # 기존 스폰 범위 (가까운 쪽)
-    (0.50, 0.00, 0.53),  # 기존 스폰 범위 (먼 쪽)
-]
-
-# 테스트 2: goal 위치별 transport 가능 여부 (grasp된 상태 가정)
-TRANSPORT_GOALS = [
-    (0.36, -0.12, 0.53),  # 기존 goal (검증됨)
-    (0.36,  0.12, 0.53),  # 기존 goal (검증됨)
-    (0.33, -0.25, 0.53),  # 새 goal 후보
-    (0.33,  0.25, 0.53),  # 새 goal 후보
-    (0.36, -0.25, 0.53),  # 새 goal 후보
-    (0.36,  0.25, 0.53),  # 새 goal 후보
+    (0.32, 0.00, 0.53),
+    (0.35, 0.00, 0.53),
+    (0.38, 0.00, 0.53),
+    (0.40, 0.00, 0.53),
+    (0.45, 0.00, 0.53),
+    (0.50, 0.00, 0.53),
 ]
 
 
-def make_env(num_envs: int):
-    env_cfg = WarehouseManipulationEnvCfg()
-    env_cfg.scene.num_envs = num_envs
-    env_cfg.grasp_dist_threshold = 999.0   # grasp 자동 발동 차단
-    env_cfg.place_dist_threshold = PLACE_DIST
-    return WarehouseManipulationEnv(env_cfg)
-
-
-def get_ee_pos(env):
+def get_ee(env):
     return env.robot.data.body_pos_w[:, env._ee_body_idx]
 
 
 def main():
-    # ── 1. reach_pose에서 EE 실제 위치 확인 ──────────────────────
+    # ── 1. reach_pose에서 EE 실제 위치 ──────────────────────────
     print("\n" + "="*65)
     print("[테스트 1] reach_pose에서 EE 실제 위치")
     print("="*65)
-
-    env = make_env(1)
+    env = WarehouseManipulationEnv(WarehouseManipulationEnvCfg())
     env.reset()
-    ee = get_ee_pos(env)
+    ee     = get_ee(env)
     origin = env.scene.env_origins[0]
-    ee_local = ee[0] - origin
-    print(f"  EE 절대 위치 (world): {ee[0].tolist()}")
-    print(f"  EE 로컬 위치 (env 기준): x={ee_local[0]:.4f}, y={ee_local[1]:.4f}, z={ee_local[2]:.4f}")
-    ee_reach = ee_local.clone()
+    local  = ee[0] - origin
+    print(f"  EE 로컬 위치: x={local[0]:.4f}  y={local[1]:.4f}  z={local[2]:.4f}")
+    ee_local = local.clone()
     env.close()
 
     # ── 2. 박스 위치별 EE 접근 가능성 ────────────────────────────
     print("\n" + "="*65)
-    print(f"[테스트 2] 박스 위치별 EE 접근 가능성 (grasp_dist={GRASP_DIST}m)")
-    print(f"  EE 시작: x={ee_reach[0]:.4f}, y={ee_reach[1]:.4f}, z={ee_reach[2]:.4f}")
+    print(f"[테스트 2] 박스 위치별 EE 접근 (grasp_dist={GRASP_DIST}m)")
+    print(f"  EE 시작: x={ee_local[0]:.4f}  y={ee_local[1]:.4f}  z={ee_local[2]:.4f}")
     print("="*65)
-    print(f"{'박스 위치':>28}  {'최소dist':>9}  {'도달':>4}  {'스텝':>5}")
-    print("-"*55)
+    print(f"  {'박스 위치':>25}  {'초기dist':>8}  {'최소dist':>8}  {'도달':>4}  {'스텝':>5}")
+    print("  " + "-"*58)
 
-    n_approach = len(APPROACH_TARGETS)
-    env = make_env(n_approach)
+    n = len(APPROACH_TARGETS)
+    cfg = WarehouseManipulationEnvCfg()
+    cfg.scene.num_envs = n
+    cfg.grasp_dist_threshold = 999.0   # 자동 grasp 차단
+    env = WarehouseManipulationEnv(cfg)
     env.reset()
-    origin = env.scene.env_origins  # (N, 3)
+    origin = env.scene.env_origins
 
-    targets_w = torch.tensor(APPROACH_TARGETS, device=env.device) + origin[:n_approach]
-    obs_dict, _ = env.reset()
+    targets_w = torch.tensor(APPROACH_TARGETS, device=env.device) + origin[:n]
+    env.reset()
 
-    min_dist = torch.full((n_approach,), 9999.0, device=env.device)
-    reach_step = [None] * n_approach
+    ee0      = get_ee(env)
+    init_dist = (ee0 - targets_w).norm(dim=1)
+    min_dist  = init_dist.clone()
+    reach_step = [None] * n
 
     for step in range(MAX_STEPS):
-        ee_pos = get_ee_pos(env)
-        direction = targets_w - ee_pos
-        dist = direction.norm(dim=1)
-        norm = dist.unsqueeze(1).clamp(min=1e-6)
+        ee_pos = get_ee(env)
+        diff   = targets_w - ee_pos
+        dist   = diff.norm(dim=1)
+        norm   = dist.unsqueeze(1).clamp(min=1e-6)
 
-        for i in range(n_approach):
+        for i in range(n):
             if dist[i] < min_dist[i]:
                 min_dist[i] = dist[i]
             if reach_step[i] is None and dist[i].item() < GRASP_DIST:
                 reach_step[i] = step
 
-        action = torch.zeros(n_approach, 4, device=env.device)
-        action[:, :3] = direction / norm
-        action[:, 3] = -1.0
+        action = torch.zeros(n, 4, device=env.device)
+        action[:, :3] = diff / norm
+        action[:, 3]  = -1.0
         env.step(action)
 
     for i, tgt in enumerate(APPROACH_TARGETS):
-        reached = reach_step[i] is not None
-        step_str = str(reach_step[i]) if reached else "—"
+        rs   = str(reach_step[i]) if reach_step[i] is not None else "—"
+        ok   = "O" if reach_step[i] is not None else "X"
         print(f"  ({tgt[0]:.2f}, {tgt[1]:+.2f}, {tgt[2]:.2f})  "
-              f"{min_dist[i].item():>9.4f}  "
-              f"{'O' if reached else 'X':>4}  {step_str:>5}")
+              f"{init_dist[i].item():>8.4f}  "
+              f"{min_dist[i].item():>8.4f}  "
+              f"{ok:>4}  {rs:>5}")
     env.close()
 
-    # ── 3. goal 위치별 transport 가능성 ──────────────────────────
+    # ── 3. PLACE_GOALS transport 가능성 ────────────────────────
     print("\n" + "="*65)
-    print(f"[테스트 3] goal 위치별 transport 가능성 (place_dist={PLACE_DIST}m)")
-    print("  (박스를 EE에 붙인 채 goal로 이동 — 기존 debug_transport 방식)")
+    print(f"[테스트 3] PLACE_GOALS transport 가능성 (place_dist={PLACE_DIST}m)")
+    print(f"  현재 PLACE_GOALS:")
+    for i, g in enumerate(PLACE_GOALS):
+        print(f"    goal{i}: {g}")
     print("="*65)
-    print(f"{'goal 위치':>28}  {'최소dist':>9}  {'도달':>4}  {'스텝':>5}")
-    print("-"*55)
+    print(f"  {'goal 위치':>28}  {'최소dist':>8}  {'도달':>4}  {'스텝':>5}")
+    print("  " + "-"*52)
 
-    n_goals = len(TRANSPORT_GOALS)
-    env_cfg2 = WarehouseManipulationEnvCfg()
-    env_cfg2.scene.num_envs = n_goals
-    env_cfg2.grasp_dist_threshold = 999.0
-    env_cfg2.place_dist_threshold = PLACE_DIST
-    env2 = WarehouseManipulationEnv(env_cfg2)
+    ng = len(PLACE_GOALS)
+    cfg2 = WarehouseManipulationEnvCfg()
+    cfg2.scene.num_envs = ng
+    cfg2.grasp_dist_threshold = 999.0   # 첫 스텝에 전부 auto-grasp
+    cfg2.place_dist_threshold = PLACE_DIST
+    env2 = WarehouseManipulationEnv(cfg2)
 
     obs_dict, _ = env2.reset()
-    origin2 = env2.scene.env_origins[:n_goals]
-    goals_w = torch.tensor(TRANSPORT_GOALS, device=env2.device) + origin2
-
+    goals_w = torch.tensor(PLACE_GOALS, device=env2.device) + env2.scene.env_origins[:ng]
     env2._goal_pos_w[:] = goals_w
     obs_dict, _ = env2.reset()
     env2._goal_pos_w[:] = goals_w
-
-    # grasp 강제 설정
-    env2._grasped[:] = True
-    ee0 = get_ee_pos(env2)
-    env2._grasp_ee_offset[:] = torch.tensor([0.0, 0.0, 0.04], device=env2.device)
-
     obs = obs_dict["policy"]
-    min_dist2 = torch.full((n_goals,), 9999.0, device=env2.device)
-    place_step = [None] * n_goals
+
+    min_dist2  = torch.full((ng,), 9999.0, device=env2.device)
+    place_step = [None] * ng
 
     for step in range(MAX_STEPS):
+        # obs[9:12] = goal - box_pos_carried (grasped 이후 올바른 direction)
         direction = obs[:, 9:12]
-        norm = direction.norm(dim=1, keepdim=True).clamp(min=1e-6)
-        action = torch.zeros(n_goals, 4, device=env2.device)
+        norm      = direction.norm(dim=1, keepdim=True).clamp(min=1e-6)
+        action    = torch.zeros(ng, 4, device=env2.device)
         action[:, :3] = direction / norm
-        action[:, 3] = -1.0
+        action[:, 3]  = -1.0
 
         obs_dict, _, _, _, _ = env2.step(action)
         obs = obs_dict["policy"]
 
-        ee_pos = get_ee_pos(env2)
+        ee_pos     = get_ee(env2)
         box_carried = ee_pos + env2._grasp_ee_offset
-        dists = (box_carried - env2._goal_pos_w).norm(dim=1)
+        dists      = (box_carried - env2._goal_pos_w).norm(dim=1)
 
-        for i in range(n_goals):
+        for i in range(ng):
             if dists[i] < min_dist2[i]:
                 min_dist2[i] = dists[i]
             if place_step[i] is None and dists[i].item() < PLACE_DIST:
@@ -178,32 +158,35 @@ def main():
         if all(s is not None for s in place_step):
             break
 
-    for i, g in enumerate(TRANSPORT_GOALS):
-        reached = place_step[i] is not None
-        step_str = str(place_step[i]) if reached else "—"
-        tag = "(기존)" if i < 2 else "(신규)"
-        print(f"  ({g[0]:.2f}, {g[1]:+.2f}, {g[2]:.2f}) {tag}  "
-              f"{min_dist2[i].item():>9.4f}  "
-              f"{'O' if reached else 'X':>4}  {step_str:>5}")
+    for i, g in enumerate(PLACE_GOALS):
+        ps  = str(place_step[i]) if place_step[i] is not None else "—"
+        ok  = "O" if place_step[i] is not None else "X"
+        print(f"  ({g[0]:.2f}, {g[1]:+.2f}, {g[2]:.2f})  "
+              f"{min_dist2[i].item():>8.4f}  "
+              f"{ok:>4}  {ps:>5}")
     env2.close()
 
-    # ── 4. 최종 판정 ──────────────────────────────────────────────
+    # ── 판정 ────────────────────────────────────────────────────
     print("\n" + "="*65)
-    print("[최종 판정]")
-    print(f"  EE 시작 위치: x={ee_reach[0]:.4f}")
-
-    approach_ok = [reach_step[i] is not None for i in range(n_approach)]
-    transport_ok = [place_step[i] is not None for i in range(n_goals)]
-
-    print(f"\n  접근 가능 박스 위치:")
+    print("[판정]")
+    print(f"  EE 실제 위치: x={ee_local[0]:.4f}")
+    print(f"\n  접근 가능 박스 위치 ({GRASP_DIST}m 기준):")
     for i, tgt in enumerate(APPROACH_TARGETS):
-        print(f"    x={tgt[0]:.2f}: {'가능' if approach_ok[i] else '불가'}")
+        tag = "가능" if reach_step[i] is not None else "불가"
+        print(f"    x={tgt[0]:.2f}: {tag}  (최소dist={min_dist[i].item():.4f})")
+    print(f"\n  goal 도달 가능:")
+    for i, g in enumerate(PLACE_GOALS):
+        tag = "가능" if place_step[i] is not None else "불가"
+        print(f"    ({g[0]:.2f}, {g[1]:+.2f}): {tag}  (최소dist={min_dist2[i].item():.4f})")
 
-    print(f"\n  goal 도달 가능 여부:")
-    for i, g in enumerate(TRANSPORT_GOALS):
-        tag = "(기존)" if i < 2 else "(신규)"
-        print(f"    ({g[0]:.2f}, {g[1]:+.2f}) {tag}: {'가능' if transport_ok[i] else '불가'}")
-
+    all_approach = all(reach_step[i] is not None for i in range(3))  # 새 스폰 범위 3개
+    all_goals    = all(s is not None for s in place_step)
+    print(f"\n  새 스폰 범위(x≤0.38) 접근: {'전부 가능' if all_approach else '일부 불가'}")
+    print(f"  새 goal 전체 도달:          {'전부 가능' if all_goals else '일부 불가'}")
+    if all_approach and all_goals:
+        print("\n  → 훈련 시작 가능")
+    else:
+        print("\n  → 환경 재설계 필요")
     print("="*65)
 
 
