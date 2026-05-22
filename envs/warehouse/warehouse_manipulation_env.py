@@ -33,14 +33,13 @@ except ImportError:
 
 # 목표 위치 4곳
 # box spawn: x=[0.45,0.55], y=[-0.15,0.15], z=0.53
-# goals: spawn 범위 밖 + DLS IK 도달 가능 (debug_transport 검증 완료)
-# y=±0.10~0.15: 측방 소폭 이동만 요구 (DLS IK 한계 내)
-# x=0.62(전방) / x=0.36(후방): box spawn과 겹치지 않음
+# Franka reach_pose에서 +x 방향은 관절 한계로 IK 발산 → 전방 goal 불가
+# -x(후방) + 측방(±y) 조합만 DLS IK 정상 동작 (debug_transport 검증)
 PLACE_GOALS = [
-    (0.62,  0.0,  0.53),   # 정면 전방
-    (0.62,  0.12, 0.53),   # 전방 우측
-    (0.36,  0.0,  0.53),   # 정면 후방
-    (0.36, -0.12, 0.53),   # 후방 좌측
+    (0.36, -0.12, 0.53),   # 후방 좌측 (검증됨)
+    (0.36,  0.12, 0.53),   # 후방 우측 (좌우 대칭)
+    (0.38, -0.12, 0.53),   # 후방 좌측 (덜 후방)
+    (0.38,  0.12, 0.53),   # 후방 우측 (덜 후방)
 ]
 
 TEACHER_OBS_DIM = 30
@@ -79,7 +78,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     box_mass_range: tuple[float, float] = (0.3, 2.0)
 
     grasp_dist_threshold: float = 0.25
-    place_dist_threshold: float = 0.15
+    place_dist_threshold: float = 0.17
 
     student_mode: bool = False
 
