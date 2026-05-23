@@ -363,7 +363,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 이전 시도: box→goal 근처 → EE가 박스 못 찾아 grasp_rate 18%로 고정
         # 수정: box 원위치 유지(grasp 97%) + goal을 박스 옆으로 → place 경험 보장
         theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-        r     = sample_uniform(0.03, 0.10,  (n,), device=self.device)
+        r     = sample_uniform(0.15, 0.30,  (n,), device=self.device)
         self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
         self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
         self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
