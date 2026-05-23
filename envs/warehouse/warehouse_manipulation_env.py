@@ -371,6 +371,15 @@ class WarehouseManipulationEnv(DirectRLEnv):
             box_state[:, :3] - self._goal_pos_w[env_ids_t]
         ).norm(dim=1)
 
+        # DEBUG: 첫 번째 env의 실제 좌표 출력 (좌표계 이상 진단용)
+        if 0 in env_ids_t.tolist():
+            idx = (env_ids_t == 0).nonzero(as_tuple=True)[0][0]
+            box_local  = box_state[idx, :3] - self.scene.env_origins[0]
+            goal_local = goals[idx]
+            dist_init  = (box_state[idx, :3] - self._goal_pos_w[0]).norm().item()
+            print(f"[DBG] box_local={box_local.tolist()}, goal_local={goal_local.tolist()}, "
+                  f"init_dist={dist_init:.3f}m")
+
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
         ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]
         ee_quat = self.robot.data.body_quat_w[:, self._ee_body_idx]
