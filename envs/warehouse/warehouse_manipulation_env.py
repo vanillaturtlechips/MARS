@@ -54,7 +54,7 @@ STUDENT_OBS_DIM = 28
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 5.0   # 15→5s: timeout 비용 증가 + random walk 억제
+    episode_length_s = 15.0  # Teacher 훈련값 복원 (ep_len=575 at iter 312)
     action_space = 4             # [dx, dy, dz, gripper]
     observation_space = TEACHER_OBS_DIM
     state_space = 0
@@ -73,18 +73,18 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
 
     rew_approach:   float =  0.5    # -dist_ee_box * not_grasped
     rew_grasp:      float = 30.0   # one-time grasp bonus
-    rew_transport:  float = 30.0   # delta_dist × grasped (progress delta)
+    rew_transport:  float = 1000.0 # Teacher 실효값 복원: 10×delta×100 = 1000×delta (±100/step)
     rew_align:      float =  0.0   # exploit 원인 — 비활성화
     rew_goal_dist:  float =  0.0   # 비활성화: 절대거리 패널티 → VF loss 폭발
-    rew_place:      float = 100.0  # terminal bonus
-    rew_drop:       float =  0.0   # 비활성화: 매 스텝 -30 → 보상 분산 폭발
-    rew_time:       float = -0.02  # Teacher 훈련 당시 값으로 복원
+    rew_place:      float = 800.0  # Teacher 훈련값 복원
+    rew_drop:       float =  0.0   # 비활성화: 매 스텝 페널티 → 보상 분산 폭발
+    rew_time:       float = -0.02  # Teacher 훈련값
 
     box_size_range: tuple[float, float] = (0.04, 0.08)
     box_mass_range: tuple[float, float] = (0.3, 2.0)
 
-    grasp_dist_threshold: float = 0.11
-    place_dist_threshold: float = 0.13  # 0.17→0.13: random walk 진입 방지
+    grasp_dist_threshold: float = 0.25  # Teacher 훈련값 복원 (0.11→0.25)
+    place_dist_threshold: float = 0.12  # Teacher 훈련값 복원 (0.13→0.12)
 
     student_mode: bool = False
     enable_background: bool = False  # True: 창고 배경+조명 로드 (GUI/eval 시각화용, 훈련 시 False)
