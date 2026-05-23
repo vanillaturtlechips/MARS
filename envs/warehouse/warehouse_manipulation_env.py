@@ -2,14 +2,17 @@
 
 로봇: Franka Panda (7-DOF 암 + 평행 그리퍼)
 임무: 박스를 집어 지정 선반 위치에 내려놓기
+액션: 9D 관절 직접 제어 [dq0..dq6 (arm, ±0.05 rad/step), dg0, dg1 (gripper, ±0.02 m/step)]
 
 Teacher 관측 (특권 정보, 훈련 전용):
   box_rel(3) + box_quat(4) + box_mass(1) + gripper(1) +
   goal_rel(3) + jpos(9) + jvel(9) = 30차원
 
 Student 관측 (배포용, 실제 센서):
-  ee_pos(3) + gripper(1) + goal_rel(3) + noisy_box_rel(3) + jpos(9) + jvel(9) = 28차원
+  ee_pos_local(3) + gripper(1) + goal_rel(3) + noisy_box_rel(3) + grasped(1) + jpos(9) + jvel(9) = 29차원
+  ee_pos_local: env_origin 기준 로컬 프레임 (env간 일관성 보장)
   noisy_box_rel: 에피소드마다 σ∈[1cm,6cm] 균일 샘플 (카메라 DR, Sim2Real 강건성)
+  grasped: 명시적 파악 상태 플래그 (0/1)
 """
 
 from __future__ import annotations
@@ -106,12 +109,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         body_names = list(self.robot.data.body_names)
         self._ee_body_idx  = body_names.index("panda_hand")
-        self._jac_body_idx = self._ee_body_idx - 1
 
         self._goal_pos_w         = torch.zeros(n, 3, device=d)
         self._box_mass           = torch.ones(n, device=d)
         self._grasped            = torch.zeros(n, dtype=torch.bool, device=d)
-        self._actions            = torch.zeros(n, 4, device=d)
+        self._actions            = torch.zeros(n, self.cfg.action_space, device=d)
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
@@ -289,13 +291,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         delta_goal = (self._prev_dist_box_goal - dist_box_real).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * grasped_f
 
-        goal_dir  = (self._goal_pos_w - box_pos_carried).clone()
-        goal_norm = goal_dir.norm(dim=1, keepdim=True).clamp(min=1e-6)
-        act_dir   = self._actions[:, :3]
-        act_norm  = act_dir.norm(dim=1, keepdim=True).clamp(min=1e-6)
-        cos_sim   = (act_dir / act_norm * (goal_dir / goal_norm)).sum(dim=1)
-        alignment = self.cfg.rew_align * cos_sim * grasped_f
-
         self._prev_dist_box_goal = dist_box_real.detach()
 
         log = self.extras.setdefault("log", {})
@@ -307,7 +302,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
             approach
             + goal_dense
             + transport
-            + alignment
             + self.cfg.rew_grasp * newly_grasped.float()
             + self.cfg.rew_place * placed.float()
             + self.cfg.rew_drop  * dropped.float()
