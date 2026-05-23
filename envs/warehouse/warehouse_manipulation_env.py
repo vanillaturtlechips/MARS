@@ -200,11 +200,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         jac = self.robot.root_physx_view.get_jacobians()
         J   = jac[:, self._jac_body_idx, :3, :7]
-        lam = 0.01
+        lam = 0.05  # 0.01→0.05: 특이점 근처 delta_q 폭발 방지 (EE 17cm/step 버그)
         JT      = J.transpose(-2, -1)
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
         delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
+        delta_q = delta_q.clamp(-0.1, 0.1)  # 관절당 최대 0.1rad/step 제한
 
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
         self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
