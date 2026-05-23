@@ -352,20 +352,21 @@ class WarehouseManipulationEnv(DirectRLEnv):
             self.cfg.box_mass_range[0], self.cfg.box_mass_range[1], (n,), device=self.device
         )
 
-        goal_idx = torch.randint(len(PLACE_GOALS), (n,), device=self.device)
-        goals    = torch.tensor(PLACE_GOALS, device=self.device)[goal_idx]
-        self._goal_pos_w[env_ids_t] = goals + self.scene.env_origins[env_ids_t]
-
-        # Curriculum: 박스를 goal 반경 0.10m 내 랜덤 위치에 spawn
-        # init_dist=0.31m인데 random walk → 0.703m 확산 → transport gradient 없음
-        # goal 근처 spawn → place 경험 대폭 증가 → gradient 살아남
-        theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-        r     = sample_uniform(0.03, 0.10,  (n,), device=self.device)
+        # 박스: 원래 그랩 쉬운 위치 (EE reach_pose 정면)
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self._goal_pos_w[env_ids_t, 0] + r * torch.cos(theta)
-        box_state[:, 1] = self._goal_pos_w[env_ids_t, 1] + r * torch.sin(theta)
+        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.25, 0.38, (n,), device=self.device)
+        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
         box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
         self.box.write_root_state_to_sim(box_state, env_ids_t)
+
+        # Curriculum: goal을 박스 반경 0.10m 내에 spawn (역방향 curriculum)
+        # 이전 시도: box→goal 근처 → EE가 박스 못 찾아 grasp_rate 18%로 고정
+        # 수정: box 원위치 유지(grasp 97%) + goal을 박스 옆으로 → place 경험 보장
+        theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
+        r     = sample_uniform(0.03, 0.10,  (n,), device=self.device)
+        self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
+        self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
+        self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
 
         self._grasped[env_ids_t]            = False
         self._frozen_box_state[env_ids_t]   = 0.0
@@ -376,11 +377,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
             box_state[:, :3] - self._goal_pos_w[env_ids_t]
         ).norm(dim=1)
 
-        # DEBUG: 첫 번째 env의 실제 좌표 출력 (좌표계 이상 진단용)
+        # DEBUG: 첫 번째 env의 실제 좌표 출력
         if 0 in env_ids_t.tolist():
             idx = (env_ids_t == 0).nonzero(as_tuple=True)[0][0]
             box_local  = box_state[idx, :3] - self.scene.env_origins[0]
-            goal_local = goals[idx]
+            goal_local = self._goal_pos_w[0] - self.scene.env_origins[0]
             dist_init  = (box_state[idx, :3] - self._goal_pos_w[0]).norm().item()
             print(f"[DBG] box_local={box_local.tolist()}, goal_local={goal_local.tolist()}, "
                   f"init_dist={dist_init:.3f}m")
