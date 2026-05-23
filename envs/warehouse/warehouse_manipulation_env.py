@@ -78,7 +78,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_align:      float =  0.0   # exploit 원인 — 비활성화
     rew_goal_dist:  float =  5.0   # -dist_box_goal × grasped (dense shaping)
     rew_place:      float = 100.0  # terminal bonus
-    rew_drop:       float =   0.0
+    rew_drop:       float = -30.0  # drop 즉시 종료 + 터미널 패널티
     rew_time:       float = -0.50
 
     box_size_range: tuple[float, float] = (0.04, 0.08)
@@ -310,26 +310,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         log["grasp_rate"]    = grasped_f.mean().item() * 100.0
         log["dist_box_goal"] = (dist_box_goal * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
 
-        # --- TEMPORARY DEBUG: dist_box_goal=0.85m 원인 진단 (30스텝 후 자동 종료) ---
-        if not hasattr(self, "_debug_count"):
-            self._debug_count = 0
-        if self._debug_count < 30:
-            self._debug_count += 1
-            print(
-                f"[DBG {self._debug_count:02d}]"
-                f" origin={self.scene.env_origins[0].tolist()}"
-                f" box_w={[round(v,3) for v in box_pos[0].tolist()]}"
-                f" ee_w={[round(v,3) for v in ee_pos[0].tolist()]}"
-                f" offset={[round(v,3) for v in self._grasp_ee_offset[0].tolist()]}"
-                f" carried={[round(v,3) for v in (ee_pos[0]+self._grasp_ee_offset[0]).tolist()]}"
-                f" goal_w={[round(v,3) for v in self._goal_pos_w[0].tolist()]}"
-                f" dist={dist_box_goal[0].item():.3f}m"
-                f" grasped={self._grasped[0].item()}"
-                f" transport_delta={delta_goal[0].item():.4f}"
-                f" grasp%={self._grasped.float().mean().item()*100:.0f}"
-            )
-        # --- END DEBUG ---
-
         return (
             approach
             + goal_dense
@@ -350,7 +330,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
         dropped = self._grasped & (box_pos[:, 2] < 0.30)
 
-        terminated = placed
+        # drop도 즉시 종료: grasped 상태로 바닥까지 내려가면 에피소드 지속 → dist_box_goal 0.85m 왜곡 버그
+        terminated = placed | dropped
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
 
         done = terminated | timed_out
