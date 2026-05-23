@@ -48,7 +48,7 @@ PLACE_GOALS = [
 ]
 
 TEACHER_OBS_DIM = 30
-STUDENT_OBS_DIM = 28
+STUDENT_OBS_DIM = 29
 
 
 @configclass
@@ -74,7 +74,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_approach:   float =  0.5    # -dist_ee_box * not_grasped
     rew_grasp:      float = 30.0   # one-time grasp bonus
     rew_transport:  float = 300.0  # 1000→300: VF variance 낮춤 (delta 신호 유지, ±30/step)
-    rew_align:      float =  0.3   # grasped 시 action↔goal 방향 cosine 보상 (prospective transport signal)
+    rew_align:      float =  0.0   # 9D 관절 제어에서 비활성: action이 관절공간, goal_dir은 태스크공간 → cosine 무의미
     rew_goal_dist:  float =  2.0   # grasped_f gate → 잡은 동안만 절대거리 패널티 (local optimum 탈출)
     rew_place:      float = 800.0  # Teacher 훈련값 복원
     rew_drop:       float =  0.0   # 비활성화: 매 스텝 페널티 → 보상 분산 폭발
@@ -234,14 +234,17 @@ class WarehouseManipulationEnv(DirectRLEnv):
             box_rel_true = box_pos - ee_pos
             noise = torch.randn_like(box_rel_true) * self._noise_sigma.unsqueeze(1)
             noisy_box_rel = box_rel_true + noise
+            ee_pos_local = ee_pos - self.scene.env_origins  # 로컬 프레임 (env간 일관성)
+            grasped_obs  = self._grasped.float().unsqueeze(1)  # 명시적 grasp 상태
             obs = torch.cat([
-                ee_pos,
+                ee_pos_local,
                 gripper_w,
                 goal_rel,
                 noisy_box_rel,
+                grasped_obs,
                 joint_pos[:, :9],
                 joint_vel[:, :9],
-            ], dim=1)   # (N, 28)
+            ], dim=1)   # (N, 29)
         else:
             obs = torch.cat([
                 box_pos - ee_pos,
