@@ -336,8 +336,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
         dropped = self._grasped & (box_pos[:, 2] < 0.30)
 
-        # drop도 즉시 종료: grasped 상태로 바닥까지 내려가면 에피소드 지속 → dist_box_goal 0.85m 왜곡 버그
-        terminated = placed | dropped
+        terminated = placed
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
 
         done = terminated | timed_out
