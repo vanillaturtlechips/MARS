@@ -52,7 +52,7 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
     runner_cfg.empirical_normalization = True
 
     runner_cfg.policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.5,
+        init_noise_std=1.0,
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",
@@ -79,7 +79,7 @@ def main():
     runner_cfg = make_runner_cfg(obs_dim, mode, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
-    cfg_dict["algorithm"]["entropy_coef"] = 0.0
+    cfg_dict["algorithm"]["entropy_coef"] = 0.003
     cfg_dict["algorithm"]["learning_rate"] = args.lr
     runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
 
