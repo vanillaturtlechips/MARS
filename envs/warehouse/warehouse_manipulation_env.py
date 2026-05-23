@@ -74,12 +74,12 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
 
     rew_approach:   float =  0.5    # -dist_ee_box * not_grasped
     rew_grasp:      float = 30.0   # one-time grasp bonus
-    rew_transport:  float = 10.0   # delta_dist × 100 × grasped
+    rew_transport:  float = 30.0   # delta_dist × grasped (progress delta)
     rew_align:      float =  0.0   # exploit 원인 — 비활성화
-    rew_goal_dist:  float =  5.0   # -dist_box_goal × grasped (dense shaping)
+    rew_goal_dist:  float =  0.0   # 비활성화: 절대거리 패널티 → VF loss 폭발
     rew_place:      float = 100.0  # terminal bonus
-    rew_drop:       float = -30.0  # drop 즉시 종료 + 터미널 패널티
-    rew_time:       float = -0.50
+    rew_drop:       float =  0.0   # 비활성화: 매 스텝 -30 → 보상 분산 폭발
+    rew_time:       float = -0.02  # Teacher 훈련 당시 값으로 복원
 
     box_size_range: tuple[float, float] = (0.04, 0.08)
     box_mass_range: tuple[float, float] = (0.3, 2.0)
