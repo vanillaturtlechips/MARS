@@ -348,12 +348,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
         self.robot.write_joint_state_to_sim(reach_pose, torch.zeros_like(reach_pose), env_ids=env_ids_t)
 
-        box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.25, 0.38, (n,), device=self.device)
-        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
-        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50  # 테이블 상면 (YCB origin = 바닥 중앙)
-        self.box.write_root_state_to_sim(box_state, env_ids_t)
-
         self._box_mass[env_ids_t] = sample_uniform(
             self.cfg.box_mass_range[0], self.cfg.box_mass_range[1], (n,), device=self.device
         )
@@ -361,6 +355,17 @@ class WarehouseManipulationEnv(DirectRLEnv):
         goal_idx = torch.randint(len(PLACE_GOALS), (n,), device=self.device)
         goals    = torch.tensor(PLACE_GOALS, device=self.device)[goal_idx]
         self._goal_pos_w[env_ids_t] = goals + self.scene.env_origins[env_ids_t]
+
+        # Curriculum: 박스를 goal 반경 0.10m 내 랜덤 위치에 spawn
+        # init_dist=0.31m인데 random walk → 0.703m 확산 → transport gradient 없음
+        # goal 근처 spawn → place 경험 대폭 증가 → gradient 살아남
+        theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
+        r     = sample_uniform(0.03, 0.10,  (n,), device=self.device)
+        box_state = self.box.data.default_root_state[env_ids_t].clone()
+        box_state[:, 0] = self._goal_pos_w[env_ids_t, 0] + r * torch.cos(theta)
+        box_state[:, 1] = self._goal_pos_w[env_ids_t, 1] + r * torch.sin(theta)
+        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
+        self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         self._grasped[env_ids_t]            = False
         self._frozen_box_state[env_ids_t]   = 0.0
