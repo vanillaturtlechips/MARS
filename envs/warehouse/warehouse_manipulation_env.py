@@ -77,7 +77,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_approach:   float =  0.5    # -dist_ee_box * not_grasped
     rew_grasp:      float = 30.0   # one-time grasp bonus
     rew_transport:  float = 300.0  # 1000→300: VF variance 낮춤 (delta 신호 유지, ±30/step)
-    rew_align:      float =  0.0   # 9D 관절 제어에서 비활성: action이 관절공간, goal_dir은 태스크공간 → cosine 무의미
+    rew_align:      float =  0.5   # EE 실속도 방향 × goal_dir cosine (grasped gate) — 관절공간 아닌 실제 EE 속도 사용
     rew_goal_dist:  float =  2.0   # grasped_f gate → 잡은 동안만 절대거리 패널티 (local optimum 탈출)
     rew_place:      float = 800.0  # Teacher 훈련값 복원
     rew_drop:       float =  0.0   # 비활성화: 매 스텝 페널티 → 보상 분산 폭발
@@ -275,6 +275,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         box_pos_carried = ee_pos + self._grasp_ee_offset
         dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
+        goal_rel        = self._goal_pos_w - box_pos_carried  # box→goal 방향벡터 (align reward용)
 
         dropped = self._grasped & (box_pos[:, 2] < 0.30)
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
@@ -293,6 +294,15 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         self._prev_dist_box_goal = dist_box_real.detach()
 
+        # EE 실속도 방향 × goal 방향 cosine (grasped 동안만)
+        # body_lin_vel_w: 실제 EE 선속도(m/s) — 관절공간 아닌 태스크공간 직접 사용
+        ee_vel   = self.robot.data.body_lin_vel_w[:, self._ee_body_idx, :]
+        ee_speed = ee_vel.norm(dim=1, keepdim=True).clamp(min=1e-4)
+        ee_vel_dir = ee_vel / ee_speed                                    # (N, 3) unit
+        goal_dir   = goal_rel / (goal_rel.norm(dim=1, keepdim=True).clamp(min=1e-4))
+        alignment  = (ee_vel_dir * goal_dir).sum(dim=1)                   # cosine [-1, 1]
+        rew_align  = self.cfg.rew_align * alignment * grasped_f
+
         log = self.extras.setdefault("log", {})
         log["dist_ee_box"]   = dist_ee_box.mean().item()
         log["grasp_rate"]    = grasped_f.mean().item() * 100.0
@@ -302,6 +312,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             approach
             + goal_dense
             + transport
+            + rew_align
             + self.cfg.rew_grasp * newly_grasped.float()
             + self.cfg.rew_place * placed.float()
             + self.cfg.rew_drop  * dropped.float()
