@@ -79,7 +79,7 @@ def main():
     runner_cfg = make_runner_cfg(obs_dim, mode, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
-    cfg_dict["algorithm"]["entropy_coef"] = 0.005
+    cfg_dict["algorithm"]["entropy_coef"] = 0.001
     cfg_dict["algorithm"]["learning_rate"] = args.lr
     runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
 
