@@ -57,7 +57,7 @@ STUDENT_OBS_DIM = 29
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 5.0
+    episode_length_s = 15.0
     action_space = 9             # 9D 관절 직접 제어: [dq0..dq6 (arm), dg0, dg1 (gripper)]
     observation_space = TEACHER_OBS_DIM
     state_space = 0
@@ -370,14 +370,13 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
-        # Curriculum: goal을 박스 반경 0.10m 내에 spawn (역방향 curriculum)
-        # 이전 시도: box→goal 근처 → EE가 박스 못 찾아 grasp_rate 18%로 고정
-        # 수정: box 원위치 유지(grasp 97%) + goal을 박스 옆으로 → place 경험 보장
-        theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-        r     = sample_uniform(0.13, 0.20,  (n,), device=self.device)
-        self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
-        self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
-        self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
+        # PLACE_GOALS: 고정 목표 위치 (Teacher 100% 달성한 세팅 그대로)
+        goal_indices = torch.randint(len(PLACE_GOALS), (n,), device=self.device)
+        goals_t = torch.tensor(PLACE_GOALS, device=self.device)  # (4, 3)
+        chosen  = goals_t[goal_indices]                           # (n, 3)
+        self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + chosen[:, 0]
+        self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + chosen[:, 1]
+        self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + chosen[:, 2]
 
         self._grasped[env_ids_t]            = False
         self._frozen_box_state[env_ids_t]   = 0.0
