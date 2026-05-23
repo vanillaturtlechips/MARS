@@ -300,7 +300,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # after grasp, box.data.root_pos_w == box_pos_carried (written in _apply_action)
         dist_box_real = (box_pos - self._goal_pos_w).norm(dim=1)
         delta_goal = (self._prev_dist_box_goal - dist_box_real).clamp(-0.1, 0.1)
-        transport  = self.cfg.rew_transport * delta_goal * 100.0 * grasped_f
+        transport  = self.cfg.rew_transport * delta_goal * grasped_f
 
         goal_dir  = (self._goal_pos_w - box_pos_carried).clone()
         goal_norm = goal_dir.norm(dim=1, keepdim=True).clamp(min=1e-6)
