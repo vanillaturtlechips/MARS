@@ -130,3 +130,91 @@ def test_transport_clamp():
     assert delta[0].item() == pytest.approx( 0.1,  abs=1e-5)   # 많이 가까워짐 → cap
     assert delta[1].item() == pytest.approx( 0.05, abs=1e-5)   # 조금 가까워짐
     assert delta[2].item() == pytest.approx(-0.1,  abs=1e-5)   # 많이 멀어짐 → floor
+
+
+# ── 5. rew_goal_dist=8.0 검증 ────────────────────────────────────────────────
+
+def test_goal_dist_reward_4x_stronger():
+    """rew_goal_dist 2.0→8.0: 같은 거리에서 gradient 4배 강화."""
+    dist = torch.tensor([0.62])   # 현재 mean dist_box_goal
+    rew_old = 2.0 * dist.item()   # 1.24/step
+    rew_new = 8.0 * dist.item()   # 4.96/step
+    assert rew_new == pytest.approx(4.0 * rew_old, abs=1e-4)
+
+
+def test_transport_beats_stay():
+    """transport(0.62→0.30m, ~100step) 누적 reward > stay(0.62m, 278step).
+    이게 성립해야 policy가 transport를 배울 동기가 있음.
+    """
+    rew_goal_dist = 8.0
+    rew_place     = 800.0
+    rew_time      = -0.02
+
+    # 현재 평균: 278 step 동안 0.62m 거리 유지 (place 없음)
+    stay_return = (-rew_goal_dist * 0.62 + rew_time) * 278
+
+    # transport: 100 step에 걸쳐 0.62→0.30m 선형 감소, 마지막에 place
+    dists = torch.linspace(0.62, 0.30, 100)
+    transport_return = (
+        sum(-rew_goal_dist * d.item() + rew_time for d in dists)
+        + rew_place
+    )
+
+    assert transport_return > stay_return, (
+        f"transport({transport_return:.1f}) <= stay({stay_return:.1f}) → "
+        "policy가 transport를 배울 이유가 없음"
+    )
+
+
+def test_transport_beats_stay_old_reward():
+    """rew_goal_dist=2.0(old)에서도 transport가 우세한지 확인.
+    우세하면 문제는 reward 설계가 아닌 탐색 부재.
+    """
+    rew_goal_dist = 2.0   # old
+    rew_place     = 800.0
+    rew_time      = -0.02
+
+    stay_return = (-rew_goal_dist * 0.62 + rew_time) * 278
+    dists = torch.linspace(0.62, 0.30, 100)
+    transport_return = (
+        sum(-rew_goal_dist * d.item() + rew_time for d in dists)
+        + rew_place
+    )
+    assert transport_return > stay_return
+
+
+# ── 6. entropy_coef 안전 구간 검증 ───────────────────────────────────────────
+
+def test_entropy_coef_safe_when_gradient_alive():
+    """entropy_coef=0.003이 surrogate_loss=0.01(활성) 대비 30% 미만 → 안전.
+    surrogate_loss < 0.003이면 entropy가 지배 → std 폭발 위험.
+    """
+    entropy_coef          = 0.003
+    min_active_surrogate  = 0.01   # gradient "살아있음" 기준
+    ratio = entropy_coef / min_active_surrogate
+    assert ratio <= 0.30, f"entropy too strong: {ratio:.3f}"
+
+
+def test_entropy_dominates_when_gradient_dead():
+    """surrogate_loss=0.0002(dead 상태)이면 entropy가 policy gradient를 압도.
+    이것이 이전 런에서 std 0.13→폭발 예측 경로.
+    """
+    entropy_coef       = 0.003
+    dead_surrogate     = 0.0002   # iter 2170 실측값
+    ratio = entropy_coef / dead_surrogate
+    # entropy가 policy gradient의 15배 → std 폭발 불가피
+    assert ratio > 10.0, f"gradient dead인데 entropy가 안전하다면 분석 오류: {ratio:.1f}x"
+
+
+def test_advantage_variance_check():
+    """rew_goal_dist=8.0 vs 2.0: 같은 dist 범위에서 reward 분산 비교.
+    분산이 클수록 advantage 신호 강해짐 → surrogate_loss 살아있음.
+    """
+    torch.manual_seed(0)
+    dists = torch.rand(1000) * 0.6 + 0.1   # [0.1, 0.7]m
+
+    var_old = (2.0 * dists).var().item()
+    var_new = (8.0 * dists).var().item()
+
+    # rew_goal_dist 4x → reward 분산 16x (선형 스케일 → 분산은 제곱)
+    assert var_new == pytest.approx(16.0 * var_old, rel=1e-3)
