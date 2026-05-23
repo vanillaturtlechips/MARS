@@ -8,7 +8,8 @@ Teacher 관측 (특권 정보, 훈련 전용):
   goal_rel(3) + jpos(9) + jvel(9) = 30차원
 
 Student 관측 (배포용, 실제 센서):
-  ee_pos(3) + gripper(1) + goal_rel(3) + jpos(9) + jvel(9) = 25차원
+  ee_pos(3) + gripper(1) + goal_rel(3) + noisy_box_rel(3) + jpos(9) + jvel(9) = 28차원
+  noisy_box_rel: 에피소드마다 σ∈[1cm,6cm] 균일 샘플 (카메라 DR, Sim2Real 강건성)
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ PLACE_GOALS = [
 ]
 
 TEACHER_OBS_DIM = 30
-STUDENT_OBS_DIM = 25
+STUDENT_OBS_DIM = 28
 
 
 @configclass
@@ -118,6 +119,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         self._stat_placed   = 0
         self._stat_episodes = 0
+
+        # Student 카메라 DR: 에피소드마다 σ∈[1cm,6cm] 균일 샘플
+        self._noise_sigma = torch.zeros(n, device=d)
 
     def _setup_scene(self):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -236,13 +240,18 @@ class WarehouseManipulationEnv(DirectRLEnv):
         )
 
         if self.cfg.student_mode:
+            box_pos = self.box.data.root_pos_w
+            box_rel_true = box_pos - ee_pos
+            noise = torch.randn_like(box_rel_true) * self._noise_sigma.unsqueeze(1)
+            noisy_box_rel = box_rel_true + noise
             obs = torch.cat([
                 ee_pos,
                 gripper_w,
                 goal_rel,
+                noisy_box_rel,
                 joint_pos[:, :9],
                 joint_vel[:, :9],
-            ], dim=1)   # (N, 25)
+            ], dim=1)   # (N, 28)
         else:
             obs = torch.cat([
                 box_pos - ee_pos,
@@ -369,6 +378,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._grasped[env_ids_t]            = False
         self._frozen_box_state[env_ids_t]   = 0.0
         self._grasp_ee_offset[env_ids_t]    = 0.0
+        self._noise_sigma[env_ids_t] = sample_uniform(0.01, 0.06, (n,), device=self.device)
         # initialize with actual box-to-goal distance (no jump at first grasp)
         self._prev_dist_box_goal[env_ids_t] = (
             box_state[:, :3] - self._goal_pos_w[env_ids_t]

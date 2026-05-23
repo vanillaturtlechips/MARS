@@ -18,9 +18,8 @@ parser.add_argument("--max_iter",      type=int,   default=3000)
 parser.add_argument("--resume_ckpt",   type=str,   default=None)
 parser.add_argument("--lr",            type=float, default=1e-3,  help="PPO learning rate")
 parser.add_argument("--save_interval", type=int,   default=300,   help="체크포인트 저장 주기")
-# 하위 호환 — 무시됨
 parser.add_argument("--student",       action="store_true", default=False)
-parser.add_argument("--teacher_ckpt",  type=str,   default=None)
+parser.add_argument("--teacher_ckpt",  type=str,   default=None,  help="미사용 (하위 호환)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -62,23 +61,33 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
 
 
 def main():
-    env_cfg = WarehouseManipulationEnvCfg()
+    if args.student:
+        env_cfg = WarehouseManipulationStudentEnvCfg()
+        obs_dim  = STUDENT_OBS_DIM
+        log_dir  = "logs/warehouse_manipulation_student"
+        mode     = "student"
+    else:
+        env_cfg  = WarehouseManipulationEnvCfg()
+        obs_dim  = TEACHER_OBS_DIM
+        log_dir  = "logs/warehouse_manipulation"
+        mode     = "manipulation"
+
     env_cfg.scene.num_envs = args.num_envs
     env = WarehouseManipulationEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
 
-    runner_cfg = make_runner_cfg(TEACHER_OBS_DIM, "manipulation", args.max_iter)
+    runner_cfg = make_runner_cfg(obs_dim, mode, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
-    cfg_dict["algorithm"]["entropy_coef"] = 0.001
+    cfg_dict["algorithm"]["entropy_coef"] = 0.005
     cfg_dict["algorithm"]["learning_rate"] = args.lr
-    runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_manipulation", device=env.device)
+    runner = OnPolicyRunner(env, cfg_dict, log_dir=log_dir, device=env.device)
 
     if args.resume_ckpt:
         print(f"[Resume] {args.resume_ckpt}")
         runner.load(args.resume_ckpt)
 
-    print(f"\n[MANIPULATION] obs_dim={TEACHER_OBS_DIM}, {args.num_envs} envs, {args.max_iter} iter\n")
+    print(f"\n[{'STUDENT' if args.student else 'TEACHER'}] obs_dim={obs_dim}, {args.num_envs} envs, {args.max_iter} iter\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()
