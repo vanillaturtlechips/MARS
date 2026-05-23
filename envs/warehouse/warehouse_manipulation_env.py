@@ -54,8 +54,8 @@ STUDENT_OBS_DIM = 28
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 15.0  # Teacher 훈련값 복원 (ep_len=575 at iter 312)
-    action_space = 4             # [dx, dy, dz, gripper]
+    episode_length_s = 15.0
+    action_space = 9             # 9D 관절 직접 제어: [dq0..dq6 (arm), dg0, dg1 (gripper)]
     observation_space = TEACHER_OBS_DIM
     state_space = 0
 
@@ -194,30 +194,15 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        n = self.num_envs
-        delta_pos = self._actions[:, :3] * 0.03
+        # 9D 관절 직접 제어: actions[:, :7] = arm delta (rad), actions[:, 7:9] = gripper delta (m)
+        arm_delta     = self._actions[:, :7] * 0.05   # ±0.05 rad/step (~2.9°)
+        gripper_delta = self._actions[:, 7:9] * 0.02  # ±0.02 m/step
 
-        jac = self.robot.root_physx_view.get_jacobians()
-        J   = jac[:, self._jac_body_idx, :3, :7]
-        lam = 0.05  # 0.01→0.05: 특이점 근처 delta_q 폭발 방지 (EE 17cm/step 버그)
-        JT      = J.transpose(-2, -1)
-        JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
-        J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
-        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
-        # 실제 EE 이동량(J @ delta_q)이 의도한 delta_pos 크기를 넘지 않도록 스케일 다운
-        ee_delta = torch.bmm(J, delta_q.unsqueeze(-1)).squeeze(-1)
-        ee_scale = (delta_pos.norm(dim=1, keepdim=True) /
-                    ee_delta.norm(dim=1, keepdim=True).clamp(min=1e-6)).clamp(max=1.0)
-        delta_q  = delta_q * ee_scale
-        delta_q  = delta_q.clamp(-0.2, 0.2)  # 관절 한계 안전망
+        arm_target     = (self.robot.data.joint_pos[:, :7] + arm_delta).clamp(-2.9, 2.9)
+        gripper_target = (self.robot.data.joint_pos[:, 7:9] + gripper_delta).clamp(0.0, 0.04)
 
-        joint_target = self.robot.data.joint_pos[:, :7] + delta_q
-        self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
-
-        gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
-        self.robot.set_joint_position_target(
-            gripper_pos.expand(-1, 2).clone(), joint_ids=[7, 8]
-        )
+        joint_target = torch.cat([arm_target, gripper_target], dim=1)
+        self.robot.set_joint_position_target(joint_target, joint_ids=list(range(9)))
 
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
