@@ -205,7 +205,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
         delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
-        delta_q = delta_q.clamp(-0.1, 0.1)  # 관절당 최대 0.1rad/step 제한
+        # 실제 EE 이동량(J @ delta_q)이 의도한 delta_pos 크기를 넘지 않도록 스케일 다운
+        ee_delta = torch.bmm(J, delta_q.unsqueeze(-1)).squeeze(-1)
+        ee_scale = (delta_pos.norm(dim=1, keepdim=True) /
+                    ee_delta.norm(dim=1, keepdim=True).clamp(min=1e-6)).clamp(max=1.0)
+        delta_q  = delta_q * ee_scale
+        delta_q  = delta_q.clamp(-0.2, 0.2)  # 관절 한계 안전망
 
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
         self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
