@@ -57,7 +57,7 @@ STUDENT_OBS_DIM = 29
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 15.0
+    episode_length_s = 5.0
     action_space = 9             # 9D 관절 직접 제어: [dq0..dq6 (arm), dg0, dg1 (gripper)]
     observation_space = TEACHER_OBS_DIM
     state_space = 0
