@@ -310,6 +310,26 @@ class WarehouseManipulationEnv(DirectRLEnv):
         log["grasp_rate"]    = grasped_f.mean().item() * 100.0
         log["dist_box_goal"] = (dist_box_goal * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
 
+        # --- TEMPORARY DEBUG: dist_box_goal=0.85m 원인 진단 (30스텝 후 자동 종료) ---
+        if not hasattr(self, "_debug_count"):
+            self._debug_count = 0
+        if self._debug_count < 30:
+            self._debug_count += 1
+            print(
+                f"[DBG {self._debug_count:02d}]"
+                f" origin={self.scene.env_origins[0].tolist()}"
+                f" box_w={[round(v,3) for v in box_pos[0].tolist()]}"
+                f" ee_w={[round(v,3) for v in ee_pos[0].tolist()]}"
+                f" offset={[round(v,3) for v in self._grasp_ee_offset[0].tolist()]}"
+                f" carried={[round(v,3) for v in (ee_pos[0]+self._grasp_ee_offset[0]).tolist()]}"
+                f" goal_w={[round(v,3) for v in self._goal_pos_w[0].tolist()]}"
+                f" dist={dist_box_goal[0].item():.3f}m"
+                f" grasped={self._grasped[0].item()}"
+                f" transport_delta={delta_goal[0].item():.4f}"
+                f" grasp%={self._grasped.float().mean().item()*100:.0f}"
+            )
+        # --- END DEBUG ---
+
         return (
             approach
             + goal_dense
