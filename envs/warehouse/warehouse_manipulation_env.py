@@ -96,6 +96,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
 @configclass
 class WarehouseManipulationStudentEnvCfg(WarehouseManipulationEnvCfg):
     observation_space = STUDENT_OBS_DIM
+    state_space = TEACHER_OBS_DIM  # asymmetric AC: critic uses privileged teacher obs
     student_mode = True
 
 
@@ -247,6 +248,19 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 joint_pos[:, :9],
                 joint_vel[:, :9],
             ], dim=1)   # (N, 29)
+            # Asymmetric Actor-Critic: critic uses noise-free teacher obs
+            # Actor (student 29D) explores with noisy sensor sim
+            # Critic (teacher 30D) estimates value with privileged ground-truth
+            privileged_obs = torch.cat([
+                box_pos - ee_pos,
+                box_quat,
+                self._box_mass.unsqueeze(1),
+                gripper_w,
+                goal_rel,
+                joint_pos[:, :9],
+                joint_vel[:, :9],
+            ], dim=1)   # (N, 30)
+            return {"policy": obs, "critic": privileged_obs}
         else:
             obs = torch.cat([
                 box_pos - ee_pos,
