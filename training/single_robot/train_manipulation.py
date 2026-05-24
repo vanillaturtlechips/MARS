@@ -21,6 +21,10 @@ parser.add_argument("--save_interval", type=int,   default=300,   help="체크�
 parser.add_argument("--student",        action="store_true", default=False)
 parser.add_argument("--transport_only", action="store_true", default=False,
                     help="Stage 1: 에피소드 시작 시 즉시 grasped — transport만 학습")
+parser.add_argument("--force_grasp",   action="store_true", default=False,
+                    help="Teacher 재훈련용: 에피소드 시작 시 즉시 grasped (Teacher obs, 30D)")
+parser.add_argument("--bc_ckpt",       type=str,   default=None,
+                    help="BC 사전훈련 actor 가중치 (train_bc.py 출력) — Student PPO 초기화용")
 parser.add_argument("--teacher_ckpt",  type=str,   default=None,  help="미사용 (하위 호환)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
@@ -74,6 +78,12 @@ def main():
         obs_dim  = STUDENT_OBS_DIM
         log_dir  = "logs/warehouse_manipulation_student"
         mode     = "student"
+    elif args.force_grasp:
+        env_cfg  = WarehouseManipulationEnvCfg()
+        env_cfg.force_grasp_on_reset = True
+        obs_dim  = TEACHER_OBS_DIM
+        log_dir  = "logs/warehouse_manipulation_teacher_transport"
+        mode     = "teacher_transport"
     else:
         env_cfg  = WarehouseManipulationEnvCfg()
         obs_dim  = TEACHER_OBS_DIM
@@ -95,7 +105,21 @@ def main():
         print(f"[Resume] {args.resume_ckpt}")
         runner.load(args.resume_ckpt)
 
-    tag = "TRANSPORT-ONLY" if args.transport_only else ("STUDENT" if args.student else "TEACHER")
+    if args.bc_ckpt:
+        bc_state = torch.load(args.bc_ckpt, map_location=env.device)
+        actor_state = {k[len("actor."):]: v for k, v in bc_state.items() if k.startswith("actor.")}
+        runner.alg.actor_critic.actor.load_state_dict(actor_state)
+        print(f"[BC Init] Actor 가중치 로드: {args.bc_ckpt}")
+
+    if args.force_grasp:
+        tag = "TEACHER-TRANSPORT"
+    elif args.transport_only:
+        tag = "TRANSPORT-ONLY"
+    elif args.student:
+        tag = "STUDENT"
+    else:
+        tag = "TEACHER"
+    _ = tag  # suppress unused warning
     print(f"\n[{tag}] obs_dim={obs_dim}, {args.num_envs} envs, {args.max_iter} iter\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
