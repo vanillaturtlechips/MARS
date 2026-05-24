@@ -299,7 +299,6 @@ def run():
     goal11_local = goal11 - env.scene.env_origins
     print(f"         [INIT] EE  local xyz = {(ee11_init - env.scene.env_origins)[0].tolist()}")
     print(f"         [INIT] goal local xyz = {goal11_local[0].tolist()}")
-    print(f"         [INIT] j0_target      = {env._joint_target[0, 0].item():.4f} rad")
     print(f"         [INIT] j0_actual      = {env.robot.data.joint_pos[0, 0].item():.4f} rad")
 
     deltas11: list[float] = []
@@ -317,7 +316,6 @@ def run():
             ee11_local = ee11_s - env.scene.env_origins
             dist_xyz = ee11_s - goal11  # 성분별 오차
             print(f"         [step {step_i+1:2d}] EE xyz={ee11_local[0].tolist()}"
-                  f"  j0_tgt={env._joint_target[0,0].item():.3f}"
                   f"  j0_act={env.robot.data.joint_pos[0,0].item():.3f}"
                   f"  dist3D={d_now11[0].item():.4f}"
                   f"  Δ(x,y,z)=({dist_xyz[0,0].item():.3f},{dist_xyz[0,1].item():.3f},{dist_xyz[0,2].item():.3f})")
