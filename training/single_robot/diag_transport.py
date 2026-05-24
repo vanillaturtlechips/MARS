@@ -184,24 +184,31 @@ def run():
 
     dist_before7 = env._prev_dist_box_goal.clone()
     rew_list7: list[float] = []
+    delta_list7: list[float] = []
 
     for _ in range(30):
         act7 = torch.zeros(N, 9, device=D)
         act7[:, 0] = j0_sign * 1.0  # joint0 최대 델타
+        d_prev7 = env._prev_dist_box_goal.clone()
         _, rew7, done7, trunc7, _ = env.step(act7)
+        d_now7 = env._prev_dist_box_goal.clone()
         rew_list7.append(rew7.mean().item())
+        delta_list7.append((d_prev7 - d_now7).mean().item())
         if done7.any() or trunc7.any():
             break
 
     ee7, _ = env._get_ee_pose()
     dist_after7 = (ee7 - goal7).norm(dim=1)
     dist_improved = (dist_before7 - dist_after7 > 0).sum().item()
+    mean_delta7 = sum(delta_list7) / len(delta_list7)
 
     print(f"         [INFO] dist before: {dist_before7.tolist()}")
     print(f"         [INFO] dist after 30 steps toward goal: {dist_after7.tolist()}")
+    print(f"         [INFO] mean delta_goal/step = {mean_delta7:.5f}m  "
+          f"(양수=goal 방향, 음수=gravity 지배)")
     chk(f"goal-directed motion: dist reduced for ≥{N//2} envs",
         dist_improved >= N // 2,
-        f"improved {dist_improved}/{N} envs")
+        f"improved {dist_improved}/{N} envs  ← joint0 단독 → gravity 지배로 FAIL 가능 (물리 한계)")
     chk("mean reward > -500 during directed motion",
         sum(rew_list7) / len(rew_list7) > -500,
         f"mean_rew = {sum(rew_list7)/len(rew_list7):.1f}")
@@ -276,6 +283,38 @@ def run():
     chk("goal 방향 1-step: _prev_dist_box_goal 업데이트됨",
         (d_before10 - d_after10).abs().max().item() > 1e-6,
         f"delta = {(d_before10 - d_after10).tolist()}")
+
+    # ------------------------------------------------------------------ #
+    # [11] rew_transport 신호 강도 검증 (SNR 체크)
+    # 이전 diag가 못 잡은 핵심 문제: 코드 정확성(reward 연결)은 검증했지만
+    # 신호 강도(gradient가 VF noise 대비 충분한가)는 검증 안 했음
+    # test [7]이 FAIL해도 "물리 현실"로 넘겼는데, 그게 transport 학습 실패의 원인
+    print("\n[11] rew_transport 신호 강도 검증 (SNR 체크) ----------------------")
+    env.reset()
+    goal11 = env._goal_pos_w.clone()
+    j0_sign11 = torch.sign((goal11 - env.scene.env_origins)[:, 1])
+    deltas11: list[float] = []
+    for _ in range(30):
+        act11 = torch.zeros(N, 9, device=D)
+        act11[:, 0] = j0_sign11 * 1.0
+        d_prev11 = env._prev_dist_box_goal.clone()
+        env.step(act11)
+        d_now11 = env._prev_dist_box_goal.clone()
+        deltas11.append((d_prev11 - d_now11).mean().item())
+
+    mean_delta11 = sum(deltas11) / len(deltas11)
+    transport_signal = env.cfg.rew_transport * abs(mean_delta11)
+
+    print(f"         [INFO] mean delta_goal/step = {mean_delta11:.5f}m")
+    print(f"         [INFO] rew_transport = {env.cfg.rew_transport}")
+    print(f"         [INFO] transport signal/step = {transport_signal:.3f}  (기준: >0.5)")
+    chk("goal-directed 30-step: mean delta_goal > 0 (gravity 이겨냄)",
+        mean_delta11 > 0,
+        f"mean_delta={mean_delta11:.5f}m/step. 음수=gravity 지배, transport reward가 평균 음수 → 학습 방해")
+    chk("rew_transport × |delta| > 0.5/step (충분한 신호 강도)",
+        transport_signal > 0.5,
+        f"rew_transport={env.cfg.rew_transport} × {abs(mean_delta11):.5f}m = {transport_signal:.3f}/step  "
+        f"[FAIL → rew_transport ≥ 1000 필요]")
 
     # ------------------------------------------------------------------ #
     print("\n" + "=" * 70)
