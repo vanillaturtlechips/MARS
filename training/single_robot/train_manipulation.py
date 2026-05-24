@@ -26,6 +26,8 @@ parser.add_argument("--force_grasp",   action="store_true", default=False,
 parser.add_argument("--bc_ckpt",       type=str,   default=None,
                     help="BC 사전훈련 actor 가중치 (train_bc.py 출력) — Student PPO 초기화용")
 parser.add_argument("--teacher_ckpt",  type=str,   default=None,  help="미사용 (하위 호환)")
+parser.add_argument("--noise_std",     type=float, default=1.0,
+                    help="PPO actor 초기 탐색 노이즈 (BC init 시 0.1 권장)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -59,7 +61,7 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
     runner_cfg.empirical_normalization = True
 
     runner_cfg.policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=args.noise_std,
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",
