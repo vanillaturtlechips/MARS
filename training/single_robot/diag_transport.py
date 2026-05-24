@@ -293,8 +293,17 @@ def run():
     env.reset()
     goal11 = env._goal_pos_w.clone()
     j0_sign11 = torch.sign((goal11 - env.scene.env_origins)[:, 1])
+
+    # 시작 상태 출력
+    ee11_init, _ = env._get_ee_pose()
+    goal11_local = goal11 - env.scene.env_origins
+    print(f"         [INIT] EE  local xyz = {(ee11_init - env.scene.env_origins)[0].tolist()}")
+    print(f"         [INIT] goal local xyz = {goal11_local[0].tolist()}")
+    print(f"         [INIT] j0_target      = {env._joint_target[0, 0].item():.4f} rad")
+    print(f"         [INIT] j0_actual      = {env.robot.data.joint_pos[0, 0].item():.4f} rad")
+
     deltas11: list[float] = []
-    for _ in range(30):
+    for step_i in range(30):
         act11 = torch.zeros(N, 9, device=D)
         act11[:, 0] = j0_sign11 * 1.0
         d_prev11 = env._prev_dist_box_goal.clone()
@@ -302,12 +311,24 @@ def run():
         d_now11 = env._prev_dist_box_goal.clone()
         deltas11.append((d_prev11 - d_now11).mean().item())
 
+        # 5스텝마다 상태 출력
+        if step_i in (4, 14, 29):
+            ee11_s, _ = env._get_ee_pose()
+            ee11_local = ee11_s - env.scene.env_origins
+            dist_xyz = ee11_s - goal11  # 성분별 오차
+            print(f"         [step {step_i+1:2d}] EE xyz={ee11_local[0].tolist()}"
+                  f"  j0_tgt={env._joint_target[0,0].item():.3f}"
+                  f"  j0_act={env.robot.data.joint_pos[0,0].item():.3f}"
+                  f"  dist3D={d_now11[0].item():.4f}"
+                  f"  Δ(x,y,z)=({dist_xyz[0,0].item():.3f},{dist_xyz[0,1].item():.3f},{dist_xyz[0,2].item():.3f})")
+
     mean_delta11 = sum(deltas11) / len(deltas11)
     transport_signal = env.cfg.rew_transport * abs(mean_delta11)
 
     print(f"         [INFO] mean delta_goal/step = {mean_delta11:.5f}m")
     print(f"         [INFO] rew_transport = {env.cfg.rew_transport}")
     print(f"         [INFO] transport signal/step = {transport_signal:.3f}  (기준: >0.5)")
+    print(f"         [진단] delta_list(첫5개) = {[f'{d:.4f}' for d in deltas11[:5]]}")
     chk("goal-directed 30-step: mean delta_goal > 0 (gravity 이겨냄)",
         mean_delta11 > 0,
         f"mean_delta={mean_delta11:.5f}m/step. 음수=gravity 지배, transport reward가 평균 음수 → 학습 방해")
