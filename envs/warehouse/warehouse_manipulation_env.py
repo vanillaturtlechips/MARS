@@ -311,9 +311,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         approach   = -self.cfg.rew_approach  * dist_ee_box  * not_grasped
         goal_dense = -self.cfg.rew_goal_dist * dist_box_goal * grasped_f
 
-        # delta tracking: use sim box pos (not ee_pos proxy before grasp)
-        # after grasp, box.data.root_pos_w == box_pos_carried (written in _apply_action)
-        dist_box_real = (box_pos - self._goal_pos_w).norm(dim=1)
+        # delta tracking: box_pos_carried (EE proxy when grasped) 사용
+        # box.data.root_pos_w는 write_root_state_to_sim 타이밍 문제로 EE를 100% 추종하지 않음
+        # → box_pos_carried = ee_pos + grasp_ee_offset 로 일관되게 계산
+        dist_box_real = (box_pos_carried - self._goal_pos_w).norm(dim=1)
         delta_goal = (self._prev_dist_box_goal - dist_box_real).clamp(-0.1, 0.1)
         transport  = self.cfg.rew_transport * delta_goal * grasped_f
 
