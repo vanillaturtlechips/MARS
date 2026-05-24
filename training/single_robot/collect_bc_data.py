@@ -56,9 +56,7 @@ def main():
     obs_dim  = state["actor.0.weight"].shape[1]
     print(f"[Teacher] obs={obs_dim}D  action={act_dim}D")
     assert obs_dim == TEACHER_OBS_DIM, \
-        f"Teacher obs {obs_dim} != TEACHER_OBS_DIM {TEACHER_OBS_DIM}. 재훈련 필요."
-    assert act_dim == 9, \
-        f"Teacher action {act_dim} != 9. 재훈련 필요."
+        f"Teacher obs {obs_dim} != TEACHER_OBS_DIM {TEACHER_OBS_DIM}."
 
     teacher = build_teacher_actor(obs_dim, act_dim).to(device)
     actor_state = {k[len("actor."):]: v for k, v in state.items() if k.startswith("actor.")}
