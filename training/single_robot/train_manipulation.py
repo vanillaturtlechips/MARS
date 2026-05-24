@@ -28,6 +28,8 @@ parser.add_argument("--bc_ckpt",       type=str,   default=None,
 parser.add_argument("--teacher_ckpt",  type=str,   default=None,  help="미사용 (하위 호환)")
 parser.add_argument("--noise_std",     type=float, default=1.0,
                     help="PPO actor 초기 탐색 노이즈 (BC init 시 0.1 권장)")
+parser.add_argument("--warmup_iters", type=int,   default=0,
+                    help="BC 사용 시 actor frozen, critic만 먼저 N iter 훈련 후 joint 훈련")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -107,6 +109,7 @@ def main():
         print(f"[Resume] {args.resume_ckpt}")
         runner.load(args.resume_ckpt)
 
+    ac = None
     if args.bc_ckpt:
         bc_state = torch.load(args.bc_ckpt, map_location=env.device)
         actor_state = {k[len("actor."):]: v for k, v in bc_state.items() if k.startswith("actor.")}
@@ -128,7 +131,22 @@ def main():
     _ = tag  # suppress unused warning
     print(f"\n[{tag}] obs_dim={obs_dim}, {args.num_envs} envs, {args.max_iter} iter\n")
 
-    runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
+    if ac is not None and args.warmup_iters > 0:
+        # Phase 1: actor frozen, critic만 웜업
+        for param in ac.actor.parameters():
+            param.requires_grad = False
+        print(f"[Warmup] Actor frozen — critic {args.warmup_iters} iter 웜업 중...")
+        runner.learn(num_learning_iterations=args.warmup_iters, init_at_random_ep_len=True)
+        # Phase 2: actor unfreeze, joint 훈련
+        for param in ac.actor.parameters():
+            param.requires_grad = True
+        print(f"[Warmup] Actor unfrozen — joint 훈련 시작")
+        remaining = args.max_iter - args.warmup_iters
+        if remaining > 0:
+            runner.learn(num_learning_iterations=remaining, init_at_random_ep_len=False)
+    else:
+        runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
+
     env.close()
 
 
