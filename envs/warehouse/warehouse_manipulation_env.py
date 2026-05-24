@@ -392,11 +392,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state = self.box.data.default_root_state[env_ids_t].clone()
 
         if self.cfg.force_grasp_on_reset:
-            # Stage 1 transport-only: reach_pose EE 위치(로컬 ≈ [0.33, 0, 0.50])에 박스 spawn
-            # _grasp_ee_offset=0 → 박스가 매 스텝 EE 위치를 그대로 추종
-            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + 0.33
-            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + 0.00
-            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
+            # force_grasp: box를 reach_pose EE 실측 위치에 spawn (진단 확인값)
+            # EE local = [0.307, 0.000, 0.590] — 기존 [0.33, 0, 0.50]은 table 높이로 잘못됨
+            # step 1 box teleport(0.093m) 제거, noisy_box_rel 일관성 확보
+            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + 0.307
+            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + 0.000
+            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.590
         else:
             box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.25, 0.38, (n,), device=self.device)
             box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
