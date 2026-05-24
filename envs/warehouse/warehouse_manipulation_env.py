@@ -104,12 +104,11 @@ class WarehouseManipulationStudentEnvCfg(WarehouseManipulationEnvCfg):
 @configclass
 class WarehouseManipulationStudentTransportEnvCfg(WarehouseManipulationStudentEnvCfg):
     """Stage 1 — transport만 학습. 에피소드 시작 시 robot이 이미 box를 쥐고 있음.
-    grasp 없이 순수하게 'goal 방향으로 이동'만 배움.
-    rew_goal_dist=4.0: 2.0에서 state-dependent value 차이 너무 작아 surrogate≈0.
-    transport-only(171step, 항상 grasped)에서 return 범위 작아 VF 안정.
+    goal: PLACE_GOALS 4개 고정 위치 (y=±0.32-0.35m, ~0.30m 횡이동).
+    Teacher 100% 달성 조건 동일 적용 → 랜덤 policy 성공률 ≈ 0% → advantage 차이 극명 → surrogate>0.
     """
     force_grasp_on_reset = True
-    rew_goal_dist: float = 4.0
+    rew_goal_dist: float = 2.0
 
 
 class WarehouseManipulationEnv(DirectRLEnv):
@@ -403,27 +402,35 @@ class WarehouseManipulationEnv(DirectRLEnv):
             box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
-        # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn (force_grasp 시엔 EE 기준)
-        theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-        r     = sample_uniform(0.14, 0.20,  (n,), device=self.device)
-        self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
-        self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
-        self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
+        if self.cfg.force_grasp_on_reset:
+            # PLACE_GOALS: 고정 4개 위치 중 에피소드마다 랜덤 선택 (local frame)
+            # Teacher 100% 달성 조건 그대로 → 랜덤 policy 성공률 ≈ 0% → advantage 차이 극명
+            goal_indices = torch.randint(0, len(PLACE_GOALS), (n,), device=self.device)
+            place_goals  = torch.tensor(PLACE_GOALS, device=self.device, dtype=torch.float32)
+            self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + place_goals[goal_indices, 0]
+            self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + place_goals[goal_indices, 1]
+            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + place_goals[goal_indices, 2]
+        else:
+            # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
+            theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
+            r     = sample_uniform(0.14, 0.20,  (n,), device=self.device)
+            self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
+            self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
+            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
 
         self._noise_sigma[env_ids_t] = sample_uniform(0.01, 0.06, (n,), device=self.device)
 
+        init_dist = (box_state[:, :3] - self._goal_pos_w[env_ids_t]).norm(dim=1)
         if self.cfg.force_grasp_on_reset:
             self._grasped[env_ids_t]          = True
             self._frozen_box_state[env_ids_t] = box_state.clone()
-            self._grasp_ee_offset[env_ids_t]  = 0.0  # 박스가 EE 위치 그대로 추종
-            self._prev_dist_box_goal[env_ids_t] = r   # 초기 dist = goal spawn 반경
+            self._grasp_ee_offset[env_ids_t]  = 0.0
+            self._prev_dist_box_goal[env_ids_t] = init_dist
         else:
             self._grasped[env_ids_t]          = False
             self._frozen_box_state[env_ids_t] = 0.0
             self._grasp_ee_offset[env_ids_t]  = 0.0
-            self._prev_dist_box_goal[env_ids_t] = (
-                box_state[:, :3] - self._goal_pos_w[env_ids_t]
-            ).norm(dim=1)
+            self._prev_dist_box_goal[env_ids_t] = init_dist
 
         # DEBUG: 첫 번째 env의 실제 좌표 출력
         if 0 in env_ids_t.tolist():
