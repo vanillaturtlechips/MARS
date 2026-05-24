@@ -129,11 +129,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
-        # persistent joint target: reset마다 reach_pose로 초기화
-        # current+delta 방식은 gravity droop을 target으로 채택해 매 step 드루프 누적됨
-        # target_buffer+delta 방식: zero action = reach_pose 유지 → PD가 gravity에 맞서 싸움
-        _reach = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
-        self._joint_target = torch.tensor(_reach, device=d).unsqueeze(0).expand(n, -1).clone()
 
         self._stat_placed   = 0
         self._stat_episodes = 0
@@ -209,16 +204,17 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # 9D 관절 직접 제어: actions[:, :7] = arm delta (rad), actions[:, 7:9] = gripper delta (m)
-        # persistent target 방식: target += delta (zero action = 이전 target 유지)
-        # current+delta 방식은 gravity droop을 매 step target으로 채택 → 드루프 누적
+        # current+delta 방식: Teacher 검증 제어 (100% place_rate)
+        # persistent target은 gravity drift 누적 시 PD 오차 급증 → 시뮬 발산 확인됨
         arm_delta     = self._actions[:, :7] * 0.05   # ±0.05 rad/step (~2.9°)
         gripper_delta = self._actions[:, 7:9] * 0.02  # ±0.02 m/step
 
-        self._joint_target[:, :7]  = (self._joint_target[:, :7]  + arm_delta).clamp(-2.9, 2.9)
-        self._joint_target[:, 7:9] = (self._joint_target[:, 7:9] + gripper_delta).clamp(0.0, 0.04)
+        current = self.robot.data.joint_pos.clone()
+        new_target = current.clone()
+        new_target[:, :7]  = (current[:, :7]  + arm_delta).clamp(-2.9, 2.9)
+        new_target[:, 7:9] = (current[:, 7:9] + gripper_delta).clamp(0.0, 0.04)
 
-        self.robot.set_joint_position_target(self._joint_target, joint_ids=list(range(9)))
+        self.robot.set_joint_position_target(new_target, joint_ids=list(range(9)))
 
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
@@ -386,7 +382,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         ).unsqueeze(0).expand(n, -1)
         self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
         self.robot.write_joint_state_to_sim(reach_pose, torch.zeros_like(reach_pose), env_ids=env_ids_t)
-        self._joint_target[env_ids_t] = reach_pose.clone()  # persistent target 리셋
 
         self._box_mass[env_ids_t] = sample_uniform(
             self.cfg.box_mass_range[0], self.cfg.box_mass_range[1], (n,), device=self.device
