@@ -11,7 +11,7 @@
 | `rew_place` | 100.0 | 소형 터미널 보너스 |
 | `rew_time` | -0.02 | |
 | 기타 rew_* | 0.0 | 모두 비활성화 |
-| Teacher/Student | 동일 | Student 구분 폐기 |
+| 관측 공간 | 30D 단일 정책 | Student 구분 폐기됨 |
 
 ---
 
@@ -142,5 +142,5 @@ python training/single_robot/train_manipulation.py \
 ## 주의사항
 
 - obs dim 변경(30 → 31) 이후 체크포인트 재사용 불가
-- Student/Teacher 구분 폐기 — `WarehouseManipulationStudentEnvCfg`는 alias만 유지
+- Student/Teacher 구분 폐기 완료 — 단일 30D 관측 정책만 유지
 - `grasp_dist_threshold=999` → 에피소드 시작 즉시 grasp, approach phase 없음

@@ -44,7 +44,7 @@
 
 ## 2. 핵심 알고리즘
 
-### 2-1. 단일 로봇 — PPO + Domain Randomization + Teacher-Student
+### 2-1. 단일 로봇 — PPO + Domain Randomization
 
 ```
 목적함수:
@@ -66,12 +66,9 @@ Sim-to-Real 파이프라인 (3단계):
     - 센서 노이즈:  ε ~ N(0, 0.05)
     주의: 실측값 기준 3배 이상 넓은 범위는 과도한 랜덤화 위험
 
-  [Step 3] Teacher-Student Distillation (Phase 2 이상 필수)
-    교사 (시뮬 전용):
-      특권 정보 접근 — 박스 정확한 위치/무게, 지형 실제값
-    학생 (배포용):
-      카메라 + LiDAR 센서 관측만 사용
-      교사 궤적으로부터 증류(distillation)
+  [Step 3] 단일 정책 배포 (Phase 2 완료)
+    특권 정보(박스 위치/무게) 포함 30D 관측으로 PPO 훈련
+    place_success_rate 100% 달성 → TorchScript export → Jetson 배포
     → 학생이 실제 센서로 특권 정보를 추론하도록 학습
 
 Asymmetric Actor-Critic:
@@ -689,14 +686,9 @@ iterations: Phase 1 — 1000, Phase 1.5 — 100 (lr 폭주로 조기 선택)
   박스: 다양한 크기(0.2~0.4m) / 무게(0.5~5kg) DR 적용
   목표 선반: 고정 4위치 → 후반부 랜덤 확장
 
-2단계 — 관측 공간 (Teacher / Student 분리)
-  Teacher 관측 (시뮬 전용, 특권 정보):
-    [박스_xyz, 박스_quat, 박스_무게, end_effector_xyz, gripper_width,
-     goal_xyz, joint_pos×6, joint_vel×6]  → ~28차원
-
-  Student 관측 (배포용, 실제 센서):
-    [rgb_d_feature×64(CNN 출력), end_effector_xyz, gripper_width,
-     goal_xyz_approx, joint_pos×6, joint_vel×6]  → ~82차원
+2단계 — 관측 공간 (30D, 단일 정책)
+  [box_rel_xyz(3), box_quat(4), box_mass(1), gripper_width(1),
+   goal_rel_xyz(3), joint_pos×9, joint_vel×9]  → 30차원
 
 3단계 — 보상 설계 (4단계 커리큘럼)
   Phase A (접근): rew = 0.1 × (1 / dist_to_box)          박스까지 접근
@@ -708,31 +700,18 @@ iterations: Phase 1 — 1000, Phase 1.5 — 100 (lr 폭주로 조기 선택)
   → 커리큘럼: Phase A 수렴 → B 추가 → C 추가 → D 추가
     각 Phase에서 성공률 > 80% 되면 다음 단계 추가
 
-4단계 — Teacher-Student 증류
-  (a) Teacher 정책 먼저 훈련 (PPO, 특권 정보 사용)
-      목표: place_success_rate > 90%
-  (b) Teacher 궤적 데이터 수집 (10만+ 에피소드)
-  (c) Student가 Teacher 행동을 모방학습 (DAgger 또는 BC+fine-tuning)
-  (d) Student 단독 평가: 시뮬 내 seen/unseen 박스 크기
-
-5단계 — Asymmetric Actor-Critic
-  훈련 Critic: Teacher 관측 (박스 정확한 위치, 무게)
-  배포 Actor:  Student 관측 (RGB-D 추정)
-
-6단계 — TorchScript export → Jetson 배포 테스트
+4단계 — TorchScript export → Jetson 배포 테스트
   deploy/export_model.py 확장 (manipulation actor)
   Jetson에서 deploy/jetson/inference.py로 단독 실행 확인
 
-네트워크: MLP [512, 256, 128], ELU (Teacher) / CNN+MLP (Student)
+네트워크: MLP [512, 256, 128], ELU
 env 수: 256 (Phase 2는 접촉 시뮬로 FPS 감소)
 예상 훈련 시간: ~4.5시간 (RTX 2070)
 ```
 
 체크포인트:
 - [ ] 그리퍼 로봇 Isaac Lab 환경 (`warehouse_manipulation_env.py`)
-- [ ] Teacher PPO 훈련 (place_success_rate > 90%)
-- [ ] Teacher 궤적 데이터 수집 (10만 에피소드)
-- [ ] Student 모방학습 + 단독 평가
+- [x] PPO 훈련 (place_success_rate 100% 달성, model_2999.pt)
 - [ ] Unseen 박스 크기 zero-shot 평가
 - [ ] TorchScript export → Jetson inference 확인
 

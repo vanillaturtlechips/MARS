@@ -448,11 +448,55 @@ tail -f train.log
 
 ---
 
+## 2026-05-25 세션 — Phase 2 Student 포기, 코드베이스 정리
+
+### Phase 2 최종 결론
+
+**Student 정책 개발 포기. Teacher(model_2999.pt, 100% place_rate) 단일 정책으로 확정.**
+
+시도한 모든 방법:
+
+| 접근법 | 결과 |
+|--------|------|
+| 순수 Student PPO | 7% plateau (2주 이상) |
+| BC(Behavioral Cloning) + PPO, lr=1e-3 | 43%→7% (iter 67 붕괴) |
+| BC + PPO, lr=1e-4 | iter 22 붕괴 |
+| BC + PPO, lr=1e-5, noise_std=0.1 | 7% (분포 불일치) |
+| BC + critic warmup (actor frozen) | 1~2% |
+
+실패 근본 원인: Student obs(30D)로는 Teacher action을 충분히 예측 불가. 랜덤 critic이 초기에 BC를 오염. 학습 분포 불일치.
+
+### 코드 정리 (커밋 2dd3d5a)
+
+- `WarehouseManipulationStudentEnvCfg`, `WarehouseManipulationStudentTransportEnvCfg` 삭제
+- `collect_bc_data.py`, `train_bc.py`, `diag_transport.py` 삭제
+- train_manipulation.py: `--student`, `--transport_only`, `--bc_ckpt` 등 제거
+- `actor_phase2_student.pt` 삭제 → `actor_phase2_final.pt` 통일
+- `logs/warehouse_manipulation_student/` 삭제
+
+### 데모 실행
+
+```bash
+python training/single_robot/demo_manipulation.py \
+  --ckpt logs/warehouse_manipulation/model_2999.pt \
+  --num_envs 4 --livestream 1
+```
+
+---
+
+## 최종 상태 (2026-05-25)
+
+| 항목 | 상태 |
+|------|------|
+| Phase 3 Low-level Controller (model_9999.pt) | ✅ 완료 |
+| Phase 2 Pick & Place (model_2999.pt, 100% place) | ✅ 완료 |
+| Phase 2 Student 정책 | ❌ 포기 — Teacher로 대체 |
+| Phase 4 LLM 오케스트레이터 | 🔄 진행 중 (다른 팀원) |
+
 ## 다음 세션 할 일
 
 | 순서 | 작업 | 명령어 |
 |------|------|--------|
-| 1 | Phase 2 Student 훈련 | `python training/single_robot/train_manipulation.py --student --teacher_ckpt logs/warehouse_manipulation/model_2999.pt --num_envs 512 --max_iter 3000 --headless` |
-| 2 | Student eval | `python training/single_robot/eval_manipulation.py --student --ckpt logs/warehouse_manipulation_student/model_2999.pt --num_envs 128 --num_episodes 200 --headless` |
-| 3 | Phase 3 S5 재eval | `python training/multi_robot/eval_scenarios.py --ckpt logs/warehouse_mappo/model_9999.pt --num_episodes 100 --num_eval_envs 16 --tag 17dim_s5fix --headless` |
-| 4 | Phase 4 LLM 오케스트레이터 | Student 완료 후 |
+| 1 | Phase 2 데모 녹화 | `python training/single_robot/demo_manipulation.py --ckpt logs/warehouse_manipulation/model_2999.pt --num_envs 4 --livestream 1` |
+| 2 | Phase 3 S5 재eval | `python training/multi_robot/eval_scenarios.py --ckpt logs/warehouse_mappo/model_9999.pt --num_episodes 100 --num_eval_envs 16 --tag 17dim_s5fix --headless` |
+| 3 | Phase 4 LLM 오케스트레이터 | 다른 팀원 담당 |
