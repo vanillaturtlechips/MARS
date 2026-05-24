@@ -18,7 +18,9 @@ parser.add_argument("--max_iter",      type=int,   default=3000)
 parser.add_argument("--resume_ckpt",   type=str,   default=None)
 parser.add_argument("--lr",            type=float, default=1e-3,  help="PPO learning rate")
 parser.add_argument("--save_interval", type=int,   default=300,   help="체크포인트 저장 주기")
-parser.add_argument("--student",       action="store_true", default=False)
+parser.add_argument("--student",        action="store_true", default=False)
+parser.add_argument("--transport_only", action="store_true", default=False,
+                    help="Stage 1: 에피소드 시작 시 즉시 grasped — transport만 학습")
 parser.add_argument("--teacher_ckpt",  type=str,   default=None,  help="미사용 (하위 호환)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
@@ -35,6 +37,7 @@ from envs.warehouse.warehouse_manipulation_env import (
     WarehouseManipulationEnv,
     WarehouseManipulationEnvCfg,
     WarehouseManipulationStudentEnvCfg,
+    WarehouseManipulationStudentTransportEnvCfg,
     TEACHER_OBS_DIM,
     STUDENT_OBS_DIM,
 )
@@ -61,7 +64,12 @@ def make_runner_cfg(obs_dim: int, mode: str, max_iter: int) -> RslRlOnPolicyRunn
 
 
 def main():
-    if args.student:
+    if args.transport_only:
+        env_cfg = WarehouseManipulationStudentTransportEnvCfg()
+        obs_dim  = STUDENT_OBS_DIM
+        log_dir  = "logs/warehouse_manipulation_transport"
+        mode     = "transport"
+    elif args.student:
         env_cfg = WarehouseManipulationStudentEnvCfg()
         obs_dim  = STUDENT_OBS_DIM
         log_dir  = "logs/warehouse_manipulation_student"
@@ -87,7 +95,8 @@ def main():
         print(f"[Resume] {args.resume_ckpt}")
         runner.load(args.resume_ckpt)
 
-    print(f"\n[{'STUDENT' if args.student else 'TEACHER'}] obs_dim={obs_dim}, {args.num_envs} envs, {args.max_iter} iter\n")
+    tag = "TRANSPORT-ONLY" if args.transport_only else ("STUDENT" if args.student else "TEACHER")
+    print(f"\n[{tag}] obs_dim={obs_dim}, {args.num_envs} envs, {args.max_iter} iter\n")
 
     runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()

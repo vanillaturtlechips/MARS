@@ -90,6 +90,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     place_dist_threshold: float = 0.12  # Teacher 훈련값 복원 (0.13→0.12)
 
     student_mode: bool = False
+    force_grasp_on_reset: bool = False  # Stage 1 transport-only: 에피소드 시작 시 즉시 grasped
     enable_background: bool = False  # True: 창고 배경+조명 로드 (GUI/eval 시각화용, 훈련 시 False)
 
 
@@ -98,6 +99,17 @@ class WarehouseManipulationStudentEnvCfg(WarehouseManipulationEnvCfg):
     observation_space = STUDENT_OBS_DIM
     state_space = TEACHER_OBS_DIM  # asymmetric AC: critic uses privileged teacher obs
     student_mode = True
+
+
+@configclass
+class WarehouseManipulationStudentTransportEnvCfg(WarehouseManipulationStudentEnvCfg):
+    """Stage 1 — transport만 학습. 에피소드 시작 시 robot이 이미 box를 쥐고 있음.
+    grasp 없이 순수하게 'goal 방향으로 이동'만 배움.
+    rew_goal_dist=4.0: 2.0에서 state-dependent value 차이 너무 작아 surrogate≈0.
+    transport-only(171step, 항상 grasped)에서 return 범위 작아 VF 안정.
+    """
+    force_grasp_on_reset = True
+    rew_goal_dist: float = 4.0
 
 
 class WarehouseManipulationEnv(DirectRLEnv):
@@ -377,32 +389,41 @@ class WarehouseManipulationEnv(DirectRLEnv):
             self.cfg.box_mass_range[0], self.cfg.box_mass_range[1], (n,), device=self.device
         )
 
-        # 박스: 원래 그랩 쉬운 위치 (EE reach_pose 정면)
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.25, 0.38, (n,), device=self.device)
-        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
-        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
+
+        if self.cfg.force_grasp_on_reset:
+            # Stage 1 transport-only: reach_pose EE 위치(로컬 ≈ [0.33, 0, 0.50])에 박스 spawn
+            # _grasp_ee_offset=0 → 박스가 매 스텝 EE 위치를 그대로 추종
+            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + 0.33
+            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + 0.00
+            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
+        else:
+            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.25, 0.38, (n,), device=self.device)
+            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
+            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
-        # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
-        # 이전 curriculum 실패 원인 = entropy 불안정. 지금은 asymmetric AC +
-        # entropy_coef=0.0001로 std 안정화됨. 이 조합은 처음 시도.
-        # r_min=0.14 > place_dist_threshold(0.12) → 즉시 place 방지
-        # std=1.0 랜덤워크 도달 거리 0.53m >> 0.14~0.20m → 초기 place_rate 높음
+        # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn (force_grasp 시엔 EE 기준)
         theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
         r     = sample_uniform(0.14, 0.20,  (n,), device=self.device)
         self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
         self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
         self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
 
-        self._grasped[env_ids_t]            = False
-        self._frozen_box_state[env_ids_t]   = 0.0
-        self._grasp_ee_offset[env_ids_t]    = 0.0
         self._noise_sigma[env_ids_t] = sample_uniform(0.01, 0.06, (n,), device=self.device)
-        # initialize with actual box-to-goal distance (no jump at first grasp)
-        self._prev_dist_box_goal[env_ids_t] = (
-            box_state[:, :3] - self._goal_pos_w[env_ids_t]
-        ).norm(dim=1)
+
+        if self.cfg.force_grasp_on_reset:
+            self._grasped[env_ids_t]          = True
+            self._frozen_box_state[env_ids_t] = box_state.clone()
+            self._grasp_ee_offset[env_ids_t]  = 0.0  # 박스가 EE 위치 그대로 추종
+            self._prev_dist_box_goal[env_ids_t] = r   # 초기 dist = goal spawn 반경
+        else:
+            self._grasped[env_ids_t]          = False
+            self._frozen_box_state[env_ids_t] = 0.0
+            self._grasp_ee_offset[env_ids_t]  = 0.0
+            self._prev_dist_box_goal[env_ids_t] = (
+                box_state[:, :3] - self._goal_pos_w[env_ids_t]
+            ).norm(dim=1)
 
         # DEBUG: 첫 번째 env의 실제 좌표 출력
         if 0 in env_ids_t.tolist():
