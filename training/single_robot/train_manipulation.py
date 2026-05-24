@@ -108,7 +108,11 @@ def main():
     if args.bc_ckpt:
         bc_state = torch.load(args.bc_ckpt, map_location=env.device)
         actor_state = {k[len("actor."):]: v for k, v in bc_state.items() if k.startswith("actor.")}
-        runner.alg.actor_critic.actor.load_state_dict(actor_state)
+        # rsl_rl 버전별 actor_critic 경로 탐색
+        ac = (getattr(runner.alg, "actor_critic", None)
+              or getattr(runner, "policy", None)
+              or getattr(runner.alg, "policy", None))
+        ac.actor.load_state_dict(actor_state)
         print(f"[BC Init] Actor 가중치 로드: {args.bc_ckpt}")
 
     if args.force_grasp:
