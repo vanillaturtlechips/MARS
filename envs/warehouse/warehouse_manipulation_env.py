@@ -139,9 +139,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
     def _setup_scene(self):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
         for actuator in franka_cfg.actuators.values():
-            if hasattr(actuator, 'stiffness') and actuator.stiffness < 400:
-                actuator.stiffness = 400.0
-                actuator.damping   = 40.0
+            if hasattr(actuator, 'stiffness'):
+                actuator.stiffness = 1200.0  # 400→1200: gravity 하에서 reach_pose 유지
+                actuator.damping   = 120.0
         self.robot = Articulation(franka_cfg)
 
         # 박스 → YCB 003_cracker_box (isaacsim extscache 동적 탐색)
