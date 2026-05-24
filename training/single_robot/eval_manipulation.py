@@ -185,7 +185,7 @@ def load_actor(ckpt_path: str, device: str):
 def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, device: str):
     actor, ckpt_obs_dim, ckpt_act_dim = load_actor(ckpt_path, device)
     env_obs_dim = STUDENT_OBS_DIM if args.student else TEACHER_OBS_DIM
-    env_act_dim = 4   # Cartesian [dx,dy,dz,gripper]
+    env_act_dim = 9   # 9D joint control [dq0..dq6, dg0, dg1]
 
     obs_mismatch = (ckpt_obs_dim != env_obs_dim or ckpt_act_dim != env_act_dim)
     if obs_mismatch:
