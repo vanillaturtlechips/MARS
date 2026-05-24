@@ -71,14 +71,14 @@ def run():
     box_local = box_pos - env.scene.env_origins
     ee_local  = ee_pos - env.scene.env_origins
 
-    chk("box_local.x ≈ 0.33",
-        (box_local[:, 0] - 0.33).abs().max().item() < 0.02,
+    chk("box_local.x ≈ 0.307 (EE reach_pose x)",
+        (box_local[:, 0] - 0.307).abs().max().item() < 0.02,
         f"box_local_x = {box_local[:, 0].tolist()}")
     chk("box_local.y ≈ 0.00",
         box_local[:, 1].abs().max().item() < 0.02,
         f"box_local_y = {box_local[:, 1].tolist()}")
-    chk("box_local.z ≈ 0.50",
-        (box_local[:, 2] - 0.50).abs().max().item() < 0.02,
+    chk("box_local.z ≈ 0.590 (EE reach_pose z)",
+        (box_local[:, 2] - 0.590).abs().max().item() < 0.02,
         f"box_local_z = {box_local[:, 2].tolist()}")
 
     print(f"         [INFO] EE local (reach_pose) = {ee_local[0].tolist()}")
@@ -100,8 +100,8 @@ def run():
         f"goal_local = {goal_local.tolist()}")
 
     init_dists = env._prev_dist_box_goal
-    chk("_prev_dist_box_goal: 0.29~0.36m",
-        ((init_dists > 0.29) & (init_dists < 0.36)).all().item(),
+    chk("_prev_dist_box_goal: 0.29~0.40m (EE→PLACE_GOALS 실제 거리)",
+        ((init_dists > 0.29) & (init_dists < 0.40)).all().item(),
         f"init_dists = {init_dists.tolist()}")
 
     # 중요: _prev_dist_box_goal은 box_spawn 기준인가 EE 기준인가?
