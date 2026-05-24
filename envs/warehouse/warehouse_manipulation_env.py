@@ -145,10 +145,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
         for name, act in franka_cfg.actuators.items():
             if 'hand' not in name and hasattr(act, 'stiffness'):
-                act.stiffness = 10000.0   # arm: 80→10000 (gravity 완전 보상)
-                act.damping   = 1000.0    # overdamped (ζ>1), 안정적
+                # stiffness=3000: ωn=77 rad/s, ωn×dt(1/120)=0.64 < 1 → 수치 안정
+                # stiffness=10000: ωn=141, ωn×dt=1.18 > 1 → 발산 (실험으로 확인)
+                act.stiffness = 3000.0
+                act.damping   = 200.0    # ζ=2.14 (overdamped), 비발진
                 if hasattr(act, 'effort_limit_sim'):
-                    act.effort_limit_sim = 1000.0  # forearm 12Nm→1000Nm 병목 제거 (ImplicitActuator)
+                    act.effort_limit_sim = 300.0  # forearm 12Nm→300Nm 병목 제거
         self.robot = Articulation(franka_cfg)
 
         # 박스 → YCB 003_cracker_box (isaacsim extscache 동적 탐색)
