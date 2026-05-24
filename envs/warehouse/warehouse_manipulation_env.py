@@ -384,13 +384,16 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
-        # PLACE_GOALS: 고정 목표 위치 (Teacher 100% 달성한 세팅 그대로)
-        goal_indices = torch.randint(len(PLACE_GOALS), (n,), device=self.device)
-        goals_t = torch.tensor(PLACE_GOALS, device=self.device)  # (4, 3)
-        chosen  = goals_t[goal_indices]                           # (n, 3)
-        self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + chosen[:, 0]
-        self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + chosen[:, 1]
-        self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + chosen[:, 2]
+        # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
+        # 이전 curriculum 실패 원인 = entropy 불안정. 지금은 asymmetric AC +
+        # entropy_coef=0.0001로 std 안정화됨. 이 조합은 처음 시도.
+        # r_min=0.14 > place_dist_threshold(0.12) → 즉시 place 방지
+        # std=1.0 랜덤워크 도달 거리 0.53m >> 0.14~0.20m → 초기 place_rate 높음
+        theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
+        r     = sample_uniform(0.14, 0.20,  (n,), device=self.device)
+        self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
+        self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
+        self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
 
         self._grasped[env_ids_t]            = False
         self._frozen_box_state[env_ids_t]   = 0.0
