@@ -2,7 +2,7 @@
 
 로봇: Franka Panda (7-DOF 암 + 평행 그리퍼)
 임무: 박스를 집어 지정 선반 위치에 내려놓기
-액션: 9D 관절 직접 제어 [dq0..dq6 (arm, ±0.05 rad/step), dg0, dg1 (gripper, ±0.02 m/step)]
+액션: 4D Cartesian IK [dx, dy, dz (±3cm/step), gripper (-1→open, +1→close)]
 
 Teacher 관측 (특권 정보, 훈련 전용):
   box_rel(3) + box_quat(4) + box_mass(1) + gripper(1) +
@@ -58,7 +58,7 @@ STUDENT_OBS_DIM = 29
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
     episode_length_s = 15.0
-    action_space = 9             # 9D 관절 직접 제어: [dq0..dq6 (arm), dg0, dg1 (gripper)]
+    action_space = 4             # 4D Cartesian IK: [dx, dy, dz, gripper]
     observation_space = TEACHER_OBS_DIM
     state_space = 0
 
@@ -121,6 +121,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         body_names = list(self.robot.data.body_names)
         self._ee_body_idx  = body_names.index("panda_hand")
+        self._jac_body_idx = self._ee_body_idx - 1  # get_jacobians: base 제외 offset
 
         self._goal_pos_w         = torch.zeros(n, 3, device=d)
         self._box_mass           = torch.ones(n, device=d)
@@ -204,17 +205,24 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # current+delta 방식: Teacher 검증 제어 (100% place_rate)
-        # persistent target은 gravity drift 누적 시 PD 오차 급증 → 시뮬 발산 확인됨
-        arm_delta     = self._actions[:, :7] * 0.05   # ±0.05 rad/step (~2.9°)
-        gripper_delta = self._actions[:, 7:9] * 0.02  # ±0.02 m/step
+        n = self.num_envs
+        delta_pos = self._actions[:, :3] * 0.03  # max 3cm/step
 
-        current = self.robot.data.joint_pos.clone()
-        new_target = current.clone()
-        new_target[:, :7]  = (current[:, :7]  + arm_delta).clamp(-2.9, 2.9)
-        new_target[:, 7:9] = (current[:, 7:9] + gripper_delta).clamp(0.0, 0.04)
+        # DLS IK: Δq = J^T (J J^T + λI)^{-1} Δx
+        jac = self.robot.root_physx_view.get_jacobians()
+        J   = jac[:, self._jac_body_idx, :3, :7]
+        lam = 0.05  # 특이점 폭발 방지 (0.01에서 EE 17cm/step 버그 확인됨)
+        JT      = J.transpose(-2, -1)
+        JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
+        J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
+        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
+        delta_q = delta_q.clamp(-0.1, 0.1)  # 관절당 최대 0.1rad/step
 
-        self.robot.set_joint_position_target(new_target, joint_ids=list(range(9)))
+        joint_target = self.robot.data.joint_pos[:, :7] + delta_q
+        self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
+
+        gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
+        self.robot.set_joint_position_target(gripper_pos.expand(-1, 2), joint_ids=[7, 8])
 
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
