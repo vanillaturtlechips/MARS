@@ -143,12 +143,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
     def _setup_scene(self):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-        for name, act in franka_cfg.actuators.items():
-            if 'hand' not in name and hasattr(act, 'stiffness'):
-                # stiffness=1200: 실험으로 수렴 확인 (drift 0.143m, 수렴)
-                # stiffness≥3000: 발산 확인 (wrist 소관성 관절에서 수치 불안정)
-                act.stiffness = 1200.0
-                act.damping   = 120.0
         self.robot = Articulation(franka_cfg)
 
         # 박스 → YCB 003_cracker_box (isaacsim extscache 동적 탐색)
