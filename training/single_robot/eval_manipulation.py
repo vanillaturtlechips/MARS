@@ -21,11 +21,10 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
-parser = argparse.ArgumentParser(description="Phase 2 Teacher/Student eval")
+parser = argparse.ArgumentParser(description="Phase 2 eval")
 parser.add_argument("--ckpt",        type=str, nargs="+", required=True)
 parser.add_argument("--num_episodes", type=int, default=100)
 parser.add_argument("--num_envs",    type=int, default=64)
-parser.add_argument("--student",     action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 if args.livestream == 0 and not getattr(args, "headless", False):
@@ -45,9 +44,7 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_manipulation_env import (
     WarehouseManipulationEnv,
     WarehouseManipulationEnvCfg,
-    WarehouseManipulationStudentEnvCfg,
-    TEACHER_OBS_DIM,
-    STUDENT_OBS_DIM,
+    OBS_DIM,
 )
 
 
@@ -184,10 +181,9 @@ def load_actor(ckpt_path: str, device: str):
 @torch.inference_mode()
 def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, device: str):
     actor, ckpt_obs_dim, ckpt_act_dim = load_actor(ckpt_path, device)
-    env_obs_dim = STUDENT_OBS_DIM if args.student else TEACHER_OBS_DIM
-    env_act_dim = 9   # 9D joint control [dq0..dq6, dg0, dg1]
+    env_act_dim = 4   # 4D Cartesian IK [dx, dy, dz, gripper]
 
-    obs_mismatch = (ckpt_obs_dim != env_obs_dim or ckpt_act_dim != env_act_dim)
+    obs_mismatch = (ckpt_obs_dim != OBS_DIM or ckpt_act_dim != env_act_dim)
     if obs_mismatch:
         print(f"  [경고] 체크포인트({ckpt_obs_dim}→{ckpt_act_dim})와 "
               f"현재 env({env_obs_dim}→{env_act_dim}) 불일치 → 랜덤 policy 사용")
@@ -231,7 +227,7 @@ def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, devic
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    env_cfg = WarehouseManipulationStudentEnvCfg() if args.student else WarehouseManipulationEnvCfg()
+    env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env = EvalManipulationEnv(env_cfg)
 

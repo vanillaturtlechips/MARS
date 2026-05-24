@@ -19,10 +19,10 @@ import torch
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from envs.warehouse.warehouse_manipulation_env import (
-    WarehouseManipulationStudentEnvCfg, WarehouseManipulationEnv
+    WarehouseManipulationEnvCfg, WarehouseManipulationEnv
 )
 
-cfg = WarehouseManipulationStudentEnvCfg()
+cfg = WarehouseManipulationEnvCfg()
 cfg.scene.num_envs = 4  # 최소 env 수
 env = WarehouseManipulationEnv(cfg)
 

@@ -23,7 +23,6 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Phase 2 Teacher 데모")
 parser.add_argument("--ckpt",     type=str, required=True)
 parser.add_argument("--num_envs", type=int, default=4)
-parser.add_argument("--student",  action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -36,9 +35,6 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_manipulation_env import (
     WarehouseManipulationEnv,
     WarehouseManipulationEnvCfg,
-    WarehouseManipulationStudentEnvCfg,
-    TEACHER_OBS_DIM,
-    STUDENT_OBS_DIM,
 )
 
 
@@ -101,11 +97,7 @@ def load_actor(ckpt_path: str, device: str):
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if args.student:
-        env_cfg = WarehouseManipulationStudentEnvCfg()
-    else:
-        env_cfg = WarehouseManipulationEnvCfg()
-
+    env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs  = args.num_envs
     env_cfg.enable_background = True   # 창고 배경 + 조명
     env = WarehouseManipulationEnv(env_cfg)

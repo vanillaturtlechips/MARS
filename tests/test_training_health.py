@@ -39,8 +39,7 @@ GRASP_THRESHOLD    = 0.25
 PLACE_THRESHOLD    = 0.12
 
 # 관측 차원
-TEACHER_OBS_DIM    = 30
-STUDENT_OBS_DIM    = 29
+OBS_DIM = 30
 
 # Franka 관절 제어
 ARM_DELTA_SCALE    = 0.05     # rad/step
@@ -297,38 +296,8 @@ def test_obs_dims_teacher():
     print(f"\n[Teacher obs 차원]")
     for k, v in dims.items():
         print(f"  {k:12s}: {v}D")
-    print(f"  합계              : {total}D  (기대: {TEACHER_OBS_DIM}D)")
-    assert total == TEACHER_OBS_DIM, f"Teacher obs {total}D ≠ {TEACHER_OBS_DIM}D"
-
-
-def test_obs_dims_student():
-    """Student 관측 차원 = 29."""
-    # ee_pos_local(3) + gripper(1) + goal_rel(3) + noisy_box_rel(3) + grasped(1)
-    # + jpos(9) + jvel(9)
-    dims = {"ee_pos_local": 3, "gripper": 1, "goal_rel": 3,
-            "noisy_box_rel": 3, "grasped": 1, "jpos": 9, "jvel": 9}
-    total = sum(dims.values())
-    print(f"\n[Student obs 차원]")
-    for k, v in dims.items():
-        print(f"  {k:14s}: {v}D")
-    print(f"  합계              : {total}D  (기대: {STUDENT_OBS_DIM}D)")
-    assert total == STUDENT_OBS_DIM, f"Student obs {total}D ≠ {STUDENT_OBS_DIM}D"
-
-
-def test_asymmetric_ac_dims():
-    """Asymmetric AC: actor=29D, critic=30D 분리 확인."""
-    actor_dim  = STUDENT_OBS_DIM   # 29 — student obs (noisy)
-    critic_dim = TEACHER_OBS_DIM   # 30 — teacher obs (privileged)
-
-    print(f"\n[Asymmetric Actor-Critic 차원]")
-    print(f"  Actor  (student): {actor_dim}D  [noisy sensor, 실배포 사용]")
-    print(f"  Critic (teacher): {critic_dim}D  [특권 정보, 훈련 시만]")
-    print(f"  차이              : Critic이 box_mass(1), box_quat(4) 추가, noisy 없음")
-    print(f"  효과              : Critic이 더 정확한 V(s) 추정 → advantage 품질↑")
-
-    assert actor_dim  == STUDENT_OBS_DIM
-    assert critic_dim == TEACHER_OBS_DIM
-    assert actor_dim  != critic_dim, "Asymmetric AC: 두 차원이 달라야 함"
+    print(f"  합계              : {total}D  (기대: {OBS_DIM}D)")
+    assert total == OBS_DIM, f"obs {total}D ≠ {OBS_DIM}D"
 
 
 def test_critic_advantage_benefit():

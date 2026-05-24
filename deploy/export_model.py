@@ -13,8 +13,8 @@
 
   # Phase 2 Student
   python deploy/export_model.py --phase 2s \
-    --ckpt logs/warehouse_manipulation_student/model_1500.pt \
-    --out  deploy/jetson/actor_phase2_student.pt
+    --ckpt logs/warehouse_manipulation/model_2999.pt \
+    --out  deploy/jetson/actor_phase2_final.pt
 
   # Phase 3 MARL (per-robot actor)
   python deploy/export_model.py --phase 3 \

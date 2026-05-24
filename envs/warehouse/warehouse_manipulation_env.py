@@ -4,15 +4,9 @@
 임무: 박스를 집어 지정 선반 위치에 내려놓기
 액션: 4D Cartesian IK [dx, dy, dz (±3cm/step), gripper (-1→open, +1→close)]
 
-Teacher 관측 (특권 정보, 훈련 전용):
+관측 (30차원):
   box_rel(3) + box_quat(4) + box_mass(1) + gripper(1) +
-  goal_rel(3) + jpos(9) + jvel(9) = 30차원
-
-Student 관측 (배포용, 실제 센서):
-  ee_pos_local(3) + gripper(1) + goal_rel(3) + noisy_box_rel(3) + grasped(1) + jpos(9) + jvel(9) = 29차원
-  ee_pos_local: env_origin 기준 로컬 프레임 (env간 일관성 보장)
-  noisy_box_rel: 에피소드마다 σ∈[1cm,6cm] 균일 샘플 (카메라 DR, Sim2Real 강건성)
-  grasped: 명시적 파악 상태 플래그 (0/1)
+  goal_rel(3) + jpos(9) + jvel(9)
 """
 
 from __future__ import annotations
@@ -50,8 +44,7 @@ PLACE_GOALS = [
     (0.32, -0.35, 0.50),
 ]
 
-TEACHER_OBS_DIM = 30
-STUDENT_OBS_DIM = 29
+OBS_DIM = 30
 
 
 @configclass
@@ -59,7 +52,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
     episode_length_s = 15.0
     action_space = 4             # 4D Cartesian IK: [dx, dy, dz, gripper]
-    observation_space = TEACHER_OBS_DIM
+    observation_space = OBS_DIM
     state_space = 0
 
     sim: SimulationCfg = SimulationCfg(
@@ -89,26 +82,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     grasp_dist_threshold: float = 0.25  # Teacher 훈련값 복원 (0.11→0.25)
     place_dist_threshold: float = 0.12  # Teacher 훈련값 복원 (0.13→0.12)
 
-    student_mode: bool = False
-    force_grasp_on_reset: bool = False  # Stage 1 transport-only: 에피소드 시작 시 즉시 grasped
-    enable_background: bool = False  # True: 창고 배경+조명 로드 (GUI/eval 시각화용, 훈련 시 False)
-
-
-@configclass
-class WarehouseManipulationStudentEnvCfg(WarehouseManipulationEnvCfg):
-    observation_space = STUDENT_OBS_DIM
-    state_space = TEACHER_OBS_DIM  # asymmetric AC: critic uses privileged teacher obs
-    student_mode = True
-
-
-@configclass
-class WarehouseManipulationStudentTransportEnvCfg(WarehouseManipulationStudentEnvCfg):
-    """Stage 1 — transport만 학습. 에피소드 시작 시 robot이 이미 box를 쥐고 있음.
-    goal: PLACE_GOALS 4개 고정 위치 (y=±0.32-0.35m, ~0.30m 횡이동).
-    Teacher 100% 달성 조건 동일 적용 → 랜덤 policy 성공률 ≈ 0% → advantage 차이 극명 → surrogate>0.
-    """
-    force_grasp_on_reset = True
-    rew_goal_dist: float = 2.0
+    force_grasp_on_reset: bool = False
+    enable_background: bool = False
 
 
 class WarehouseManipulationEnv(DirectRLEnv):
@@ -133,9 +108,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         self._stat_placed   = 0
         self._stat_episodes = 0
-
-        # Student 카메라 DR: 에피소드마다 σ∈[1cm,6cm] 균일 샘플
-        self._noise_sigma = torch.zeros(n, device=d)
 
     def _setup_scene(self):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -249,46 +221,15 @@ class WarehouseManipulationEnv(DirectRLEnv):
             box_pos,
         )
 
-        if self.cfg.student_mode:
-            box_pos = self.box.data.root_pos_w
-            box_rel_true = box_pos - ee_pos
-            noise = torch.randn_like(box_rel_true) * self._noise_sigma.unsqueeze(1)
-            noisy_box_rel = box_rel_true + noise
-            ee_pos_local = ee_pos - self.scene.env_origins  # 로컬 프레임 (env간 일관성)
-            grasped_obs  = self._grasped.float().unsqueeze(1)  # 명시적 grasp 상태
-            obs = torch.cat([
-                ee_pos_local,
-                gripper_w,
-                goal_rel,
-                noisy_box_rel,
-                grasped_obs,
-                joint_pos[:, :9],
-                joint_vel[:, :9],
-            ], dim=1)   # (N, 29)
-            # Asymmetric Actor-Critic: critic uses noise-free teacher obs
-            # Actor (student 29D) explores with noisy sensor sim
-            # Critic (teacher 30D) estimates value with privileged ground-truth
-            privileged_obs = torch.cat([
-                box_pos - ee_pos,
-                box_quat,
-                self._box_mass.unsqueeze(1),
-                gripper_w,
-                goal_rel,
-                joint_pos[:, :9],
-                joint_vel[:, :9],
-            ], dim=1)   # (N, 30)
-            return {"policy": obs, "critic": privileged_obs}
-        else:
-            obs = torch.cat([
-                box_pos - ee_pos,
-                box_quat,
-                self._box_mass.unsqueeze(1),
-                gripper_w,
-                goal_rel,
-                joint_pos[:, :9],
-                joint_vel[:, :9],
-            ], dim=1)   # (N, 30)
-
+        obs = torch.cat([
+            box_pos - ee_pos,
+            box_quat,
+            self._box_mass.unsqueeze(1),
+            gripper_w,
+            goal_rel,
+            joint_pos[:, :9],
+            joint_vel[:, :9],
+        ], dim=1)   # (N, 30)
         return {"policy": obs}
 
     def _get_rewards(self) -> torch.Tensor:
@@ -425,8 +366,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
             self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
             self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
             self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
-
-        self._noise_sigma[env_ids_t] = sample_uniform(0.01, 0.06, (n,), device=self.device)
 
         init_dist = (box_state[:, :3] - self._goal_pos_w[env_ids_t]).norm(dim=1)
         if self.cfg.force_grasp_on_reset:
