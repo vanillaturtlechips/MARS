@@ -57,7 +57,7 @@ STUDENT_OBS_DIM = 29
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 3.0
+    episode_length_s = 15.0
     action_space = 9             # 9D 관절 직접 제어: [dq0..dq6 (arm), dg0, dg1 (gripper)]
     observation_space = TEACHER_OBS_DIM
     state_space = 0
@@ -77,7 +77,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_approach:   float =  0.5    # -dist_ee_box * not_grasped
     rew_grasp:      float = 30.0   # one-time grasp bonus
     rew_transport:  float =  300.0  # Teacher 검증값 — 1000은 VF 분산 과대
-    rew_align:      float =  0.5   # EE 실속도 방향 × goal_dir cosine (grasped gate) — 관절공간 아닌 실제 EE 속도 사용
+    rew_align:      float =  0.3   # EE 실속도 방향 × goal_dir cosine (grasped gate) — 골디락스 검증값
     rew_goal_dist:  float =  2.0   # grasped_f gate → 잡은 동안만 절대거리 패널티
     rew_place:      float = 800.0  # Teacher 훈련값 복원
     rew_drop:       float =  0.0   # 비활성화: 매 스텝 페널티 → 보상 분산 폭발
