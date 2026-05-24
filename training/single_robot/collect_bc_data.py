@@ -87,7 +87,7 @@ def main():
         all_acts.append(teacher_action.cpu())
         collected += args.num_envs
 
-        obs_dict, _, _, _, _ = env.step(teacher_action)
+        obs_dict, _, _, _ = env.step(teacher_action)
 
         if collected % 50_000 == 0:
             print(f"  {collected:,} / {args.num_steps:,}")
