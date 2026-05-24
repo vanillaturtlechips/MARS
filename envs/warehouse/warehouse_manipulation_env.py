@@ -147,8 +147,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
             if 'hand' not in name and hasattr(act, 'stiffness'):
                 act.stiffness = 10000.0   # arm: 80→10000 (gravity 완전 보상)
                 act.damping   = 1000.0    # overdamped (ζ>1), 안정적
-                if hasattr(act, 'effort_limit'):
-                    act.effort_limit = 1000.0  # forearm 12Nm→1000Nm 병목 제거
+                if hasattr(act, 'effort_limit_sim'):
+                    act.effort_limit_sim = 1000.0  # forearm 12Nm→1000Nm 병목 제거 (ImplicitActuator)
         self.robot = Articulation(franka_cfg)
 
         # 박스 → YCB 003_cracker_box (isaacsim extscache 동적 탐색)
