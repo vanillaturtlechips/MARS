@@ -103,16 +103,50 @@ def load_actor(ckpt_path: str, device: str):
     return actor
 
 
+def _set_camera_lookat(eye, target):
+    """pxr USD API로 카메라 위치/방향 설정 (omni.isaac.core 불필요)."""
+    from pxr import UsdGeom, Gf
+    import omni.usd
+
+    stage = omni.usd.get_context().get_stage()
+    cam = stage.GetPrimAtPath("/OmniverseKit_Persp")
+    if not cam.IsValid():
+        print("[Camera] /OmniverseKit_Persp 없음 — 기본 위치 사용")
+        return
+
+    e = np.array(eye, dtype=float)
+    t = np.array(target, dtype=float)
+    u = np.array([0.0, 0.0, 1.0])
+
+    fwd = t - e
+    fwd /= np.linalg.norm(fwd)
+    rgt = np.cross(fwd, u)
+    if np.linalg.norm(rgt) < 1e-6:
+        u = np.array([0.0, 1.0, 0.0])
+        rgt = np.cross(fwd, u)
+    rgt /= np.linalg.norm(rgt)
+    up2 = np.cross(rgt, fwd)
+
+    # USD 카메라는 -Z 방향을 바라봄 (OpenGL 규약)
+    m = Gf.Matrix4d(
+        rgt[0], up2[0], -fwd[0], 0,
+        rgt[1], up2[1], -fwd[1], 0,
+        rgt[2], up2[2], -fwd[2], 0,
+        e[0],   e[1],    e[2],   1,
+    )
+    xf = UsdGeom.Xformable(cam)
+    xf.ClearXformOpOrder()
+    xf.AddTransformOp().Set(m)
+
+
 def setup_camera(env: WarehouseManipulationEnv, width: int, height: int):
     """env_0 기준으로 카메라 위치 설정 후 렌더 프로덕트 반환."""
     import omni.replicator.core as rep
-    from omni.isaac.core.utils.viewports import set_camera_view
 
     origin = env.scene.env_origins[0].cpu().numpy()
-    eye    = origin + np.array([1.4, -1.2, 1.3])
-    target = origin + np.array([0.5,  0.1, 0.5])
-    set_camera_view(eye=eye.tolist(), target=target.tolist(),
-                    camera_prim_path="/OmniverseKit_Persp")
+    eye    = (origin + np.array([1.4, -1.2, 1.3])).tolist()
+    target = (origin + np.array([0.5,  0.1, 0.5])).tolist()
+    _set_camera_lookat(eye, target)
 
     rp = rep.create.render_product("/OmniverseKit_Persp", (width, height))
     annot = rep.AnnotatorRegistry.get_annotator("rgb")
