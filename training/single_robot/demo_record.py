@@ -30,7 +30,8 @@ parser.add_argument("--width",       type=int, default=1280)
 parser.add_argument("--height",      type=int, default=720)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
-args.headless = True   # 항상 headless
+args.headless = True        # 항상 headless
+args.enable_cameras = True  # omni.replicator 확장 활성화
 
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
