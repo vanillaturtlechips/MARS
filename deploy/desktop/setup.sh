@@ -15,9 +15,14 @@ _CUDA_RT="${CUDA_VERSION:-$(nvcc --version 2>/dev/null | grep -oP 'release \K[0-
 _CUDA_MM=$(echo "$_CUDA_RT" | cut -d. -f1,2)
 _CUDA_TAG=$(echo "$_CUDA_MM" | tr -d '.')
 
+# 사용 가능한 Python 자동 감지 (3.10 우선, 3.11이 있으면 사용)
+PYTHON_BIN=$(which python3.11 2>/dev/null || which python3.10 2>/dev/null || which python3)
+PYTHON_VER=$("$PYTHON_BIN" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+
 echo "════════════════════════════════════════════"
 echo " MARS Desktop 환경 설치"
 echo " BASE_DIR   : $BASE_DIR"
+echo " Python     : $PYTHON_BIN ($PYTHON_VER)"
 echo " CUDA 런타임: $_CUDA_MM  →  cu${_CUDA_TAG}"
 echo "════════════════════════════════════════════"
 
@@ -27,24 +32,20 @@ echo "▶ 사전 확인"
 nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null \
     && echo "  GPU OK" || echo "  [경고] nvidia-smi 실패"
 
-# ── 1. 시스템 라이브러리 ─────────────────────────────────────────
+# ── 1. 시스템 라이브러리 + pip ───────────────────────────────────
 echo "[1/7] 시스템 라이브러리..."
 apt-get update -q 2>/dev/null || true
 apt-get install -y --no-install-recommends \
-    software-properties-common \
     libxt6 libxrandr2 libxcursor1 libxinerama1 \
     libgl1-mesa-glx libglu1-mesa \
     libvulkan1 libegl1 libgles2 \
     libxkbcommon0 libdbus-1-3 \
-    git curl ffmpeg \
-    python3-pip 2>/dev/null || true
+    git curl ffmpeg 2>/dev/null || true
 
-# Ubuntu 20.04 기본 Python은 3.8 → 3.11 설치
-if ! python3.11 --version &>/dev/null; then
-    echo "  Python 3.11 설치..."
-    add-apt-repository ppa:deadsnakes/ppa -y 2>/dev/null || true
-    apt-get update -q 2>/dev/null || true
-    apt-get install -y python3.11 python3.11-venv python3.11-dev 2>/dev/null || true
+# pip가 없으면 get-pip.py로 설치
+if ! "$PYTHON_BIN" -m pip --version &>/dev/null; then
+    echo "  pip 설치..."
+    curl -sS https://bootstrap.pypa.io/get-pip.py | "$PYTHON_BIN"
 fi
 echo "  완료"
 
@@ -57,7 +58,7 @@ export UV_HTTP_TIMEOUT=600
 
 # ── 2. uv ────────────────────────────────────────────────────────
 echo "[2/7] uv 설치..."
-python3.11 -m pip install uv -q
+"$PYTHON_BIN" -m pip install uv -q
 echo "  완료"
 
 # ── 3. venv ──────────────────────────────────────────────────────
@@ -65,7 +66,7 @@ echo "[3/7] 가상환경: $VENV_PATH"
 if [ -d "$VENV_PATH" ]; then
     echo "  기존 venv 재사용"
 else
-    uv venv "$VENV_PATH" --python python3.11
+    uv venv "$VENV_PATH" --python "$PYTHON_BIN"
 fi
 source "$VENV_PATH/bin/activate"
 echo "  완료"
@@ -94,7 +95,7 @@ uv pip install "torch==2.7.0" "torchvision==0.22.0" "numpy==1.26.4" \
     --extra-index-url "https://pypi.org/simple" \
     --reinstall
 
-SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
+SITE_PKG="$VENV_PATH/lib/python${PYTHON_VER}/site-packages"
 PXR_DIR=$(find "$VENV_PATH" -maxdepth 12 -name "pxr" -type d 2>/dev/null \
           | grep -v "__pycache__" | head -1)
 if [ -n "$PXR_DIR" ]; then
@@ -104,10 +105,10 @@ fi
 echo "  완료"
 
 # ── 4.5. flatdict ────────────────────────────────────────────────
-SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
+SITE_PKG="$VENV_PATH/lib/python${PYTHON_VER}/site-packages"
 _FD_DIR="/tmp/flatdict_src"
 mkdir -p "$_FD_DIR"
-python3.11 -m pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
+"$PYTHON_BIN" -m pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
 tar xzf "$_FD_DIR/flatdict-4.0.1.tar.gz" -C "$_FD_DIR"
 cp "$_FD_DIR/flatdict-4.0.1/flatdict.py" "$SITE_PKG/"
 _DI="$SITE_PKG/flatdict-4.0.1.dist-info"
