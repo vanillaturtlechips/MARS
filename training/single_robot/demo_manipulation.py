@@ -21,8 +21,10 @@ from pathlib import Path
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Phase 2 Teacher 데모")
-parser.add_argument("--ckpt",     type=str, required=True)
-parser.add_argument("--num_envs", type=int, default=4)
+parser.add_argument("--ckpt",         type=str, required=True)
+parser.add_argument("--num_envs",     type=int, default=4)
+parser.add_argument("--num_episodes", type=int, default=0,
+                    help="이 수만큼 에피소드 후 자동 종료 (0=무한)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -130,6 +132,10 @@ def main():
                 if "place_rate" in log:
                     rate = log["place_rate"]
                     print(f"  누적 place_rate: {rate:.1f}%  (에피소드 {episode_count}개)")
+
+            if args.num_episodes > 0 and episode_count >= args.num_episodes:
+                print(f"[Demo] {episode_count}에피소드 완료 — 종료")
+                break
 
     env.close()
 
