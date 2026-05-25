@@ -31,11 +31,21 @@ nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null \
 echo "[1/7] 시스템 라이브러리..."
 apt-get update -q 2>/dev/null || true
 apt-get install -y --no-install-recommends \
+    software-properties-common \
     libxt6 libxrandr2 libxcursor1 libxinerama1 \
     libgl1-mesa-glx libglu1-mesa \
     libvulkan1 libegl1 libgles2 \
     libxkbcommon0 libdbus-1-3 \
-    git curl ffmpeg 2>/dev/null || true
+    git curl ffmpeg \
+    python3-pip 2>/dev/null || true
+
+# Ubuntu 20.04 기본 Python은 3.8 → 3.11 설치
+if ! python3.11 --version &>/dev/null; then
+    echo "  Python 3.11 설치..."
+    add-apt-repository ppa:deadsnakes/ppa -y 2>/dev/null || true
+    apt-get update -q 2>/dev/null || true
+    apt-get install -y python3.11 python3.11-venv python3.11-dev 2>/dev/null || true
+fi
 echo "  완료"
 
 # ── 캐시 경로 설정 ────────────────────────────────────────────────
@@ -47,7 +57,7 @@ export UV_HTTP_TIMEOUT=600
 
 # ── 2. uv ────────────────────────────────────────────────────────
 echo "[2/7] uv 설치..."
-pip install uv -q
+python3.11 -m pip install uv -q
 echo "  완료"
 
 # ── 3. venv ──────────────────────────────────────────────────────
@@ -55,7 +65,7 @@ echo "[3/7] 가상환경: $VENV_PATH"
 if [ -d "$VENV_PATH" ]; then
     echo "  기존 venv 재사용"
 else
-    uv venv "$VENV_PATH"
+    uv venv "$VENV_PATH" --python python3.11
 fi
 source "$VENV_PATH/bin/activate"
 echo "  완료"
@@ -97,7 +107,7 @@ echo "  완료"
 SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
 _FD_DIR="/tmp/flatdict_src"
 mkdir -p "$_FD_DIR"
-pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
+python3.11 -m pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
 tar xzf "$_FD_DIR/flatdict-4.0.1.tar.gz" -C "$_FD_DIR"
 cp "$_FD_DIR/flatdict-4.0.1/flatdict.py" "$SITE_PKG/"
 _DI="$SITE_PKG/flatdict-4.0.1.dist-info"
