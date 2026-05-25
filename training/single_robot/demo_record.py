@@ -26,8 +26,8 @@ parser.add_argument("--num_envs",    type=int, default=1)
 parser.add_argument("--num_episodes",type=int, default=5)
 parser.add_argument("--fps",         type=int, default=30)
 parser.add_argument("--output",      type=str, default="/workspace/phase2_demo.mp4")
-parser.add_argument("--width",       type=int, default=1280)
-parser.add_argument("--height",      type=int, default=720)
+parser.add_argument("--width",       type=int, default=640)
+parser.add_argument("--height",      type=int, default=360)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 args.headless = True        # 항상 headless
@@ -155,8 +155,7 @@ def setup_camera(env: WarehouseManipulationEnv, width: int, height: int):
 
 
 def capture_frame(annot) -> np.ndarray | None:
-    import omni.replicator.core as rep
-    rep.orchestrator.step(rt_subframes=0, delta_time=0.0)
+    # env.step()이 이미 렌더링함 — orchestrator.step() 중복 호출 제거
     data = annot.get_data()
     if data is None or data.size == 0:
         return None
