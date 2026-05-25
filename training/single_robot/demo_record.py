@@ -1,44 +1,44 @@
-"""Phase 2 데모 녹화 — headless frame capture → MP4
+"""Phase 2 데모 녹화 — Isaac Lab Camera 센서로 headless frame capture → MP4
 
 실행:
-  # ffmpeg 먼저 설치 (한 번만)
-  apt install -y ffmpeg
+  apt install -y ffmpeg  # 한 번만
 
   python training/single_robot/demo_record.py \
     --ckpt logs/warehouse_manipulation/model_2999.pt \
-    --num_episodes 5 \
+    --num_episodes 3 \
     --output /workspace/phase2_demo.mp4
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Phase 2 demo recorder")
-parser.add_argument("--ckpt",        type=str, required=True)
-parser.add_argument("--num_envs",    type=int, default=1)
-parser.add_argument("--num_episodes",type=int, default=5)
-parser.add_argument("--fps",         type=int, default=5)
-parser.add_argument("--output",      type=str, default="/workspace/phase2_demo.mp4")
-parser.add_argument("--width",       type=int, default=640)
-parser.add_argument("--height",      type=int, default=360)
+parser.add_argument("--ckpt",         type=str, required=True)
+parser.add_argument("--num_envs",     type=int, default=1)
+parser.add_argument("--num_episodes", type=int, default=3)
+parser.add_argument("--capture_every",type=int, default=2)   # N스텝마다 1프레임 (30Hz→15fps)
+parser.add_argument("--fps",          type=int, default=15)
+parser.add_argument("--output",       type=str, default="/workspace/phase2_demo.mp4")
+parser.add_argument("--width",        type=int, default=640)
+parser.add_argument("--height",       type=int, default=360)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
-args.headless = True        # 항상 headless
-args.enable_cameras = True  # omni.replicator 확장 활성화
+args.headless       = True
+args.enable_cameras = True
 
-app_launcher = AppLauncher(args)
-simulation_app = app_launcher.app
+app_launcher    = AppLauncher(args)
+simulation_app  = app_launcher.app
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_manipulation_env import (
@@ -47,6 +47,9 @@ from envs.warehouse.warehouse_manipulation_env import (
 )
 
 
+# ──────────────────────────────────────────────────────────────────
+# Actor 로드
+# ──────────────────────────────────────────────────────────────────
 def load_actor(ckpt_path: str, device: str):
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     raw  = ckpt.get("model_state_dict", ckpt)
@@ -103,66 +106,70 @@ def load_actor(ckpt_path: str, device: str):
     return actor
 
 
-def _set_camera_lookat(eye, target):
-    """pxr USD API로 카메라 위치/방향 설정 (omni.isaac.core 불필요)."""
-    from pxr import UsdGeom, Gf
-    import omni.usd
-
-    stage = omni.usd.get_context().get_stage()
-    cam = stage.GetPrimAtPath("/OmniverseKit_Persp")
-    if not cam.IsValid():
-        print("[Camera] /OmniverseKit_Persp 없음 — 기본 위치 사용")
-        return
-
-    e = np.array(eye, dtype=float)
-    t = np.array(target, dtype=float)
-    u = np.array([0.0, 0.0, 1.0])
-
-    fwd = t - e
-    fwd /= np.linalg.norm(fwd)
-    rgt = np.cross(fwd, u)
-    if np.linalg.norm(rgt) < 1e-6:
-        u = np.array([0.0, 1.0, 0.0])
-        rgt = np.cross(fwd, u)
-    rgt /= np.linalg.norm(rgt)
-    up2 = np.cross(rgt, fwd)
-
-    # USD 카메라는 -Z 방향을 바라봄 (OpenGL 규약)
-    m = Gf.Matrix4d(
-        rgt[0], up2[0], -fwd[0], 0,
-        rgt[1], up2[1], -fwd[1], 0,
-        rgt[2], up2[2], -fwd[2], 0,
-        e[0],   e[1],    e[2],   1,
-    )
-    xf = UsdGeom.Xformable(cam)
-    xf.ClearXformOpOrder()
-    xf.AddTransformOp().Set(m)
+# ──────────────────────────────────────────────────────────────────
+# Camera 셋업 — Isaac Lab Camera 센서 (replicator orchestrator 불필요)
+# ──────────────────────────────────────────────────────────────────
+def _lookat_quat_wxyz(eye, target):
+    """Look-at → wxyz quaternion (numpy only)."""
+    e, t = np.array(eye, float), np.array(target, float)
+    u = np.array([0., 0., 1.])
+    z = e - t;  z /= np.linalg.norm(z)
+    x = np.cross(u, z)
+    if np.linalg.norm(x) < 1e-6:
+        u = np.array([0., 1., 0.])
+        x = np.cross(u, z)
+    x /= np.linalg.norm(x)
+    y = np.cross(z, x)
+    R = np.column_stack([x, y, z])
+    tr = R[0,0] + R[1,1] + R[2,2]
+    if tr > 0:
+        s = 0.5 / np.sqrt(tr + 1)
+        return (0.25/s, (R[2,1]-R[1,2])*s, (R[0,2]-R[2,0])*s, (R[1,0]-R[0,1])*s)
+    elif R[0,0] > R[1,1] and R[0,0] > R[2,2]:
+        s = 2*np.sqrt(1+R[0,0]-R[1,1]-R[2,2])
+        return ((R[2,1]-R[1,2])/s, 0.25*s, (R[0,1]+R[1,0])/s, (R[0,2]+R[2,0])/s)
+    elif R[1,1] > R[2,2]:
+        s = 2*np.sqrt(1+R[1,1]-R[0,0]-R[2,2])
+        return ((R[0,2]-R[2,0])/s, (R[0,1]+R[1,0])/s, 0.25*s, (R[1,2]+R[2,1])/s)
+    else:
+        s = 2*np.sqrt(1+R[2,2]-R[0,0]-R[1,1])
+        return ((R[1,0]-R[0,1])/s, (R[0,2]+R[2,0])/s, (R[1,2]+R[2,1])/s, 0.25*s)
 
 
 def setup_camera(env: WarehouseManipulationEnv, width: int, height: int):
-    """env_0 기준으로 카메라 위치 설정 후 렌더 프로덕트 반환."""
-    import omni.replicator.core as rep
+    from isaaclab.sensors import Camera, CameraCfg
+    import isaaclab.sim as sim_utils
 
     origin = env.scene.env_origins[0].cpu().numpy()
     eye    = (origin + np.array([1.4, -1.2, 1.3])).tolist()
-    target = (origin + np.array([0.5,  0.1, 0.5])).tolist()
-    _set_camera_lookat(eye, target)
+    target = (origin + np.array([0.5,  0.1,  0.5])).tolist()
+    quat   = _lookat_quat_wxyz(eye, target)
 
-    rp = rep.create.render_product("/OmniverseKit_Persp", (width, height))
-    annot = rep.AnnotatorRegistry.get_annotator("rgb")
-    annot.attach([rp])
-    return rp, annot
+    cam_cfg = CameraCfg(
+        prim_path="/World/RecordCamera",
+        update_period=0.0,
+        height=height,
+        width=width,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 1.0e5),
+        ),
+        offset=CameraCfg.OffsetCfg(
+            pos=tuple(eye),
+            rot=quat,
+            convention="world",
+        ),
+    )
+    camera = Camera(cam_cfg)
+    return camera
 
 
-def capture_frame(annot) -> np.ndarray | None:
-    import omni.replicator.core as rep
-    rep.orchestrator.step(rt_subframes=0, delta_time=0.0)
-    data = annot.get_data()
-    if data is None or data.size == 0:
-        return None
-    return data[:, :, :3]   # RGB (H, W, 3) uint8
-
-
+# ──────────────────────────────────────────────────────────────────
+# 영상 생성
+# ──────────────────────────────────────────────────────────────────
 def frames_to_video(frame_dir: Path, output: str, fps: int):
     cmd = [
         "ffmpeg", "-y",
@@ -178,10 +185,16 @@ def frames_to_video(frame_dir: Path, output: str, fps: int):
     if result.returncode != 0:
         print(f"[ffmpeg 오류]\n{result.stderr}")
     else:
-        print(f"[완료] {output}")
+        size_mb = Path(output).stat().st_size / 1e6
+        print(f"[완료] {output}  ({size_mb:.1f} MB)")
 
 
+# ──────────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────────
 def main():
+    from PIL import Image
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     env_cfg = WarehouseManipulationEnvCfg()
@@ -193,44 +206,50 @@ def main():
 
     obs_dict, _ = env.reset()
 
-    rp, annot = setup_camera(env, args.width, args.height)
+    # Camera 초기화 (env.reset() 이후)
+    camera = setup_camera(env, args.width, args.height)
+    camera.reset()
 
     frame_dir = Path(tempfile.mkdtemp(prefix="mars_demo_"))
-    print(f"\n[Record] 프레임 저장 위치: {frame_dir}")
-    print(f"[Record] 목표: {args.num_episodes}에피소드, 출력: {args.output}\n")
-
-    from PIL import Image
+    print(f"\n[Record] 프레임 저장: {frame_dir}")
+    print(f"[Record] {args.num_episodes}에피소드  capture_every={args.capture_every}  → {args.output}\n")
 
     episode_count = 0
-    frame_idx = 0
-    step_count = 0
-    CAPTURE_EVERY = 6   # 30Hz 시뮬 기준 5fps 영상 — orchestrator.step() 호출 최소화
+    frame_idx     = 0
+    step_count    = 0
 
     with torch.inference_mode():
         while episode_count < args.num_episodes and simulation_app.is_running():
             obs = obs_dict["policy"]
             actions = actor(obs)
             obs_dict, _, terminated, truncated, extras = env.step(actions)
-            step_count += 1
 
-            rgb = None
-            if step_count % CAPTURE_EVERY == 0:
-                rgb = capture_frame(annot)
-            if rgb is not None:
-                Image.fromarray(rgb).save(frame_dir / f"frame_{frame_idx:06d}.png")
-                frame_idx += 1
+            # Camera 업데이트 — env.step()이 이미 렌더링, 여기선 데이터만 읽음
+            camera.update(dt=env.sim.get_rendering_dt())
+
+            step_count += 1
+            if step_count % args.capture_every == 0:
+                rgb = camera.data.output.get("rgb")
+                if rgb is not None:
+                    # (1, H, W, 4) RGBA → (H, W, 3) RGB numpy
+                    img = rgb.squeeze(0).cpu().numpy()[:, :, :3]
+                    Image.fromarray(img.astype(np.uint8)).save(
+                        frame_dir / f"frame_{frame_idx:06d}.png"
+                    )
+                    frame_idx += 1
 
             done = terminated | truncated
             if done.any():
                 episode_count += done.sum().item()
-                log = extras.get("log", {})
+                log  = extras.get("log", {})
                 rate = log.get("place_rate", 0.0)
-                print(f"  에피소드 {episode_count}/{args.num_episodes}  place_rate={rate:.1f}%  프레임={frame_idx}")
+                print(f"  에피소드 {episode_count}/{args.num_episodes}"
+                      f"  place_rate={rate:.1f}%  프레임={frame_idx}")
 
     env.close()
 
     if frame_idx == 0:
-        print("[오류] 캡처된 프레임 없음 — replicator annotator 확인 필요")
+        print("[오류] 캡처된 프레임 없음")
         return
 
     frames_to_video(frame_dir, args.output, args.fps)
