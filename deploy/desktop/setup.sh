@@ -29,7 +29,7 @@ nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null \
 
 # ── 1. 시스템 라이브러리 ─────────────────────────────────────────
 echo "[1/7] 시스템 라이브러리..."
-apt-get update -q 2>/dev/null
+apt-get update -q 2>/dev/null || true
 apt-get install -y --no-install-recommends \
     libxt6 libxrandr2 libxcursor1 libxinerama1 \
     libgl1-mesa-glx libglu1-mesa \
