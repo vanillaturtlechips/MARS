@@ -15,9 +15,8 @@ _CUDA_RT="${CUDA_VERSION:-$(nvcc --version 2>/dev/null | grep -oP 'release \K[0-
 _CUDA_MM=$(echo "$_CUDA_RT" | cut -d. -f1,2)
 _CUDA_TAG=$(echo "$_CUDA_MM" | tr -d '.')
 
-# 사용 가능한 Python 자동 감지 (3.10 우선, 3.11이 있으면 사용)
-PYTHON_BIN=$(which python3.11 2>/dev/null || which python3.10 2>/dev/null || which python3)
-PYTHON_VER=$("$PYTHON_BIN" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+PYTHON_BIN=$(which python3.11 2>/dev/null || echo "")
+PYTHON_VER="3.11"
 
 echo "════════════════════════════════════════════"
 echo " MARS Desktop 환경 설치"
@@ -32,15 +31,26 @@ echo "▶ 사전 확인"
 nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null \
     && echo "  GPU OK" || echo "  [경고] nvidia-smi 실패"
 
-# ── 1. 시스템 라이브러리 + pip ───────────────────────────────────
+# ── 1. 시스템 라이브러리 + Python 3.11 ──────────────────────────
 echo "[1/7] 시스템 라이브러리..."
 apt-get update -q 2>/dev/null || true
 apt-get install -y --no-install-recommends \
+    software-properties-common \
     libxt6 libxrandr2 libxcursor1 libxinerama1 \
     libgl1-mesa-glx libglu1-mesa \
     libvulkan1 libegl1 libgles2 \
     libxkbcommon0 libdbus-1-3 \
     git curl ffmpeg 2>/dev/null || true
+
+# Python 3.11 설치 (Isaac Sim 5.1.0 필수 요구사항)
+if [ -z "$PYTHON_BIN" ]; then
+    echo "  Python 3.11 설치 (deadsnakes PPA)..."
+    add-apt-repository ppa:deadsnakes/ppa -y
+    apt-get update -q
+    apt-get install -y python3.11 python3.11-venv python3.11-dev
+    PYTHON_BIN=$(which python3.11)
+fi
+echo "  Python 3.11: $PYTHON_BIN"
 
 # pip가 없으면 get-pip.py로 설치
 if ! "$PYTHON_BIN" -m pip --version &>/dev/null; then
