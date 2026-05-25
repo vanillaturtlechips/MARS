@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(description="Phase 2 demo recorder")
 parser.add_argument("--ckpt",        type=str, required=True)
 parser.add_argument("--num_envs",    type=int, default=1)
 parser.add_argument("--num_episodes",type=int, default=5)
-parser.add_argument("--fps",         type=int, default=30)
+parser.add_argument("--fps",         type=int, default=5)
 parser.add_argument("--output",      type=str, default="/workspace/phase2_demo.mp4")
 parser.add_argument("--width",       type=int, default=640)
 parser.add_argument("--height",      type=int, default=360)
@@ -155,7 +155,8 @@ def setup_camera(env: WarehouseManipulationEnv, width: int, height: int):
 
 
 def capture_frame(annot) -> np.ndarray | None:
-    # env.step()이 이미 렌더링함 — orchestrator.step() 중복 호출 제거
+    import omni.replicator.core as rep
+    rep.orchestrator.step(rt_subframes=0, delta_time=0.0)
     data = annot.get_data()
     if data is None or data.size == 0:
         return None
@@ -202,14 +203,19 @@ def main():
 
     episode_count = 0
     frame_idx = 0
+    step_count = 0
+    CAPTURE_EVERY = 6   # 30Hz 시뮬 기준 5fps 영상 — orchestrator.step() 호출 최소화
 
     with torch.inference_mode():
         while episode_count < args.num_episodes and simulation_app.is_running():
             obs = obs_dict["policy"]
             actions = actor(obs)
             obs_dict, _, terminated, truncated, extras = env.step(actions)
+            step_count += 1
 
-            rgb = capture_frame(annot)
+            rgb = None
+            if step_count % CAPTURE_EVERY == 0:
+                rgb = capture_frame(annot)
             if rgb is not None:
                 Image.fromarray(rgb).save(frame_dir / f"frame_{frame_idx:06d}.png")
                 frame_idx += 1
