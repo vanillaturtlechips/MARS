@@ -59,6 +59,7 @@ export UV_HTTP_TIMEOUT=600
 # ── 2. uv ────────────────────────────────────────────────────────
 echo "[2/7] uv 설치..."
 "$PYTHON_BIN" -m pip install uv -q
+export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 echo "  완료"
 
 # ── 3. venv ──────────────────────────────────────────────────────
