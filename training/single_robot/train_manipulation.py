@@ -71,7 +71,7 @@ def main():
     env_wrapped = RslRlVecEnvWrapper(env)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"]    = "PPO"
-    cfg_dict["algorithm"]["entropy_coef"]  = 0.0005
+    cfg_dict["algorithm"]["entropy_coef"]  = 0.01
     cfg_dict["algorithm"]["learning_rate"] = args.lr
     runner = OnPolicyRunner(env_wrapped, cfg_dict,
                             log_dir="logs/warehouse_manipulation_full",
