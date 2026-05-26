@@ -95,7 +95,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         d = self.device
 
         body_names = list(self.robot.data.body_names)
-        self._ee_body_idx  = body_names.index("panda_hand")
+        self._ee_body_idx  = body_names.index("panda_leftfinger")
         self._jac_body_idx = self._ee_body_idx - 1  # get_jacobians: base 제외 offset
 
         self._goal_pos_w         = torch.zeros(n, 3, device=d)
