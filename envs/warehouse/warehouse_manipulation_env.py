@@ -346,9 +346,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
             box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + 0.000
             box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.590
         else:
-            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.25, 0.38, (n,), device=self.device)
-            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
-            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
+            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.85, 1.05, (n,), device=self.device)
+            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.1, 0.1, (n,), device=self.device)
+            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         if self.cfg.force_grasp_on_reset:
