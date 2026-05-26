@@ -353,10 +353,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         if self.cfg.force_grasp_on_reset:
-            # goal을 실제 EE 위치(=박스) 기준 앞쪽 5~10cm
-            self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + sample_uniform(0.05, 0.10, (n,), device=self.device)
-            self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
-            self._goal_pos_w[env_ids_t, 2] = box_state[:, 2]
+            # goal을 박스보다 15~30cm 앞에 배치 → 실제 운반 학습
+            self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.60, (n,), device=self.device)
+            self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
+            self._goal_pos_w[env_ids_t, 2] = box_state[:, 2]  # 박스와 같은 높이
         else:
             # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
             theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
