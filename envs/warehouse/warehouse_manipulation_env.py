@@ -150,7 +150,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
         )
         table_spawn.func("/World/envs/env_0/Table", table_spawn,
-                         translation=(0.85, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
+                         translation=(1.0, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
