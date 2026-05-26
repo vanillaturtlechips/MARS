@@ -185,12 +185,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # DLS IK: Δq = J^T (J J^T + λI)^{-1} Δx
         jac = self.robot.root_physx_view.get_jacobians()
         J   = jac[:, self._jac_body_idx, :3, :7]
-        lam = 0.05  # 특이점 폭발 방지 (0.01에서 EE 17cm/step 버그 확인됨)
+        lam = 0.01  # damping 낮춰서 EE 실제 이동량 확보
         JT      = J.transpose(-2, -1)
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
         delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
-        delta_q = delta_q.clamp(-0.1, 0.1)  # 관절당 최대 0.1rad/step
+        delta_q = delta_q.clamp(-0.05, 0.05)  # 관절당 최대 0.05rad/step
 
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
         self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
