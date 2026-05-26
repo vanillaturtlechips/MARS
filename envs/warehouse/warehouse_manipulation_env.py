@@ -111,7 +111,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
     def _setup_scene(self):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-        franka_cfg.init_state.pos = (0.0, 0.0, 0.78)
+        franka_cfg.init_state.pos = (0.0, 0.0, 0.80)
         self.robot = Articulation(franka_cfg)
 
         # 박스 → YCB 003_cracker_box (isaacsim extscache 동적 탐색)
@@ -251,7 +251,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
         goal_rel        = self._goal_pos_w - box_pos_carried  # box→goal 방향벡터 (align reward용)
 
-        dropped = self._grasped & (box_pos[:, 2] < 0.58)
+        dropped = self._grasped & (box_pos[:, 2] < 0.70)
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
 
         not_grasped = (~self._grasped).float()
@@ -301,7 +301,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos_carried = ee_pos + self._grasp_ee_offset
         dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (box_pos[:, 2] < 0.58)
+        dropped = self._grasped & (box_pos[:, 2] < 0.70)
 
         terminated = placed
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
