@@ -175,10 +175,10 @@ def main():
             obs = obs_dict["policy"]
             actions = actor(obs).clone()
 
-            # Place 연출: goal 근처 도달 시 그리퍼 열고 박스 고정 해제
+            # Place 연출: goal 근처 도달 시 그리퍼 열고 박스 고정 해제 (threshold보다 일찍)
             ee_pos, _ = env._get_ee_pose()
             dist_to_goal = (ee_pos + env._grasp_ee_offset - env._goal_pos_w).norm(dim=1)
-            near_goal = dist_to_goal < env.cfg.place_dist_threshold
+            near_goal = dist_to_goal < (env.cfg.place_dist_threshold + 0.05)
             if near_goal.any():
                 ids = near_goal.nonzero(as_tuple=True)[0]
                 actions[ids, -1] = -1.0          # 그리퍼 열기
