@@ -146,9 +146,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         table_spawn = UsdFileCfg(
             usd_path=f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_approximation="convex_decomposition",
         )
         table_spawn.func("/World/envs/env_0/Table", table_spawn,
-                         translation=(0.45, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
+                         translation=(0.65, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":

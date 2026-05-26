@@ -19,6 +19,34 @@ import time
 from pathlib import Path
 
 from isaaclab.app import AppLauncher
+import numpy as np
+
+def _lookat_quat_wxyz(eye, target):
+    """카메라 시점 → wxyz quaternion 변환"""
+    e, t = np.array(eye, float), np.array(target, float)
+    u = np.array([0., 0., 1.])
+    z = e - t
+    z /= np.linalg.norm(z)
+    x = np.cross(u, z)
+    if np.linalg.norm(x) < 1e-6:
+        u = np.array([0., 1., 0.])
+        x = np.cross(u, z)
+    x /= np.linalg.norm(x)
+    y = np.cross(z, x)
+    R = np.column_stack([x, y, z])
+    tr = R[0,0] + R[1,1] + R[2,2]
+    if tr > 0:
+        s = 0.5 / np.sqrt(tr + 1)
+        return (0.25/s, (R[2,1]-R[1,2])*s, (R[0,2]-R[2,0])*s, (R[1,0]-R[0,1])*s)
+    elif R[0,0] > R[1,1] and R[0,0] > R[2,2]:
+        s = 2*np.sqrt(1+R[0,0]-R[1,1]-R[2,2])
+        return ((R[2,1]-R[1,2])/s, 0.25*s, (R[0,1]+R[1,0])/s, (R[0,2]+R[2,0])/s)
+    elif R[1,1] > R[2,2]:
+        s = 2*np.sqrt(1+R[1,1]-R[0,0]-R[2,2])
+        return ((R[0,2]-R[2,0])/s, (R[0,1]+R[1,0])/s, 0.25*s, (R[1,2]+R[2,1])/s)
+    else:
+        s = 2*np.sqrt(1+R[2,2]-R[0,0]-R[1,1])
+        return ((R[1,0]-R[0,1])/s, (R[0,2]+R[2,0])/s, (R[1,2]+R[2,1])/s, 0.25*s)
 
 parser = argparse.ArgumentParser(description="Phase 2 Teacher 데모")
 parser.add_argument("--ckpt",         type=str, required=True)
@@ -32,6 +60,9 @@ simulation_app = app_launcher.app
 
 import torch
 import torch.nn as nn
+
+import isaaclab.sim as sim_utils
+from isaaclab.sensors import Camera, CameraCfg
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_manipulation_env import (
@@ -106,7 +137,28 @@ def main():
 
     actor = load_actor(args.ckpt, device)
 
+    # Stage 카메라 설정 (USD prim으로 생성 → stage에서 검색/수정 가능)
+    eye    = (0.4, 0.8, 0.7)
+    target = (0.5, 0.0, 0.45)
+    quat   = _lookat_quat_wxyz(eye, target)
+
+    cam_cfg = CameraCfg(
+        prim_path="/World/ViewCamera",
+        update_period=0.0,
+        height=720,
+        width=1280,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(focal_length=24.0),
+        offset=CameraCfg.OffsetCfg(
+            pos=eye,
+            rot=quat,
+            convention="world",
+        ),
+    )
+    view_camera = Camera(cam_cfg)
+
     print(f"\n[Demo] {args.num_envs}개 env, 창고 배경 ON")
+    print("[Demo] 카메라: /World/ViewCamera (stage에서 수정 가능)")
     print("[Demo] 종료: Ctrl+C\n")
 
     if getattr(args, "livestream", 0):
