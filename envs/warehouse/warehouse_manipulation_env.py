@@ -82,7 +82,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     grasp_dist_threshold: float = 0.25  # Teacher 훈련값 복원 (0.11→0.25)
     place_dist_threshold: float = 0.12  # Teacher 훈련값 복원 (0.13→0.12)
 
-    force_grasp_on_reset: bool = False
+    force_grasp_on_reset: bool = True
     enable_background: bool = False
 
 
