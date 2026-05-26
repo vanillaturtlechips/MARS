@@ -64,7 +64,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_place:      float = 500.0  # 최종 거치 성공
     rew_time:       float = -0.5   # 강한 시간 패널티 → 빨리 움직이도록
 
-    grasp_dist_threshold: float = 0.04   # 실제로 접근해야 잡히도록 (기존 0.15)
+    grasp_dist_threshold: float = 0.09   # 물리 충돌 고려 — 0.04는 너무 엄격
     place_dist_threshold: float = 0.12
 
     # 커리큘럼: 박스 spawn 거리 (EE 기준)
