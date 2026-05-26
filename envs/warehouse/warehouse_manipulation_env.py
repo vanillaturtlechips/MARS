@@ -44,7 +44,7 @@ PLACE_GOALS = [
     (0.32, -0.35, 0.50),
 ]
 
-OBS_DIM = 30
+OBS_DIM = 33
 
 
 @configclass
@@ -230,7 +230,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
             goal_rel,
             joint_pos[:, :9],
             joint_vel[:, :9],
-        ], dim=1)   # (N, 30)
+            ee_pos,
+        ], dim=1)   # (N, 33)
         return {"policy": obs}
 
     def _get_rewards(self) -> torch.Tensor:
