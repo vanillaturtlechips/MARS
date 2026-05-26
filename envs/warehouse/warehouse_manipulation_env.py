@@ -64,12 +64,12 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_place:      float = 500.0  # 최종 거치 성공
     rew_time:       float = -0.5   # 강한 시간 패널티 → 빨리 움직이도록
 
-    grasp_dist_threshold: float = 0.15
+    grasp_dist_threshold: float = 0.04   # 실제로 접근해야 잡히도록 (기존 0.15)
     place_dist_threshold: float = 0.12
 
     # 커리큘럼: 박스 spawn 거리 (EE 기준)
     # 훈련 스크립트에서 단계별로 올림
-    box_spawn_dist: float = 0.05   # 시작: EE 바로 앞 5cm
+    box_spawn_dist: float = 0.15   # 시작: 0.15m (grasp_threshold보다 충분히 멀게)
 
     force_grasp_on_reset: bool = False
     enable_background:    bool = False
@@ -225,15 +225,18 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         dist_ee_box = (ee_pos - box_pos).norm(dim=1)
 
-        # grasp 감지: EE가 박스에 가까울 때 (그리퍼 조건 제거 — 초기 탐색용)
+        # grasp 감지: 엄격해진 threshold (0.04m) — 실제로 접근해야 잡힘
         newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
         self._grasped |= newly_grasped
         if newly_grasped.any():
             new_ids = newly_grasped.nonzero(as_tuple=True)[0]
             self._frozen_box_state[new_ids] = self.box.data.root_state_w[new_ids].clone()
             self._grasp_ee_offset[new_ids]  = box_pos[new_ids] - ee_pos[new_ids]
+            # grasp 직후 prev_dist 초기화 — delta 튐 방지
+            box_pos_eff_new = ee_pos[new_ids] + self._grasp_ee_offset[new_ids]
+            self._prev_dist_box_goal[new_ids] = (box_pos_eff_new - self._goal_pos_w[new_ids]).norm(dim=1)
 
-        box_pos_eff   = torch.where(
+        box_pos_eff = torch.where(
             self._grasped.unsqueeze(1).expand(-1, 3),
             ee_pos + self._grasp_ee_offset,
             box_pos,
@@ -243,18 +246,20 @@ class WarehouseManipulationEnv(DirectRLEnv):
         not_grasped = (~self._grasped).float()
         grasped_f   = self._grasped.float()
 
-        # [1단계] Approach: 1/d — 가까울수록 보상 급증, 가만히 있으면 고정값 (시간패널티가 압도)
-        rew_approach  = self.cfg.rew_approach * (1.0 / dist_ee_box.clamp(min=0.01)) * not_grasped
+        # [1단계] Approach: 지수 감쇠 — 1/d보다 gradient 안정적
+        rew_approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
 
         # [2단계] Grasp bonus
-        rew_grasp     = self.cfg.rew_grasp * newly_grasped.float()
+        rew_grasp = self.cfg.rew_grasp * newly_grasped.float()
 
-        # [3단계] Transport: 잡은 후에만
-        rew_transport = self.cfg.rew_transport * (1.0 / dist_box_goal.clamp(min=0.01)) * grasped_f
+        # [3단계] Transport: progress delta — 홀딩 시 보상 0, 전진 시에만 지급
+        progress_delta = self._prev_dist_box_goal - dist_box_goal
+        rew_transport = torch.clamp(progress_delta, min=-0.1, max=0.1) * 150.0 * grasped_f
+        self._prev_dist_box_goal = dist_box_goal.detach().clone()
 
         # [4단계] Place
-        placed        = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
-        rew_place     = self.cfg.rew_place * placed.float()
+        placed    = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+        rew_place = self.cfg.rew_place * placed.float()
 
         log = self.extras.setdefault("log", {})
         log["dist_ee_box"]   = dist_ee_box.mean().item()
@@ -308,7 +313,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # 128 steps × 4096 envs × 500 iter = 262M steps
         total = self.common_step_counter
         if total < 262_000_000:
-            self.cfg.box_spawn_dist = 0.05
+            self.cfg.box_spawn_dist = 0.15
         elif total < 786_000_000:
             self.cfg.box_spawn_dist = 0.20
         else:
