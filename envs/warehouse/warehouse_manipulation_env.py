@@ -354,12 +354,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         if self.cfg.force_grasp_on_reset:
-            # 초반 커리큘럼: 탐색 노이즈로 즉시 도달 가능한 5~8cm 반경
+            # 초반 커리큘럼: 탐색 노이즈로 즉시 도달 가능한 5~10cm 반경
             theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-            r     = sample_uniform(0.05, 0.08,  (n,), device=self.device)
+            r     = sample_uniform(0.05, 0.10,  (n,), device=self.device)
             self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
             self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
-            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
+            self._goal_pos_w[env_ids_t, 2] = box_state[:, 2]  # 박스와 동일 높이
         else:
             # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
             theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
