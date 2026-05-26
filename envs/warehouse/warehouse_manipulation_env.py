@@ -1,12 +1,12 @@
-"""Phase 2 — 창고 Pick & Place 환경.
+"""Phase 2 — 창고 Full Pick & Place 환경 (정공법).
 
 로봇: Franka Panda (7-DOF 암 + 평행 그리퍼)
-임무: 박스를 집어 지정 선반 위치에 내려놓기
+임무: 테이블 위 박스를 직접 집어 목적지에 내려놓기
 액션: 4D Cartesian IK [dx, dy, dz (±3cm/step), gripper (-1→open, +1→close)]
 
-관측 (30차원):
+관측 (31차원):
   box_rel(3) + box_quat(4) + box_mass(1) + gripper(1) +
-  goal_rel(3) + jpos(9) + jvel(9)
+  goal_rel(3) + jpos(9) + jvel(9) + is_grasped(1)
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, UsdFileCfg, spawn_g
 from isaaclab.utils import configclass
 from isaaclab.utils.math import sample_uniform
 
-# NVIDIA 공개 에셋 S3 (Isaac Sim 5.1 기준)
 _ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 
 try:
@@ -35,23 +34,14 @@ try:
 except ImportError:
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
-# 측면 배치 태스크: box spawn y≈0, goal y=±0.32-0.35 → free win 불가 (0.32m 이격)
-# Teacher 100% 달성 검증 완료 (수직 lift보다 IK 단순: base 관절 주도)
-PLACE_GOALS = [
-    (0.30,  0.32, 0.50),
-    (0.30, -0.32, 0.50),
-    (0.32,  0.35, 0.50),
-    (0.32, -0.35, 0.50),
-]
-
-OBS_DIM = 30
+OBS_DIM = 31  # +1 for is_grasped
 
 
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 15.0
-    action_space = 4             # 4D Cartesian IK: [dx, dy, dz, gripper]
+    episode_length_s = 20.0
+    action_space = 4
     observation_space = OBS_DIM
     state_space = 0
 
@@ -59,7 +49,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         dt=1.0 / 120.0,
         render_interval=decimation,
         physx=sim_utils.PhysxCfg(
-            gpu_collision_stack_size=2 ** 27,  # 5096 env 스택 오버플로 방지
+            gpu_collision_stack_size=2 ** 27,
         ),
     )
 
@@ -67,23 +57,18 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
         num_envs=256, env_spacing=3.0, replicate_physics=True
     )
 
-    rew_approach:   float =  0.5    # -dist_ee_box * not_grasped
-    rew_grasp:      float = 30.0   # one-time grasp bonus
-    rew_transport:  float =  300.0  # Teacher 검증값 — 1000은 VF 분산 과대
-    rew_align:      float =  0.0   # 비활성화: 테스트
-    rew_goal_dist:  float =  2.0   # grasped_f gate → 잡은 동안만 절대거리 패널티
-    rew_place:      float = 800.0  # Teacher 훈련값 복원
-    rew_drop:       float =  0.0   # 비활성화: 매 스텝 페널티 → 보상 분산 폭발
-    rew_time:       float = -0.02  # Teacher 훈련값
+    # 보상 가중치
+    rew_approach:   float = 2.0    # 1/(1+d²) 형태
+    rew_grasp:      float = 50.0   # one-time grasp bonus
+    rew_transport:  float = 10.0   # 1/(1+d²) × grasped
+    rew_place:      float = 500.0  # 최종 거치 성공
+    rew_time:       float = -0.02
 
-    box_size_range: tuple[float, float] = (0.04, 0.08)
-    box_mass_range: tuple[float, float] = (0.3, 2.0)
+    grasp_dist_threshold: float = 0.06   # 6cm — 실제 그리퍼 패드 거리
+    place_dist_threshold: float = 0.12
 
-    grasp_dist_threshold: float = 0.25  # Teacher 훈련값 복원 (0.11→0.25)
-    place_dist_threshold: float = 0.12  # Teacher 훈련값 복원 (0.13→0.12)
-
-    force_grasp_on_reset: bool = True
-    enable_background: bool = False
+    force_grasp_on_reset: bool = False   # 정공법: False
+    enable_background:    bool = False
 
 
 class WarehouseManipulationEnv(DirectRLEnv):
@@ -96,15 +81,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         body_names = list(self.robot.data.body_names)
         self._ee_body_idx  = body_names.index("panda_leftfinger")
-        self._jac_body_idx = self._ee_body_idx - 1  # get_jacobians: base 제외 offset
+        self._jac_body_idx = self._ee_body_idx - 1
 
         self._goal_pos_w         = torch.zeros(n, 3, device=d)
         self._box_mass           = torch.ones(n, device=d)
         self._grasped            = torch.zeros(n, dtype=torch.bool, device=d)
         self._actions            = torch.zeros(n, self.cfg.action_space, device=d)
-        self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
-        self._frozen_box_state   = torch.zeros(n, 13, device=d)
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
+        self._frozen_box_state   = torch.zeros(n, 13, device=d)
 
         self._stat_placed   = 0
         self._stat_episodes = 0
@@ -114,7 +98,6 @@ class WarehouseManipulationEnv(DirectRLEnv):
         franka_cfg.init_state.pos = (0.0, 0.0, 0.80)
         self.robot = Articulation(franka_cfg)
 
-        # 박스 → YCB 003_cracker_box (isaacsim extscache 동적 탐색)
         def _find_ycb_cracker() -> str:
             spec = importlib.util.find_spec("isaacsim")
             if spec and spec.submodule_search_locations:
@@ -126,28 +109,27 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 ))
                 if matches:
                     return matches[0]
-            raise FileNotFoundError("003_cracker_box_physics.usd not found in isaacsim extscache")
+            raise FileNotFoundError("003_cracker_box_physics.usd not found")
 
         box_cfg = RigidObjectCfg(
             prim_path="/World/envs/env_.*/Box",
             spawn=UsdFileCfg(
                 usd_path=_find_ycb_cracker(),
                 scale=(0.7, 0.7, 0.7),
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=True),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
                 mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
-                collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+                collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.6, 0.0, 0.50)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.55, 0.0, 0.82)),
         )
         self.box = RigidObject(box_cfg)
 
         spawn_ground_plane("/World/ground", GroundPlaneCfg())
 
-        # 테이블 → PackingTable USD (산업용 작업대, 상면 z≈0.50m)
         table_spawn = UsdFileCfg(
             usd_path=f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
         )
         table_spawn.func("/World/envs/env_0/Table", table_spawn,
                          translation=(1.0, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
@@ -165,86 +147,70 @@ class WarehouseManipulationEnv(DirectRLEnv):
             warehouse_cfg = UsdFileCfg(
                 usd_path=f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd",
             )
-            warehouse_cfg.func(
-                "/World/Warehouse", warehouse_cfg,
-                translation=(-2.95, -3.0, 0.0),
-                orientation=(1.0, 0.0, 0.0, 0.0),
-            )
-            sl = sim_utils.SphereLightCfg(intensity=15000.0, color=(1.0, 0.97, 0.88), radius=0.08)
-            sl.func("/World/SL0", sl, translation=(0.5,  0.0, 2.5))
-            sl.func("/World/SL1", sl, translation=(0.5,  1.5, 2.5))
-            sl.func("/World/SL2", sl, translation=(0.5, -1.5, 2.5))
+            warehouse_cfg.func("/World/Warehouse", warehouse_cfg,
+                               translation=(-2.95, -3.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
     def _apply_action(self) -> None:
         n = self.num_envs
-        delta_pos = self._actions[:, :3] * 0.03  # max 3cm/step
+        delta_pos = self._actions[:, :3] * 0.03
 
-        # DLS IK: Δq = J^T (J J^T + λI)^{-1} Δx
+        # DLS IK
         jac = self.robot.root_physx_view.get_jacobians()
         J   = jac[:, self._jac_body_idx, :3, :7]
         lam = 0.05
         JT      = J.transpose(-2, -1)
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
-        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
-        delta_q = delta_q.clamp(-0.1, 0.1)
+        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1).clamp(-0.1, 0.1)
 
-        # PD 컨트롤러 지연 없이 즉시 반영: write_joint_state_to_sim
         new_q = (self.robot.data.joint_pos[:, :7] + delta_q).clamp(-2.8, 2.8)
-        full_q = self.robot.data.joint_pos.clone()
-        full_q[:, :7] = new_q
+
+        # 그리퍼: action[-1] > 0 → 닫기, < 0 → 열기
         gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
-        full_q[:, 7:9] = gripper_pos.expand(-1, 2)
-        self.robot.write_joint_state_to_sim(full_q, self.robot.data.joint_vel)
 
+        target_q = self.robot.data.joint_pos.clone()
+        target_q[:, :7] = new_q
+        target_q[:, 7:9] = gripper_pos.expand(-1, 2)
+        self.robot.set_joint_position_target(target_q)
+
+        # grasped 상태: 박스를 EE에 고정 (물리적 그리퍼 대신 kinematic lock)
         if self._grasped.any():
-            grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
             ee_pos, _ = self._get_ee_pose()
-
-            # demo용: goal 근처에서 박스 해제 (place_override 플래그)
-            if getattr(self, '_demo_place_override', False):
-                dist = (ee_pos + self._grasp_ee_offset - self._goal_pos_w).norm(dim=1)
-                release = self._grasped & (dist < self.cfg.place_dist_threshold + 0.05)
-                if release.any():
-                    self._grasped[release] = False
-                    grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
-                    if not self._grasped.any():
-                        return
-
+            grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
             frozen = self._frozen_box_state[grasped_ids].clone()
             frozen[:, :3] = ee_pos[grasped_ids] + self._grasp_ee_offset[grasped_ids]
             frozen[:, 7:13] = 0.0
             self.box.write_root_state_to_sim(frozen, grasped_ids)
 
     def _get_observations(self) -> dict:
-        ee_pos, _      = self._get_ee_pose()
-        joint_pos      = self.robot.data.joint_pos
-        joint_vel      = self.robot.data.joint_vel
-        gripper_w      = joint_pos[:, 7:8] + joint_pos[:, 8:9]
-        box_pos_carried = ee_pos + self._grasp_ee_offset
-        box_pos  = self.box.data.root_pos_w
-        box_quat = self.box.data.root_quat_w
+        ee_pos, _  = self._get_ee_pose()
+        joint_pos  = self.robot.data.joint_pos
+        joint_vel  = self.robot.data.joint_vel
+        gripper_w  = joint_pos[:, 7:8] + joint_pos[:, 8:9]
+        box_pos    = self.box.data.root_pos_w
+        box_quat   = self.box.data.root_quat_w
 
-        # goal direction: actual box pos before grasp, carried pos after grasp
-        # (avoids discontinuity when grasp_ee_offset jumps from 0 to box-ee)
-        goal_rel = self._goal_pos_w - torch.where(
+        # grasped면 carried 위치 기준으로 goal_rel 계산
+        box_pos_eff = torch.where(
             self._grasped.unsqueeze(1).expand(-1, 3),
-            box_pos_carried,
+            ee_pos + self._grasp_ee_offset,
             box_pos,
         )
+        goal_rel = self._goal_pos_w - box_pos_eff
 
         obs = torch.cat([
-            box_pos - ee_pos,
-            box_quat,
-            self._box_mass.unsqueeze(1),
-            gripper_w,
-            goal_rel,
-            joint_pos[:, :9],
-            joint_vel[:, :9],
-        ], dim=1)   # (N, 30)
+            box_pos - ee_pos,           # 3
+            box_quat,                   # 4
+            self._box_mass.unsqueeze(1),# 1
+            gripper_w,                  # 1
+            goal_rel,                   # 3
+            joint_pos[:, :9],           # 9
+            joint_vel[:, :9],           # 9
+            self._grasped.float().unsqueeze(1),  # 1  ← 파지 여부
+        ], dim=1)  # (N, 31)
         return {"policy": obs}
 
     def _get_rewards(self) -> torch.Tensor:
@@ -253,81 +219,65 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         dist_ee_box = (ee_pos - box_pos).norm(dim=1)
 
-        newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
+        # grasp 감지: 그리퍼가 충분히 닫혀 있고 EE가 박스에 가까울 때
+        gripper_w = self.robot.data.joint_pos[:, 7] + self.robot.data.joint_pos[:, 8]
+        gripper_closed = gripper_w < 0.03  # 3cm 미만 = 닫힘
+        newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold) & gripper_closed
         self._grasped |= newly_grasped
         if newly_grasped.any():
             new_ids = newly_grasped.nonzero(as_tuple=True)[0]
             self._frozen_box_state[new_ids] = self.box.data.root_state_w[new_ids].clone()
             self._grasp_ee_offset[new_ids]  = box_pos[new_ids] - ee_pos[new_ids]
 
-        box_pos_carried = ee_pos + self._grasp_ee_offset
-        dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
-        goal_rel        = self._goal_pos_w - box_pos_carried  # box→goal 방향벡터 (align reward용)
-
-        dropped = self._grasped & (box_pos[:, 2] < 0.70)
-        placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+        box_pos_eff   = torch.where(
+            self._grasped.unsqueeze(1).expand(-1, 3),
+            ee_pos + self._grasp_ee_offset,
+            box_pos,
+        )
+        dist_box_goal = (box_pos_eff - self._goal_pos_w).norm(dim=1)
 
         not_grasped = (~self._grasped).float()
         grasped_f   = self._grasped.float()
 
-        approach   = -self.cfg.rew_approach  * dist_ee_box  * not_grasped
-        goal_dense = -self.cfg.rew_goal_dist * dist_box_goal * grasped_f
+        # [1단계] Approach: 잡기 전에만
+        rew_approach  = self.cfg.rew_approach * (1.0 / (1.0 + dist_ee_box ** 2)) * not_grasped
 
-        # delta tracking: box_pos_carried (EE proxy when grasped) 사용
-        # box.data.root_pos_w는 write_root_state_to_sim 타이밍 문제로 EE를 100% 추종하지 않음
-        # → box_pos_carried = ee_pos + grasp_ee_offset 로 일관되게 계산
-        dist_box_real = (box_pos_carried - self._goal_pos_w).norm(dim=1)
-        delta_goal = (self._prev_dist_box_goal - dist_box_real).clamp(-0.1, 0.1)
-        transport  = self.cfg.rew_transport * delta_goal * grasped_f
+        # [2단계] Grasp bonus
+        rew_grasp     = self.cfg.rew_grasp * newly_grasped.float()
 
-        self._prev_dist_box_goal = dist_box_real.detach()
+        # [3단계] Transport: 잡은 후에만
+        rew_transport = self.cfg.rew_transport * (1.0 / (1.0 + dist_box_goal ** 2)) * grasped_f
 
-        # EE 실속도 방향 × goal 방향 cosine (grasped 동안만)
-        # body_lin_vel_w: 실제 EE 선속도(m/s) — 관절공간 아닌 태스크공간 직접 사용
-        ee_vel   = self.robot.data.body_lin_vel_w[:, self._ee_body_idx, :]
-        ee_speed = ee_vel.norm(dim=1, keepdim=True).clamp(min=1e-4)
-        ee_vel_dir = ee_vel / ee_speed                                    # (N, 3) unit
-        goal_dir   = goal_rel / (goal_rel.norm(dim=1, keepdim=True).clamp(min=1e-4))
-        alignment  = (ee_vel_dir * goal_dir).sum(dim=1)                   # cosine [-1, 1]
-        rew_align  = self.cfg.rew_align * alignment * grasped_f
+        # [4단계] Place
+        placed        = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+        rew_place     = self.cfg.rew_place * placed.float()
 
         log = self.extras.setdefault("log", {})
         log["dist_ee_box"]   = dist_ee_box.mean().item()
         log["grasp_rate"]    = grasped_f.mean().item() * 100.0
         log["dist_box_goal"] = (dist_box_goal * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
 
-        return (
-            approach
-            + goal_dense
-            + transport
-            + rew_align
-            + self.cfg.rew_grasp * newly_grasped.float()
-            + self.cfg.rew_place * placed.float()
-            + self.cfg.rew_drop  * dropped.float()
-            + self.cfg.rew_time
-        )
+        return rew_approach + rew_grasp + rew_transport + rew_place + self.cfg.rew_time
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         ee_pos, _ = self._get_ee_pose()
-        box_pos   = self.box.data.root_pos_w
+        box_pos_eff = torch.where(
+            self._grasped.unsqueeze(1).expand(-1, 3),
+            ee_pos + self._grasp_ee_offset,
+            self.box.data.root_pos_w,
+        )
+        dist_box_goal = (box_pos_eff - self._goal_pos_w).norm(dim=1)
+        placed    = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+        timed_out = self.episode_length_buf >= self.max_episode_length - 1
 
-        box_pos_carried = ee_pos + self._grasp_ee_offset
-        dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
-        placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (box_pos[:, 2] < 0.70)
-
-        terminated = placed
-        timed_out  = self.episode_length_buf >= self.max_episode_length - 1
-
-        done = terminated | timed_out
+        done = placed | timed_out
         self._stat_placed   += placed.sum().item()
         self._stat_episodes += done.sum().item()
         if self._stat_episodes > 0:
             self.extras.setdefault("log", {})["place_rate"] = (
                 self._stat_placed / self._stat_episodes * 100
             )
-
-        return terminated, timed_out
+        return placed, timed_out
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
@@ -340,64 +290,34 @@ class WarehouseManipulationEnv(DirectRLEnv):
             env_ids_t = env_ids.long()
         n = env_ids_t.shape[0]
 
-        reach_pose = torch.tensor(
+        # 홈 포즈 (그리퍼 열린 상태)
+        home_pose = torch.tensor(
             [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04],
             device=self.device
         ).unsqueeze(0).expand(n, -1)
-        self.robot.set_joint_position_target(reach_pose, env_ids=env_ids_t)
-        self.robot.write_joint_state_to_sim(reach_pose, torch.zeros_like(reach_pose), env_ids=env_ids_t)
+        self.robot.set_joint_position_target(home_pose, env_ids=env_ids_t)
+        self.robot.write_joint_state_to_sim(home_pose, torch.zeros_like(home_pose), env_ids=env_ids_t)
 
-        self._box_mass[env_ids_t] = sample_uniform(
-            self.cfg.box_mass_range[0], self.cfg.box_mass_range[1], (n,), device=self.device
-        )
+        self._box_mass[env_ids_t] = sample_uniform(0.3, 2.0, (n,), device=self.device)
 
+        # 박스: 테이블 위 랜덤 위치
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-
-        if self.cfg.force_grasp_on_reset:
-            # 박스를 현재 EE 실제 위치에 소환 → grasp_ee_offset=0 과 완벽히 일치
-            ee_pos_reset, _ = self._get_ee_pose()
-            box_state[:, 0] = ee_pos_reset[env_ids_t, 0]
-            box_state[:, 1] = ee_pos_reset[env_ids_t, 1]
-            box_state[:, 2] = ee_pos_reset[env_ids_t, 2]
-        else:
-            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
-            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
-            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
+        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.65, (n,), device=self.device)
+        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.20, 0.20, (n,), device=self.device)
+        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.82
+        box_state[:, 7:13] = 0.0
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
-        if self.cfg.force_grasp_on_reset:
-            # goal을 박스보다 15~30cm 앞에 배치 → 실제 운반 학습
-            self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.60, (n,), device=self.device)
-            self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
-            self._goal_pos_w[env_ids_t, 2] = box_state[:, 2]  # 박스와 같은 높이
-        else:
-            # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
-            theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-            r     = sample_uniform(0.14, 0.20,  (n,), device=self.device)
-            self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
-            self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
-            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
+        # goal: 박스에서 0.25~0.40m 떨어진 위치
+        theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
+        r     = sample_uniform(0.25, 0.40,  (n,), device=self.device)
+        self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
+        self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
+        self._goal_pos_w[env_ids_t, 2] = box_state[:, 2]
 
-        init_dist = (box_state[:, :3] - self._goal_pos_w[env_ids_t]).norm(dim=1)
-        if self.cfg.force_grasp_on_reset:
-            self._grasped[env_ids_t]          = True
-            self._frozen_box_state[env_ids_t] = box_state.clone()
-            self._grasp_ee_offset[env_ids_t]  = 0.0
-            self._prev_dist_box_goal[env_ids_t] = init_dist
-        else:
-            self._grasped[env_ids_t]          = False
-            self._frozen_box_state[env_ids_t] = 0.0
-            self._grasp_ee_offset[env_ids_t]  = 0.0
-            self._prev_dist_box_goal[env_ids_t] = init_dist
-
-        # DEBUG: 첫 번째 env의 실제 좌표 출력
-        if 0 in env_ids_t.tolist():
-            idx = (env_ids_t == 0).nonzero(as_tuple=True)[0][0]
-            box_local  = box_state[idx, :3] - self.scene.env_origins[0]
-            goal_local = self._goal_pos_w[0] - self.scene.env_origins[0]
-            dist_init  = (box_state[idx, :3] - self._goal_pos_w[0]).norm().item()
-            print(f"[DBG] box_local={box_local.tolist()}, goal_local={goal_local.tolist()}, "
-                  f"init_dist={dist_init:.3f}m")
+        self._grasped[env_ids_t]          = False
+        self._frozen_box_state[env_ids_t] = 0.0
+        self._grasp_ee_offset[env_ids_t]  = 0.0
 
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
         ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]

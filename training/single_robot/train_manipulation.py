@@ -19,7 +19,7 @@ parser.add_argument("--resume_ckpt",   type=str,   default=None)
 parser.add_argument("--lr",            type=float, default=1e-3)
 parser.add_argument("--save_interval", type=int,   default=300)
 parser.add_argument("--force_grasp",   action="store_true", default=False,
-                    help="에피소드 시작 시 즉시 grasped — transport 집중 훈련")
+                    help="(레거시) 무시됨 — 정공법 환경은 항상 force_grasp=False")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -57,15 +57,9 @@ def make_runner_cfg(mode: str, max_iter: int) -> RslRlOnPolicyRunnerCfg:
 
 def main():
     env_cfg = WarehouseManipulationEnvCfg()
-    if args.force_grasp:
-        env_cfg.force_grasp_on_reset = True
-        mode    = "manipulation_transport"
-        log_dir = "logs/warehouse_manipulation_transport"
-    else:
-        mode    = "manipulation"
-        log_dir = "logs/warehouse_manipulation"
-
     env_cfg.scene.num_envs = args.num_envs
+    mode    = "manipulation_full"
+    log_dir = "logs/warehouse_manipulation_full"
     env = WarehouseManipulationEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
 
