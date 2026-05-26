@@ -346,7 +346,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             # step 1 box teleport(0.093m) 제거, noisy_box_rel 일관성 확보
             box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + 0.307
             box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + 0.000
-            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.590
+            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.870
         else:
             box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
             box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
@@ -360,7 +360,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             place_goals  = torch.tensor(PLACE_GOALS, device=self.device, dtype=torch.float32)
             self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + place_goals[goal_indices, 0]
             self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + place_goals[goal_indices, 1]
-            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + place_goals[goal_indices, 2]
+            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
         else:
             # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
             theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
