@@ -134,6 +134,7 @@ def main():
     env_cfg.scene.num_envs  = args.num_envs
     env_cfg.enable_background = True   # 창고 배경 + 조명
     env = WarehouseManipulationEnv(env_cfg)
+    env._demo_place_override = True  # goal 근처에서 자동 박스 해제
 
     actor = load_actor(args.ckpt, device)
 
@@ -174,15 +175,6 @@ def main():
         while simulation_app.is_running():
             obs = obs_dict["policy"]
             actions = actor(obs).clone()
-
-            # Place 연출: goal 근처 도달 시 그리퍼 열고 박스 고정 해제 (threshold보다 일찍)
-            ee_pos, _ = env._get_ee_pose()
-            dist_to_goal = (ee_pos + env._grasp_ee_offset - env._goal_pos_w).norm(dim=1)
-            near_goal = dist_to_goal < (env.cfg.place_dist_threshold + 0.05)
-            if near_goal.any():
-                ids = near_goal.nonzero(as_tuple=True)[0]
-                actions[ids, -1] = -1.0          # 그리퍼 열기
-                env._grasped[ids] = False         # 박스 고정 해제
 
             obs_dict, _, terminated, truncated, extras = env.step(actions)
 

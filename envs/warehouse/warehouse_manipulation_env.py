@@ -203,6 +203,17 @@ class WarehouseManipulationEnv(DirectRLEnv):
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
             ee_pos, _ = self._get_ee_pose()
+
+            # demo용: goal 근처에서 박스 해제 (place_override 플래그)
+            if getattr(self, '_demo_place_override', False):
+                dist = (ee_pos + self._grasp_ee_offset - self._goal_pos_w).norm(dim=1)
+                release = self._grasped & (dist < self.cfg.place_dist_threshold + 0.05)
+                if release.any():
+                    self._grasped[release] = False
+                    grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
+                    if not self._grasped.any():
+                        return
+
             frozen = self._frozen_box_state[grasped_ids].clone()
             frozen[:, :3] = ee_pos[grasped_ids] + self._grasp_ee_offset[grasped_ids]
             frozen[:, 7:13] = 0.0
