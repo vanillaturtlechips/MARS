@@ -251,7 +251,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
         goal_rel        = self._goal_pos_w - box_pos_carried  # box→goal 방향벡터 (align reward용)
 
-        dropped = self._grasped & (box_pos[:, 2] < 1.08)
+        dropped = self._grasped & (box_pos[:, 2] < 0.58)
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
 
         not_grasped = (~self._grasped).float()
@@ -301,7 +301,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_pos_carried = ee_pos + self._grasp_ee_offset
         dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
         placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (box_pos[:, 2] < 1.08)
+        dropped = self._grasped & (box_pos[:, 2] < 0.58)
 
         terminated = placed
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
@@ -346,11 +346,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
             # step 1 box teleport(0.093m) 제거, noisy_box_rel 일관성 확보
             box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + 0.307
             box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + 0.000
-            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 1.370
+            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.870
         else:
             box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
             box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
-            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 1.28
+            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         if self.cfg.force_grasp_on_reset:
@@ -360,14 +360,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
             place_goals  = torch.tensor(PLACE_GOALS, device=self.device, dtype=torch.float32)
             self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + place_goals[goal_indices, 0]
             self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + place_goals[goal_indices, 1]
-            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 1.28
+            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
         else:
             # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
             theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
             r     = sample_uniform(0.14, 0.20,  (n,), device=self.device)
             self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
             self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
-            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 1.28
+            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
 
         init_dist = (box_state[:, :3] - self._goal_pos_w[env_ids_t]).norm(dim=1)
         if self.cfg.force_grasp_on_reset:
