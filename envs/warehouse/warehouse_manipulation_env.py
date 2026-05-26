@@ -58,11 +58,11 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:   float = 1.0    # 1/d 형태 (절대 거리 기반)
+    rew_approach:   float = 1.0    # exp(-d*5) 기반
     rew_grasp:      float = 200.0  # one-time grasp bonus
-    rew_transport:  float = 5.0    # 1/d 형태 × grasped
+    rew_transport:  float = 500.0  # progress delta multiplier (per meter)
     rew_place:      float = 500.0  # 최종 거치 성공
-    rew_time:       float = -0.5   # 강한 시간 패널티 → 빨리 움직이도록
+    rew_time:       float = -0.5   # 시간 패널티
 
     grasp_dist_threshold: float = 0.09   # 물리 충돌 고려 — 0.04는 너무 엄격
     place_dist_threshold: float = 0.12
@@ -254,7 +254,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # [3단계] Transport: progress delta — 홀딩 시 보상 0, 전진 시에만 지급
         progress_delta = self._prev_dist_box_goal - dist_box_goal
-        rew_transport = torch.clamp(progress_delta, min=-0.1, max=0.1) * 150.0 * grasped_f
+        rew_transport = torch.clamp(progress_delta, min=-0.1, max=0.1) * self.cfg.rew_transport * grasped_f
         self._prev_dist_box_goal = dist_box_goal.detach().clone()
 
         # [4단계] Place
