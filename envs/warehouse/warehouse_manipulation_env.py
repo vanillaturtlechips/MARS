@@ -70,7 +70,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_approach:   float =  0.5    # -dist_ee_box * not_grasped
     rew_grasp:      float = 30.0   # one-time grasp bonus
     rew_transport:  float =  300.0  # Teacher 검증값 — 1000은 VF 분산 과대
-    rew_align:      float =  0.3   # EE 실속도 방향 × goal_dir cosine (grasped gate) — 골디락스 검증값
+    rew_align:      float =  0.0   # 비활성화: 테스트
     rew_goal_dist:  float =  2.0   # grasped_f gate → 잡은 동안만 절대거리 패널티
     rew_place:      float = 800.0  # Teacher 훈련값 복원
     rew_drop:       float =  0.0   # 비활성화: 매 스텝 페널티 → 보상 분산 폭발
