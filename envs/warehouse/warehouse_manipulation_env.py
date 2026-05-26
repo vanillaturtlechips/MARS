@@ -58,16 +58,20 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:   float = 2.0    # 1/(1+d²) 형태
-    rew_grasp:      float = 50.0   # one-time grasp bonus
-    rew_transport:  float = 10.0   # 1/(1+d²) × grasped
+    rew_approach:   float = 1.0    # 1/d 형태 (절대 거리 기반)
+    rew_grasp:      float = 200.0  # one-time grasp bonus
+    rew_transport:  float = 5.0    # 1/d 형태 × grasped
     rew_place:      float = 500.0  # 최종 거치 성공
-    rew_time:       float = -0.02
+    rew_time:       float = -0.5   # 강한 시간 패널티 → 빨리 움직이도록
 
-    grasp_dist_threshold: float = 0.06   # 6cm — 실제 그리퍼 패드 거리
+    grasp_dist_threshold: float = 0.15
     place_dist_threshold: float = 0.12
 
-    force_grasp_on_reset: bool = False   # 정공법: False
+    # 커리큘럼: 박스 spawn 거리 (EE 기준)
+    # 훈련 스크립트에서 단계별로 올림
+    box_spawn_dist: float = 0.05   # 시작: EE 바로 앞 5cm
+
+    force_grasp_on_reset: bool = False
     enable_background:    bool = False
 
 
@@ -89,6 +93,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions            = torch.zeros(n, self.cfg.action_space, device=d)
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
+        self._prev_dist_ee_box   = torch.full((n,), 999.0, device=d)
+        self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
 
         self._stat_placed   = 0
         self._stat_episodes = 0
@@ -219,10 +225,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         dist_ee_box = (ee_pos - box_pos).norm(dim=1)
 
-        # grasp 감지: 그리퍼가 충분히 닫혀 있고 EE가 박스에 가까울 때
-        gripper_w = self.robot.data.joint_pos[:, 7] + self.robot.data.joint_pos[:, 8]
-        gripper_closed = gripper_w < 0.03  # 3cm 미만 = 닫힘
-        newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold) & gripper_closed
+        # grasp 감지: EE가 박스에 가까울 때 (그리퍼 조건 제거 — 초기 탐색용)
+        newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
         self._grasped |= newly_grasped
         if newly_grasped.any():
             new_ids = newly_grasped.nonzero(as_tuple=True)[0]
@@ -239,14 +243,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
         not_grasped = (~self._grasped).float()
         grasped_f   = self._grasped.float()
 
-        # [1단계] Approach: 잡기 전에만
-        rew_approach  = self.cfg.rew_approach * (1.0 / (1.0 + dist_ee_box ** 2)) * not_grasped
+        # [1단계] Approach: 1/d — 가까울수록 보상 급증, 가만히 있으면 고정값 (시간패널티가 압도)
+        rew_approach  = self.cfg.rew_approach * (1.0 / dist_ee_box.clamp(min=0.01)) * not_grasped
 
         # [2단계] Grasp bonus
         rew_grasp     = self.cfg.rew_grasp * newly_grasped.float()
 
         # [3단계] Transport: 잡은 후에만
-        rew_transport = self.cfg.rew_transport * (1.0 / (1.0 + dist_box_goal ** 2)) * grasped_f
+        rew_transport = self.cfg.rew_transport * (1.0 / dist_box_goal.clamp(min=0.01)) * grasped_f
 
         # [4단계] Place
         placed        = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
@@ -300,11 +304,16 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         self._box_mass[env_ids_t] = sample_uniform(0.3, 2.0, (n,), device=self.device)
 
-        # 박스: 테이블 위 랜덤 위치
+        # 박스: EE 앞 box_spawn_dist 거리에 소환 (커리큘럼)
+        ee_pos_reset, _ = self._get_ee_pose()
+        ee_pos_n = ee_pos_reset[env_ids_t]
+
+        theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
+        d     = self.cfg.box_spawn_dist
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.65, (n,), device=self.device)
-        box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.20, 0.20, (n,), device=self.device)
-        box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.82
+        box_state[:, 0] = ee_pos_n[:, 0] + d * torch.cos(theta)
+        box_state[:, 1] = ee_pos_n[:, 1] + d * torch.sin(theta)
+        box_state[:, 2] = ee_pos_n[:, 2]
         box_state[:, 7:13] = 0.0
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
@@ -315,9 +324,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
         self._goal_pos_w[env_ids_t, 2] = box_state[:, 2]
 
-        self._grasped[env_ids_t]          = False
-        self._frozen_box_state[env_ids_t] = 0.0
-        self._grasp_ee_offset[env_ids_t]  = 0.0
+        self._grasped[env_ids_t]            = False
+        self._frozen_box_state[env_ids_t]   = 0.0
+        self._grasp_ee_offset[env_ids_t]    = 0.0
+        self._prev_dist_ee_box[env_ids_t]   = 999.0
+        self._prev_dist_box_goal[env_ids_t] = (box_state[:, :3] - self._goal_pos_w[env_ids_t]).norm(dim=1)
 
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
         ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]
