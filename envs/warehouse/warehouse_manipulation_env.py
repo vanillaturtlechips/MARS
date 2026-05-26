@@ -304,6 +304,16 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         self._box_mass[env_ids_t] = sample_uniform(0.3, 2.0, (n,), device=self.device)
 
+        # 커리큘럼: 총 스텝 수에 따라 box_spawn_dist 자동 증가
+        # 128 steps × 4096 envs × 500 iter = 262M steps
+        total = self.common_step_counter
+        if total < 262_000_000:
+            self.cfg.box_spawn_dist = 0.05
+        elif total < 786_000_000:
+            self.cfg.box_spawn_dist = 0.20
+        else:
+            self.cfg.box_spawn_dist = 0.45
+
         # 박스: EE 앞 box_spawn_dist 거리에 소환 (커리큘럼)
         ee_pos_reset, _ = self._get_ee_pose()
         ee_pos_n = ee_pos_reset[env_ids_t]

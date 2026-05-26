@@ -40,6 +40,7 @@ from envs.warehouse.warehouse_manipulation_env import (
 )
 
 # 커리큘럼 단계: (시작 iter, box_spawn_dist)
+# 커리큘럼 단계: (시작 iter, box_spawn_dist)
 CURRICULUM = [
     (0,    0.05),   # 1단계: EE 바로 앞 5cm  → grasp만 학습
     (500,  0.20),   # 2단계: 20cm            → approach+grasp
@@ -80,19 +81,9 @@ def main():
         runner.load(args.resume_ckpt)
 
     print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 3단계\n")
+    print(f"커리큘럼: {CURRICULUM}\n")
 
-    cur_stage = 0
-    for it in range(args.max_iter):
-        # 커리큘럼 단계 전환
-        for stage_idx, (start_iter, dist) in enumerate(CURRICULUM):
-            if it >= start_iter:
-                cur_stage = stage_idx
-        new_dist = CURRICULUM[cur_stage][1]
-        if env.cfg.box_spawn_dist != new_dist:
-            env.cfg.box_spawn_dist = new_dist
-            print(f"\n[Curriculum] iter {it}: box_spawn_dist → {new_dist}m\n")
-
-        runner.learn(num_learning_iterations=1, init_at_random_ep_len=False)
+    runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
 
     env_wrapped.close()
 
