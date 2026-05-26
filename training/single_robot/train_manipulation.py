@@ -1,8 +1,8 @@
 """Phase 2 — 커리큘럼 Pick & Place 훈련.
 
 3단계:
-  1단계 (0~500 iter):   box_spawn_dist=0.05  → grasp 학습
-  2단계 (500~1500 iter): box_spawn_dist=0.20  → approach+grasp 학습
+  1단계 (0~500 iter):    box_spawn_dist=0.15  → approach+grasp 학습
+  2단계 (500~1500 iter): box_spawn_dist=0.20  → approach+grasp 심화
   3단계 (1500~3000 iter): box_spawn_dist=0.45 → 풀 pick & place
 
 실행:
@@ -40,12 +40,22 @@ from envs.warehouse.warehouse_manipulation_env import (
 )
 
 # 커리큘럼 단계: (시작 iter, box_spawn_dist)
-# 커리큘럼 단계: (시작 iter, box_spawn_dist)
 CURRICULUM = [
     (0,    0.15),   # 1단계: 15cm  → approach+grasp 학습
     (500,  0.20),   # 2단계: 20cm  → approach+grasp 심화
     (1500, 0.45),   # 3단계: 45cm  → 풀 pick & place
 ]
+
+
+def _apply_curriculum(env: WarehouseManipulationEnv, iteration: int) -> None:
+    """iter 기준으로 box_spawn_dist를 단계적으로 올림."""
+    dist = CURRICULUM[0][1]
+    for start_iter, spawn_dist in CURRICULUM:
+        if iteration >= start_iter:
+            dist = spawn_dist
+    if env.cfg.box_spawn_dist != dist:
+        print(f"[Curriculum] iter={iteration}: box_spawn_dist {env.cfg.box_spawn_dist:.2f} → {dist:.2f}")
+        env.cfg.box_spawn_dist = dist
 
 
 def main():
@@ -83,7 +93,11 @@ def main():
     print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 3단계\n")
     print(f"커리큘럼: {CURRICULUM}\n")
 
-    runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
+    # learn(1) 반복으로 매 iter마다 커리큘럼 적용
+    # rsl_rl OnPolicyRunner.learn()은 current_learning_iteration을 누적하므로 안전
+    for iteration in range(args.max_iter):
+        _apply_curriculum(env, iteration)
+        runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
 
     env_wrapped.close()
 

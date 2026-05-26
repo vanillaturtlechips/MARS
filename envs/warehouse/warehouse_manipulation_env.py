@@ -40,7 +40,7 @@ OBS_DIM = 31  # +1 for is_grasped
 @configclass
 class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 20.0
+    episode_length_s = 10.0
     action_space = 4
     observation_space = OBS_DIM
     state_space = 0
@@ -98,6 +98,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         self._stat_placed   = 0
         self._stat_episodes = 0
+        self._stat_window   = 500  # 최근 N 에피소드 기준 place_rate 계산
 
     def _setup_scene(self):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -282,6 +283,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         done = placed | timed_out
         self._stat_placed   += placed.sum().item()
         self._stat_episodes += done.sum().item()
+        # rolling window: 500 에피소드마다 리셋
+        if self._stat_episodes >= self._stat_window:
+            self._stat_placed   = 0
+            self._stat_episodes = 0
         if self._stat_episodes > 0:
             self.extras.setdefault("log", {})["place_rate"] = (
                 self._stat_placed / self._stat_episodes * 100
@@ -309,15 +314,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         self._box_mass[env_ids_t] = sample_uniform(0.3, 2.0, (n,), device=self.device)
 
-        # 커리큘럼: 총 스텝 수에 따라 box_spawn_dist 자동 증가
-        # 128 steps × 4096 envs × 500 iter = 262M steps
-        total = self.common_step_counter
-        if total < 262_000_000:
-            self.cfg.box_spawn_dist = 0.15
-        elif total < 786_000_000:
-            self.cfg.box_spawn_dist = 0.20
-        else:
-            self.cfg.box_spawn_dist = 0.45
+        # 커리큘럼: 훈련 스크립트(train_manipulation.py)에서 box_spawn_dist를 직접 설정
 
         # 박스: EE 앞 box_spawn_dist 거리에 소환 (커리큘럼)
         ee_pos_reset, _ = self._get_ee_pose()
