@@ -192,6 +192,18 @@ class WarehouseManipulationEnv(DirectRLEnv):
         delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
         delta_q = delta_q.clamp(-0.05, 0.05)  # 관절당 최대 0.05rad/step
 
+        # [DBG] EE 이동량 진단 (env 0만)
+        if not hasattr(self, '_dbg_ee_prev'):
+            self._dbg_ee_prev = None
+            self._dbg_step = 0
+        ee_now, _ = self._get_ee_pose()
+        if self._dbg_ee_prev is not None and self._dbg_step % 100 == 0:
+            ee_moved = (ee_now[0] - self._dbg_ee_prev[0]).norm().item()
+            dq_mag = delta_q[0].abs().mean().item()
+            print(f"[DBG_ACT] step={self._dbg_step} ee_moved={ee_moved:.5f}m dq_mean={dq_mag:.5f}rad action={self._actions[0,:3].tolist()}")
+        self._dbg_ee_prev = ee_now.clone()
+        self._dbg_step += 1
+
         joint_target = self.robot.data.joint_pos[:, :7] + delta_q
         self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
 
