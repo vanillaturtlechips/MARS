@@ -354,12 +354,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         if self.cfg.force_grasp_on_reset:
-            # PLACE_GOALS: 고정 4개 위치 중 에피소드마다 랜덤 선택 (local frame)
-            # Teacher 100% 달성 조건 그대로 → 랜덤 policy 성공률 ≈ 0% → advantage 차이 극명
-            goal_indices = torch.randint(0, len(PLACE_GOALS), (n,), device=self.device)
-            place_goals  = torch.tensor(PLACE_GOALS, device=self.device, dtype=torch.float32)
-            self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + place_goals[goal_indices, 0]
-            self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + place_goals[goal_indices, 1]
+            # 초반 커리큘럼: 탐색 노이즈로 즉시 도달 가능한 5~8cm 반경
+            theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
+            r     = sample_uniform(0.05, 0.08,  (n,), device=self.device)
+            self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
+            self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
             self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
         else:
             # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
