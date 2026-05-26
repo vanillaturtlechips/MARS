@@ -136,7 +136,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
                 collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5, 0.0, 0.50)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.6, 0.0, 0.50)),
         )
         self.box = RigidObject(box_cfg)
 
@@ -148,7 +148,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
         )
         table_spawn.func("/World/envs/env_0/Table", table_spawn,
-                         translation=(1.5, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
+                         translation=(1.0, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
