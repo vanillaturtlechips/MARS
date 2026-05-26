@@ -185,30 +185,20 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # DLS IK: Δq = J^T (J J^T + λI)^{-1} Δx
         jac = self.robot.root_physx_view.get_jacobians()
         J   = jac[:, self._jac_body_idx, :3, :7]
-        lam = 0.01  # damping 낮춰서 EE 실제 이동량 확보
+        lam = 0.05
         JT      = J.transpose(-2, -1)
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
         delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1)
-        delta_q = delta_q.clamp(-0.05, 0.05)  # 관절당 최대 0.05rad/step
+        delta_q = delta_q.clamp(-0.1, 0.1)
 
-        # [DBG] EE 이동량 진단 (env 0만)
-        if not hasattr(self, '_dbg_ee_prev'):
-            self._dbg_ee_prev = None
-            self._dbg_step = 0
-        ee_now, _ = self._get_ee_pose()
-        if self._dbg_ee_prev is not None and self._dbg_step % 100 == 0:
-            ee_moved = (ee_now[0] - self._dbg_ee_prev[0]).norm().item()
-            dq_mag = delta_q[0].abs().mean().item()
-            print(f"[DBG_ACT] step={self._dbg_step} ee_moved={ee_moved:.5f}m dq_mean={dq_mag:.5f}rad action={self._actions[0,:3].tolist()}")
-        self._dbg_ee_prev = ee_now.clone()
-        self._dbg_step += 1
-
-        joint_target = self.robot.data.joint_pos[:, :7] + delta_q
-        self.robot.set_joint_position_target(joint_target, joint_ids=list(range(7)))
-
+        # PD 컨트롤러 지연 없이 즉시 반영: write_joint_state_to_sim
+        new_q = (self.robot.data.joint_pos[:, :7] + delta_q).clamp(-2.8, 2.8)
+        full_q = self.robot.data.joint_pos.clone()
+        full_q[:, :7] = new_q
         gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
-        self.robot.set_joint_position_target(gripper_pos.expand(-1, 2), joint_ids=[7, 8])
+        full_q[:, 7:9] = gripper_pos.expand(-1, 2)
+        self.robot.write_joint_state_to_sim(full_q, self.robot.data.joint_vel)
 
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
