@@ -341,8 +341,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state = self.box.data.default_root_state[env_ids_t].clone()
 
         if self.cfg.force_grasp_on_reset:
-            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.50, (n,), device=self.device)
-            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
+            # 박스를 EE 홈 포지션(0.307)에 정확히 맞춰 물리 견인 제거
+            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + 0.307
+            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + 0.0
             box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.870
         else:
             box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
@@ -351,12 +352,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         if self.cfg.force_grasp_on_reset:
-            # 초반 커리큘럼: 탐색 노이즈로 즉시 도달 가능한 5~10cm 반경
-            theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-            r     = sample_uniform(0.05, 0.10,  (n,), device=self.device)
-            self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
-            self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
-            self._goal_pos_w[env_ids_t, 2] = box_state[:, 2]  # 박스와 동일 높이
+            # goal을 EE 홈(0.307)에서 앞쪽 5~10cm로 배치 → 견인 후에도 즉시 도달 가능
+            self._goal_pos_w[env_ids_t, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.35, 0.40, (n,), device=self.device)
+            self._goal_pos_w[env_ids_t, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.05, 0.05, (n,), device=self.device)
+            self._goal_pos_w[env_ids_t, 2] = self.scene.env_origins[env_ids_t, 2] + 0.870
         else:
             # Curriculum: goal을 박스 반경 0.14~0.20m 내 spawn
             theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
