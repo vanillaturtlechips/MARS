@@ -148,7 +148,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
         )
         table_spawn.func("/World/envs/env_0/Table", table_spawn,
-                         translation=(0.65, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
+                         translation=(1.0, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
