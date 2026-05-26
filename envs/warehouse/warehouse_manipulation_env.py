@@ -146,9 +146,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         table_spawn = UsdFileCfg(
             usd_path=f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
         )
         table_spawn.func("/World/envs/env_0/Table", table_spawn,
-                         translation=(1.0, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
+                         translation=(0.85, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0))
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
@@ -346,9 +347,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
             box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + 0.000
             box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.590
         else:
-            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.85, 1.05, (n,), device=self.device)
-            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.1, 0.1, (n,), device=self.device)
-            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.78
+            box_state[:, 0] = self.scene.env_origins[env_ids_t, 0] + sample_uniform(0.45, 0.55, (n,), device=self.device)
+            box_state[:, 1] = self.scene.env_origins[env_ids_t, 1] + sample_uniform(-0.15, 0.15, (n,), device=self.device)
+            box_state[:, 2] = self.scene.env_origins[env_ids_t, 2] + 0.50
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
         if self.cfg.force_grasp_on_reset:
