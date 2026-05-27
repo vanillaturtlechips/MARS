@@ -58,13 +58,13 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:   float = 1.0    # exp(-d*5) 기반
-    rew_grasp:      float = 200.0  # one-time grasp bonus
-    rew_transport:  float = 500.0  # progress delta multiplier (per meter)
-    rew_place:      float = 500.0  # 최종 거치 성공
-    rew_time:       float = -0.5   # 시간 패널티
+    rew_approach:   float = 2.0    # exp(-d*5) 기반, not_grasped 시
+    rew_grasp:      float = 50.0   # one-time grasp bonus (축소: 200→50)
+    rew_transport:  float = 3.0    # exp(-dist_box_goal*3) 기반, grasped 시
+    rew_place:      float = 200.0  # 최종 거치 성공 (축소: 500→200)
+    rew_time:       float = -0.1   # 시간 패널티 (완화: -0.5→-0.1)
 
-    grasp_dist_threshold: float = 0.09   # 물리 충돌 고려 — 0.04는 너무 엄격
+    grasp_dist_threshold: float = 0.09
     place_dist_threshold: float = 0.12
 
     # 커리큘럼: 박스 spawn 거리 (EE 기준)
@@ -247,26 +247,27 @@ class WarehouseManipulationEnv(DirectRLEnv):
         not_grasped = (~self._grasped).float()
         grasped_f   = self._grasped.float()
 
-        # [1단계] Approach: 지수 감쇠 — 1/d보다 gradient 안정적
+        # [1단계] Approach: exp shaping — not_grasped 시에만
         rew_approach = self.cfg.rew_approach * torch.exp(-dist_ee_box * 5.0) * not_grasped
 
-        # [2단계] Grasp bonus
+        # [2단계] Grasp bonus (one-time)
         rew_grasp = self.cfg.rew_grasp * newly_grasped.float()
 
-        # [3단계] Transport: progress delta — 홀딩 시 보상 0, 전진 시에만 지급
-        progress_delta = self._prev_dist_box_goal - dist_box_goal
-        rew_transport = torch.clamp(progress_delta, min=-0.2, max=0.2) * self.cfg.rew_transport * grasped_f
-        self._prev_dist_box_goal = dist_box_goal.detach().clone()
+        # [3단계] Transport: exp shaping — grasped 시 매 스텝 목표 거리에 비례
+        # progress delta 방식은 gradient가 희박해 학습 안 됨 → 거리 기반으로 교체
+        rew_transport = self.cfg.rew_transport * torch.exp(-dist_box_goal * 3.0) * grasped_f
 
         # [4단계] Place
         placed    = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
         rew_place = self.cfg.rew_place * placed.float()
 
         log = self.extras.setdefault("log", {})
-        log["dist_ee_box"]   = dist_ee_box.mean().item()
-        log["grasp_rate"]    = grasped_f.mean().item() * 100.0
-        log["dist_box_goal"] = (dist_box_goal * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
-        log["transport_delta"] = progress_delta[self._grasped].mean().item() if self._grasped.any() else 0.0
+        log["dist_ee_box"]     = dist_ee_box.mean().item()
+        log["grasp_rate"]      = grasped_f.mean().item() * 100.0
+        log["dist_box_goal"]   = (dist_box_goal * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
+        log["transport_delta"] = (self._prev_dist_box_goal - dist_box_goal)[self._grasped].mean().item() if self._grasped.any() else 0.0
+
+        self._prev_dist_box_goal = dist_box_goal.detach().clone()
 
         return rew_approach + rew_grasp + rew_transport + rew_place + self.cfg.rew_time
 
