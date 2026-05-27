@@ -111,13 +111,9 @@ def main():
             runner.alg.policy.std.data.clamp_(0.1, STD_MAX)
         # rsl_rl 내부 카운터가 고정되어 자동 저장이 안 되므로 수동 저장
         if (iteration + 1) % args.save_interval == 0:
+            runner.current_learning_iteration = iteration + 1  # resume 시 start_iter 복원용
             save_path = f"logs/warehouse_manipulation_full/model_{iteration + 1}.pt"
-            _torch.save({
-                "model_state_dict": runner.alg.actor_critic.state_dict(),
-                "optimizer_state_dict": runner.alg.optimizer.state_dict(),
-                "iter": iteration + 1,
-                "infos": None,
-            }, save_path)
+            runner.save(save_path)
             print(f"[Save] iter={iteration + 1} → {save_path}")
 
     env_wrapped.close()
