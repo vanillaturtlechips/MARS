@@ -1,9 +1,11 @@
 """Phase 2 — 커리큘럼 Pick & Place 훈련.
 
-3단계:
+5단계:
   1단계 (0~500 iter):    box_spawn_dist=0.15  → approach+grasp 학습
-  2단계 (500~1500 iter): box_spawn_dist=0.20  → approach+grasp 심화
-  3단계 (1500~3000 iter): box_spawn_dist=0.45 → 풀 pick & place
+  2단계 (500~1000 iter): box_spawn_dist=0.20  → approach+grasp 심화
+  3단계 (1000~1500 iter): box_spawn_dist=0.30 → transport 입문
+  4단계 (1500~2000 iter): box_spawn_dist=0.38 → transport 심화
+  5단계 (2000~3000 iter): box_spawn_dist=0.45 → 풀 pick & place
 
 실행:
   python training/single_robot/train_manipulation.py --headless --num_envs 4096
@@ -43,7 +45,9 @@ from envs.warehouse.warehouse_manipulation_env import (
 CURRICULUM = [
     (0,    0.15),   # 1단계: 15cm  → approach+grasp 학습
     (500,  0.20),   # 2단계: 20cm  → approach+grasp 심화
-    (1500, 0.45),   # 3단계: 45cm  → 풀 pick & place
+    (1000, 0.30),   # 3단계: 30cm  → transport 입문
+    (1500, 0.38),   # 4단계: 38cm  → transport 심화
+    (2000, 0.45),   # 5단계: 45cm  → 풀 pick & place
 ]
 
 

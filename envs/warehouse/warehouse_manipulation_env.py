@@ -255,7 +255,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # [3단계] Transport: progress delta — 홀딩 시 보상 0, 전진 시에만 지급
         progress_delta = self._prev_dist_box_goal - dist_box_goal
-        rew_transport = torch.clamp(progress_delta, min=-0.1, max=0.1) * self.cfg.rew_transport * grasped_f
+        rew_transport = torch.clamp(progress_delta, min=-0.2, max=0.2) * self.cfg.rew_transport * grasped_f
         self._prev_dist_box_goal = dist_box_goal.detach().clone()
 
         # [4단계] Place
