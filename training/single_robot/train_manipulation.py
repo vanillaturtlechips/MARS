@@ -106,6 +106,7 @@ def main():
 
     for iteration in range(start_iter, args.max_iter):
         _apply_curriculum(env, iteration)
+        runner.current_learning_iteration = iteration
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
         with _torch.no_grad():
             runner.alg.policy.std.data.clamp_(0.1, STD_MAX)
