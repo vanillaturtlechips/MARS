@@ -103,7 +103,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
     def _setup_scene(self):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-        franka_cfg.init_state.pos = (0.0, 0.0, 0.80)
+        franka_cfg.init_state.pos = (0.0, 0.0, 0.40)
         self.robot = Articulation(franka_cfg)
 
         def _find_ycb_cracker() -> str:
