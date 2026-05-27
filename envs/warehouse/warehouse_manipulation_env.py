@@ -60,12 +60,12 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     # 보상 가중치
     rew_approach:   float = 2.0    # exp(-d*5) 기반, not_grasped 시
     rew_grasp:      float = 50.0   # one-time grasp bonus (축소: 200→50)
-    rew_transport:  float = 3.0    # exp(-dist_box_goal*3) 기반, grasped 시
+    rew_transport:  float = 10.0   # exp(-dist_box_goal*3) 기반, grasped 시
     rew_place:      float = 200.0  # 최종 거치 성공 (축소: 500→200)
     rew_time:       float = -0.1   # 시간 패널티 (완화: -0.5→-0.1)
 
     grasp_dist_threshold: float = 0.09
-    place_dist_threshold: float = 0.12
+    place_dist_threshold: float = 0.20
 
     # 커리큘럼: 박스 spawn 거리 (EE 기준)
     # 훈련 스크립트에서 단계별로 올림
@@ -327,7 +327,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state = self.box.data.default_root_state[env_ids_t].clone()
         box_state[:, 0] = ee_pos_n[:, 0] + d * torch.cos(theta)
         box_state[:, 1] = ee_pos_n[:, 1] + d * torch.sin(theta)
-        box_state[:, 2] = ee_pos_n[:, 2]
+        box_state[:, 2] = 0.82  # 테이블 표면 고정 (EE z 기준 시 테이블 밖으로 낙하하는 버그)
         box_state[:, 7:13] = 0.0
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
@@ -336,7 +336,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         r     = sample_uniform(0.25, 0.40,  (n,), device=self.device)
         self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
         self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
-        self._goal_pos_w[env_ids_t, 2] = box_state[:, 2]
+        self._goal_pos_w[env_ids_t, 2] = 0.82  # 테이블 위 고정
 
         self._grasped[env_ids_t]            = False
         self._frozen_box_state[env_ids_t]   = 0.0

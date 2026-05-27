@@ -229,6 +229,7 @@ def main():
 
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
+    env_cfg.enable_background = True
     env = EvalManipulationEnv(env_cfg)
 
     print(f"\n[Eval] 에피소드: {args.num_episodes}, 병렬 env: {args.num_envs}\n")
