@@ -94,8 +94,8 @@ def main():
 
     if args.resume_ckpt:
         runner.load(args.resume_ckpt)
-        runner.alg.policy.std.data.fill_(0.3)  # transport 탐색을 위해 std 리셋
-        print("[Resume] action noise std → 0.3 (강제 리셋)")
+        runner.alg.policy.std.data.fill_(0.6)  # transport 탐색을 위해 std 리셋
+        print("[Resume] action noise std → 0.6 (강제 리셋)")
 
     print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 3단계\n")
     print(f"커리큘럼: {CURRICULUM}\n")
