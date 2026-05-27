@@ -102,7 +102,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
     def _setup_scene(self):
         franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-        franka_cfg.init_state.pos = (0.0, 0.0, 1.08)
+        franka_cfg.init_state.pos = (0.0, 0.0, 0.80)
         self.robot = Articulation(franka_cfg)
 
         def _find_ycb_cracker() -> str:
@@ -127,7 +127,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
                 collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.55, 0.0, 1.15)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(0.55, 0.0, 0.82)),
         )
         self.box = RigidObject(box_cfg)
 
@@ -327,7 +327,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state = self.box.data.default_root_state[env_ids_t].clone()
         box_state[:, 0] = ee_pos_n[:, 0] + d * torch.cos(theta)
         box_state[:, 1] = ee_pos_n[:, 1] + d * torch.sin(theta)
-        box_state[:, 2] = 1.15  # 테이블 표면(1.08) 위 고정
+        box_state[:, 2] = 0.82
         box_state[:, 7:13] = 0.0
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
@@ -336,7 +336,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         r     = sample_uniform(0.25, 0.40,  (n,), device=self.device)
         self._goal_pos_w[env_ids_t, 0] = box_state[:, 0] + r * torch.cos(theta)
         self._goal_pos_w[env_ids_t, 1] = box_state[:, 1] + r * torch.sin(theta)
-        self._goal_pos_w[env_ids_t, 2] = 1.15  # 테이블 위 고정
+        self._goal_pos_w[env_ids_t, 2] = 0.82
 
         self._grasped[env_ids_t]            = False
         self._frozen_box_state[env_ids_t]   = 0.0
