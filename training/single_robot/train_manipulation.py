@@ -25,6 +25,7 @@ parser.add_argument("--max_iter",      type=int,   default=3000)
 parser.add_argument("--resume_ckpt",   type=str,   default=None)
 parser.add_argument("--lr",            type=float, default=1e-3)
 parser.add_argument("--save_interval", type=int,   default=300)
+parser.add_argument("--std_max",       type=float, default=0.8)
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -93,17 +94,22 @@ def main():
 
     if args.resume_ckpt:
         runner.load(args.resume_ckpt)
-        runner.alg.policy.std.data.fill_(0.5)  # transport 탐색을 위해 std 리셋
-        print("[Resume] action noise std → 0.5 (강제 리셋)")
+        runner.alg.policy.std.data.fill_(0.3)  # transport 탐색을 위해 std 리셋
+        print("[Resume] action noise std → 0.3 (강제 리셋)")
 
     print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 3단계\n")
     print(f"커리큘럼: {CURRICULUM}\n")
+
+    import torch as _torch
+    STD_MAX = args.std_max
 
     # learn(1) 반복으로 매 iter마다 커리큘럼 적용
     # rsl_rl OnPolicyRunner.learn()은 current_learning_iteration을 누적하므로 안전
     for iteration in range(args.max_iter):
         _apply_curriculum(env, iteration)
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
+        with _torch.no_grad():
+            runner.alg.policy.std.data.clamp_(0.1, STD_MAX)
 
     env_wrapped.close()
 
