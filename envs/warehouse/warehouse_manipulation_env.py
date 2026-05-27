@@ -266,6 +266,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         log["dist_ee_box"]   = dist_ee_box.mean().item()
         log["grasp_rate"]    = grasped_f.mean().item() * 100.0
         log["dist_box_goal"] = (dist_box_goal * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
+        log["transport_delta"] = progress_delta[self._grasped].mean().item() if self._grasped.any() else 0.0
 
         return rew_approach + rew_grasp + rew_transport + rew_place + self.cfg.rew_time
 
