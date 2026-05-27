@@ -328,9 +328,15 @@ class WarehouseManipulationEnv(DirectRLEnv):
         theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
         d     = self.cfg.box_spawn_dist
         box_state = self.box.data.default_root_state[env_ids_t].clone()
-        # 테이블 범위 안으로 클램핑: x [0.55, 1.45], y [-0.30, 0.30]
-        box_state[:, 0] = (ee_pos_n[:, 0] + d * torch.cos(theta)).clamp(0.55, 1.45)
-        box_state[:, 1] = (ee_pos_n[:, 1] + d * torch.sin(theta)).clamp(-0.30, 0.30)
+        # env origin을 기준으로 local 좌표계에서 클램핑 후 world 좌표로 변환
+        # (world = ee_pos_n이므로, local = world - env_origin)
+        env_orig = self.scene.env_origins[env_ids_t]  # (n, 3)
+        local_ee_x = ee_pos_n[:, 0] - env_orig[:, 0]
+        local_ee_y = ee_pos_n[:, 1] - env_orig[:, 1]
+        local_box_x = (local_ee_x + d * torch.cos(theta)).clamp(0.55, 1.45)
+        local_box_y = (local_ee_y + d * torch.sin(theta)).clamp(-0.30, 0.30)
+        box_state[:, 0] = env_orig[:, 0] + local_box_x
+        box_state[:, 1] = env_orig[:, 1] + local_box_y
         box_state[:, 2] = 1.15
         box_state[:, 7:13] = 0.0
         self.box.write_root_state_to_sim(box_state, env_ids_t)
@@ -338,8 +344,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # goal: 박스에서 0.25~0.40m 떨어진 위치, 테이블 범위 안으로 클램핑
         theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
         r     = sample_uniform(0.25, 0.40,  (n,), device=self.device)
-        self._goal_pos_w[env_ids_t, 0] = (box_state[:, 0] + r * torch.cos(theta)).clamp(0.55, 1.45)
-        self._goal_pos_w[env_ids_t, 1] = (box_state[:, 1] + r * torch.sin(theta)).clamp(-0.30, 0.30)
+        local_goal_x = (local_box_x + r * torch.cos(theta)).clamp(0.55, 1.45)
+        local_goal_y = (local_box_y + r * torch.sin(theta)).clamp(-0.30, 0.30)
+        self._goal_pos_w[env_ids_t, 0] = env_orig[:, 0] + local_goal_x
+        self._goal_pos_w[env_ids_t, 1] = env_orig[:, 1] + local_goal_y
         self._goal_pos_w[env_ids_t, 2] = 1.15
 
         self._grasped[env_ids_t]            = False

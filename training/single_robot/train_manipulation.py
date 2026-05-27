@@ -97,15 +97,15 @@ def main():
         runner.alg.policy.std.data.fill_(0.6)  # transport 탐색을 위해 std 리셋
         print("[Resume] action noise std → 0.6 (강제 리셋)")
 
-    print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 3단계\n")
+    start_iter = runner.current_learning_iteration  # resume 시 900, 신규 시 0
+    print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 5단계\n")
     print(f"커리큘럼: {CURRICULUM}\n")
+    print(f"[시작 iter] {start_iter} → {args.max_iter}\n")
 
     import torch as _torch
     STD_MAX = args.std_max
 
-    # learn(1) 반복으로 매 iter마다 커리큘럼 적용
-    # rsl_rl OnPolicyRunner.learn()은 current_learning_iteration을 누적하므로 안전
-    for iteration in range(args.max_iter):
+    for iteration in range(start_iter, args.max_iter):
         _apply_curriculum(env, iteration)
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
         with _torch.no_grad():
