@@ -60,7 +60,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     # 보상 가중치
     rew_approach:   float = 2.0    # exp(-d*5) 기반, not_grasped 시
     rew_grasp:      float = 50.0   # one-time grasp bonus (축소: 200→50)
-    rew_transport:  float = 10.0   # exp(-dist_box_goal*3) 기반, grasped 시
+    rew_transport:  float = 300.0  # delta 기반: (prev_dist - curr_dist) * grasped
     rew_place:      float = 200.0  # 최종 거치 성공 (축소: 500→200)
     rew_time:       float = -0.1   # 시간 패널티 (완화: -0.5→-0.1)
 
@@ -253,9 +253,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # [2단계] Grasp bonus (one-time)
         rew_grasp = self.cfg.rew_grasp * newly_grasped.float()
 
-        # [3단계] Transport: exp shaping — grasped 시 매 스텝 목표 거리에 비례
-        # progress delta 방식은 gradient가 희박해 학습 안 됨 → 거리 기반으로 교체
-        rew_transport = self.cfg.rew_transport * torch.exp(-dist_box_goal * 3.0) * grasped_f
+        # [3단계] Transport: delta 기반 — 박스가 목표에 가까워진 만큼만 보상
+        # 가만히 들고 있으면 0, 가까워지면 +, 멀어지면 -
+        dist_delta    = self._prev_dist_box_goal - dist_box_goal
+        rew_transport = self.cfg.rew_transport * dist_delta * grasped_f
 
         # [4단계] Place
         placed    = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
