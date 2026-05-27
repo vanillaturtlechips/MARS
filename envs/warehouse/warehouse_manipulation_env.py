@@ -58,7 +58,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상 가중치
-    rew_approach:   float = 2.0    # exp(-d*5) 기반, not_grasped 시
+    rew_approach:   float = 0.3    # exp(-d*5) 기반, not_grasped 시 (낮춤: hover local optimum 방지)
     rew_grasp:      float = 50.0   # one-time grasp bonus (축소: 200→50)
     rew_transport:  float = 300.0  # delta 기반: (prev_dist - curr_dist) * grasped
     rew_transport_dense: float = 3.0  # 방향 힌트용 exp(-dist*3) * grasped

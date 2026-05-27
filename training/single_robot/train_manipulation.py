@@ -94,8 +94,7 @@ def main():
 
     if args.resume_ckpt:
         runner.load(args.resume_ckpt)
-        runner.alg.policy.std.data.fill_(0.6)  # transport 탐색을 위해 std 리셋
-        print("[Resume] action noise std → 0.6 (강제 리셋)")
+        print("[Resume] checkpoint loaded (std 유지)")
 
     start_iter = runner.current_learning_iteration  # resume 시 900, 신규 시 0
     print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 5단계\n")
@@ -110,6 +109,11 @@ def main():
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
         with _torch.no_grad():
             runner.alg.policy.std.data.clamp_(0.1, STD_MAX)
+        # rsl_rl 내부 카운터가 고정되어 자동 저장이 안 되므로 수동 저장
+        if (iteration + 1) % args.save_interval == 0:
+            save_path = f"logs/warehouse_manipulation_full/model_{iteration + 1}.pt"
+            runner.save(save_path)
+            print(f"[Save] iter={iteration + 1} → {save_path}")
 
     env_wrapped.close()
 
