@@ -112,7 +112,12 @@ def main():
         # rsl_rl 내부 카운터가 고정되어 자동 저장이 안 되므로 수동 저장
         if (iteration + 1) % args.save_interval == 0:
             save_path = f"logs/warehouse_manipulation_full/model_{iteration + 1}.pt"
-            runner.save(save_path)
+            _torch.save({
+                "model_state_dict": runner.alg.actor_critic.state_dict(),
+                "optimizer_state_dict": runner.alg.optimizer.state_dict(),
+                "iter": iteration + 1,
+                "infos": None,
+            }, save_path)
             print(f"[Save] iter={iteration + 1} → {save_path}")
 
     env_wrapped.close()
