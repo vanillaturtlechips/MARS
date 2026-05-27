@@ -93,6 +93,8 @@ def main():
 
     if args.resume_ckpt:
         runner.load(args.resume_ckpt)
+        runner.alg.actor_critic.std.data.fill_(0.5)  # transport 탐색을 위해 std 리셋
+        print("[Resume] action noise std → 0.5 (강제 리셋)")
 
     print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 3단계\n")
     print(f"커리큘럼: {CURRICULUM}\n")
