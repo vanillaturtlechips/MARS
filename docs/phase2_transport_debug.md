@@ -1,4 +1,74 @@
-# Phase 2 Transport 학습 불능 — 진단 및 수정 기록 (2026-05-21 최종)
+# Phase 2 Transport 학습 불능 — 진단 및 수정 기록
+
+---
+
+## 2026-05-27 세션 — 테이블 Pick & Place 재설계
+
+### 근본 원인 발견: Workspace 문제
+
+floor 설계(box z=0.82, robot z=0.80)에서 transport가 전혀 학습되지 않은 진짜 이유:
+
+- Franka Panda 베이스가 z=0.80에 장착되면 EE home 위치 ≈ z=1.29m
+- 박스가 z=0.82 → EE가 0.47m 아래로 내려가야 파지 가능
+- 이 위치는 Franka 팔 **최하단 workspace 경계** → 파지 후 수평 이동 물리적 불가
+- 추가로 테이블(top=1.0829m) geometry가 수평 이동을 막고 있었음
+
+### 최종 환경 설정 (2026-05-27 기준)
+
+| 파라미터 | 이전 (잘못) | 수정 후 |
+|---------|------------|---------|
+| robot_base_z | 0.80 (또는 0.40) | **0.80** (테이블 옆 포스트) |
+| box_z (spawn) | 0.82 | **1.15** (packing table 위) |
+| goal_z | 0.82 | **1.15** |
+| box/goal 스폰 범위 | 무제한 (테이블 낙하 발생) | **x:[0.55,1.45], y:[-0.30,0.30] 클램핑** |
+| box init_state | (0.55, 0.0, 0.82) | (0.75, 0.0, 1.15) |
+
+테이블 center: (1.0, 0.0, 0.0) env frame, table top z=1.0829m
+
+### 오늘 시도한 reward 변경 이력
+
+| 시도 | reward 방식 | 결과 |
+|------|------------|------|
+| 1 | `10.0 * exp(-dist*3) * grasped` (원래) | standing still도 보상 → local optimum |
+| 2 | `300.0 * (prev_dist - curr_dist) * grasped` (delta) | critic loss 1619→471, transport 여전히 안됨 |
+| 3 | `300.0*delta + 3.0*exp(-dist*3)` (hybrid, 현재) | critic loss 42~63, 안정적 |
+
+### train_manipulation.py 현재 설정
+
+- `entropy_coef = 0.005`
+- std clamp: [0.1, 0.8] per iter (`--std_max` 인자로 조정 가능)
+- resume 시 std = 0.6 (탐색 강화)
+
+### 체크포인트
+
+- `logs/warehouse_manipulation_full/model_900.pt` — 매 iter 덮어씀 (항상 최신)
+- 현재 성능: grasp_rate ~63%, place_rate ~10%, transport_delta ≈ 0
+
+### 다음 할 일
+
+1. GUI로 박스/로봇이 테이블 위에 제대로 있는지 시각 확인
+2. headless 2048 envs로 훈련 재시작
+3. transport_delta 양수 전환 모니터링
+4. place_rate 20%+ 안정 시 Phase 2 완료
+
+```bash
+# Paperspace에서
+cd /workspace/MARS && git pull origin main
+
+# GUI 확인용
+python training/single_robot/train_manipulation.py \
+    --num_envs 64 \
+    --resume_ckpt logs/warehouse_manipulation_full/model_900.pt
+
+# 본 훈련
+python training/single_robot/train_manipulation.py \
+    --headless --num_envs 2048 \
+    --resume_ckpt logs/warehouse_manipulation_full/model_900.pt
+```
+
+---
+
+## 2026-05-21 세션 — 원래 기록 (최종)
 
 ## 최종 환경 설정 (현재 코드 기준)
 
