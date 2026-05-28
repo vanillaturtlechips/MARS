@@ -44,7 +44,7 @@ from envs.warehouse.warehouse_manipulation_env import (
 
 # 커리큘럼 단계: (시작 iter, box_spawn_dist)
 CURRICULUM = [
-    (0,    0.15),   # 1단계: 15cm  → approach+grasp 학습
+    (0,    0.20),   # 1단계: 20cm  → approach+grasp 학습
     (500,  0.20),   # 2단계: 20cm  → approach+grasp 심화
     (1000, 0.30),   # 3단계: 30cm  → transport 입문
     (1500, 0.38),   # 4단계: 38cm  → transport 심화
