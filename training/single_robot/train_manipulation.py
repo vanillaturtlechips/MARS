@@ -42,20 +42,20 @@ from envs.warehouse.warehouse_manipulation_env import (
     OBS_DIM,
 )
 
-# grasp_rate 기반 커리큘럼: (box_spawn_dist, 진급 grasp_rate 기준%, 연속 확인 iter 수)
+# grasp_rate 이동평균 기반 커리큘럼: (box_spawn_dist, 진급 grasp_rate 기준%, 이동평균 window)
 CURRICULUM_STAGES = [
-    (0.20, 20.0, 30),    # 1단계: grasp_rate 20% 이상 30iter 유지 시 진급
-    (0.30, 25.0, 30),    # 2단계: 25% 이상 30iter
-    (0.38, 30.0, 30),    # 3단계: 30% 이상 30iter
+    (0.20, 20.0, 20),    # 1단계: 최근 20iter 평균 grasp_rate 20% 이상 시 진급
+    (0.30, 25.0, 20),    # 2단계: 25% 이상
+    (0.38, 30.0, 20),    # 3단계: 30% 이상
     (0.45, None,  None), # 4단계: 최종 (진급 없음)
 ]
 
 
 class CurriculumManager:
     def __init__(self, env: WarehouseManipulationEnv) -> None:
-        self.env   = env
-        self.stage = 0
-        self.consec = 0
+        self.env    = env
+        self.stage  = 0
+        self._history: list[float] = []
         self._apply()
 
     def _apply(self) -> None:
@@ -66,21 +66,23 @@ class CurriculumManager:
             self.env.cfg.box_spawn_dist = dist
 
     def step(self, grasp_rate: float) -> None:
-        """매 iter 호출. grasp_rate(%) 기준으로 다음 단계 진급 여부 판단."""
+        """매 iter 호출. 최근 window iter 이동평균으로 진급 여부 판단."""
         if self.stage >= len(CURRICULUM_STAGES) - 1:
             return
-        _, threshold, confirm = CURRICULUM_STAGES[self.stage]
-        if grasp_rate >= threshold:
-            self.consec += 1
-        else:
-            self.consec = 0
-        if self.consec >= confirm:
+        _, threshold, window = CURRICULUM_STAGES[self.stage]
+        self._history.append(grasp_rate)
+        if len(self._history) > window:
+            self._history.pop(0)
+        if len(self._history) < window:
+            return  # 아직 window 미달
+        avg = sum(self._history) / window
+        if avg >= threshold:
             old_dist = CURRICULUM_STAGES[self.stage][0]
-            self.stage  += 1
-            self.consec  = 0
+            self.stage    += 1
+            self._history  = []
             new_dist = CURRICULUM_STAGES[self.stage][0]
-            print(f"[Curriculum] 진급! grasp_rate={grasp_rate:.1f}% ≥ {threshold:.0f}% "
-                  f"({confirm}iter 유지) → dist {old_dist:.2f} → {new_dist:.2f}m")
+            print(f"[Curriculum] 진급! 이동평균 grasp_rate={avg:.1f}% ≥ {threshold:.0f}% "
+                  f"(최근 {window}iter) → dist {old_dist:.2f} → {new_dist:.2f}m")
             self._apply()
 
 
