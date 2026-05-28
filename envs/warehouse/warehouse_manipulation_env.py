@@ -255,7 +255,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         rew_grasp = self.cfg.rew_grasp * newly_grasped.float()
 
         # [3단계] Transport: dense(방향 힌트) + delta(이동 보상) 하이브리드
-        dist_delta    = self._prev_dist_box_goal - dist_box_goal
+        dist_delta    = (self._prev_dist_box_goal - dist_box_goal).clamp(min=0)  # 단방향: 멀어져도 페널티 없음
         rew_transport = (self.cfg.rew_transport * dist_delta
                          + self.cfg.rew_transport_dense * torch.exp(-dist_box_goal * 3.0)
                          ) * grasped_f

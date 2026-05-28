@@ -103,12 +103,33 @@ def main():
 
     import torch as _torch
     STD_MAX = args.std_max
+    # transport 학습 감지 후 std 낮춤
+    TRANSPORT_THRESHOLD = 0.002   # transport_delta 이 값 초과 시 std 낮춤
+    TRANSPORT_CONFIRM   = 30      # 연속 N iter 이상 유지돼야 전환
+    STD_MAX_TRANSPORT   = 0.5     # transport 학습 후 std 상한
+    _transport_consec   = 0       # 연속 카운터
+    _std_lowered        = False   # 한 번만 낮춤
 
     for iteration in range(start_iter, args.max_iter):
         _apply_curriculum(env, iteration)
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
         with _torch.no_grad():
             runner.alg.policy.std.data.clamp_(0.1, STD_MAX)
+
+        # transport_delta 모니터링 → std 자동 낮춤
+        if not _std_lowered:
+            log = env.extras.get("log", {})
+            td = log.get("transport_delta", 0.0)
+            if td > TRANSPORT_THRESHOLD:
+                _transport_consec += 1
+            else:
+                _transport_consec = 0
+            if _transport_consec >= TRANSPORT_CONFIRM:
+                STD_MAX = STD_MAX_TRANSPORT
+                _std_lowered = True
+                print(f"[Auto-STD] transport_delta {td:.4f} > {TRANSPORT_THRESHOLD} "
+                      f"({TRANSPORT_CONFIRM}iter 유지) → std_max {args.std_max} → {STD_MAX}")
+
         # rsl_rl 내부 카운터가 고정되어 자동 저장이 안 되므로 수동 저장
         if (iteration + 1) % args.save_interval == 0:
             runner.current_learning_iteration = iteration + 1  # resume 시 start_iter 복원용
