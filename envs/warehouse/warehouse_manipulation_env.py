@@ -66,7 +66,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_time:       float = -0.1   # 시간 패널티 (완화: -0.5→-0.1)
 
     grasp_dist_threshold: float = 0.15
-    place_dist_threshold: float = 0.20
+    place_dist_threshold: float = 0.10
 
     # 커리큘럼: 박스 spawn 거리 (EE 기준)
     # 훈련 스크립트에서 단계별로 올림
