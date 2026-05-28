@@ -404,6 +404,18 @@ class WarehouseManipulationEnv(DirectRLEnv):
             self._force_grasped_mask[fg_ids] = True
             self._grasp_ee_offset[fg_ids]    = fg_offset
             self._frozen_box_state[fg_ids]   = fg_box_state
+
+            # goal을 force_grasp box 위치 기준으로 재배치 (원래 spawn 기준이면 0.88m로 너무 멀다)
+            env_orig_fg = self.scene.env_origins[fg_ids]
+            local_fg_x  = fg_box_pos[:, 0] - env_orig_fg[:, 0]
+            local_fg_y  = fg_box_pos[:, 1] - env_orig_fg[:, 1]
+            r_fg_goal   = sample_uniform(0.30, 0.55, (half,), device=self.device)
+            th_fg_goal  = sample_uniform(0.0, 6.2832, (half,), device=self.device)
+            local_fg_gx = (local_fg_x + r_fg_goal * torch.cos(th_fg_goal)).clamp(0.55, 1.45)
+            local_fg_gy = (local_fg_y + r_fg_goal * torch.sin(th_fg_goal)).clamp(-0.30, 0.30)
+            self._goal_pos_w[fg_ids, 0] = env_orig_fg[:, 0] + local_fg_gx
+            self._goal_pos_w[fg_ids, 1] = env_orig_fg[:, 1] + local_fg_gy
+            self._goal_pos_w[fg_ids, 2] = 1.15
             self._prev_dist_box_goal[fg_ids] = (fg_box_pos - self._goal_pos_w[fg_ids]).norm(dim=1)
 
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
