@@ -61,12 +61,13 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_approach:   float = 0.3    # exp(-d*5) 기반, not_grasped 시 (낮춤: hover local optimum 방지)
     rew_grasp:      float = 50.0   # one-time grasp bonus (축소: 200→50)
     rew_transport:  float = 300.0  # delta 기반: (prev_dist - curr_dist) * grasped
-    rew_transport_dense: float = 0.15  # 방향 gradient (place_threshold=0.10m이므로 hover 불가 → 안전)
+    rew_transport_dense: float = 0.40  # 방향 gradient 강화 (0.15→0.40): 마지막 구간 gradient 복구
+    rew_near_place: float = 80.0       # one-time: box가 0.22m 이내 첫 진입 시 보너스
     rew_place:      float = 200.0  # 최종 거치 성공 (축소: 500→200)
-    rew_time:       float = -0.2   # 시간 패널티 강화 (-0.1→-0.2): grasp 후 멈춤 방지
+    rew_time:       float = -0.2   # 시간 패널티
 
     grasp_dist_threshold: float = 0.15
-    place_dist_threshold: float = 0.10
+    place_dist_threshold: float = 0.15  # 0.10→0.15m 완화: place 경험 빈도 증가
 
     # 커리큘럼: 박스 spawn 거리 (EE 기준)
     # 훈련 스크립트에서 단계별로 올림
@@ -94,8 +95,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions            = torch.zeros(n, self.cfg.action_space, device=d)
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
-        self._prev_dist_ee_box   = torch.full((n,), 999.0, device=d)
-        self._prev_dist_box_goal = torch.full((n,), 999.0, device=d)
+        self._prev_dist_ee_box    = torch.full((n,), 999.0, device=d)
+        self._prev_dist_box_goal  = torch.full((n,), 999.0, device=d)
+        self._near_place_awarded  = torch.zeros(n, dtype=torch.bool, device=d)
 
         self._stat_placed   = 0
         self._stat_episodes = 0
@@ -260,6 +262,11 @@ class WarehouseManipulationEnv(DirectRLEnv):
                          + self.cfg.rew_transport_dense * torch.exp(-dist_box_goal * 5.0)
                          ) * grasped_f
 
+        # [3.5단계] Near-place one-time bonus: box가 0.22m 이내 첫 진입 시
+        newly_near = self._grasped & (dist_box_goal < 0.22) & (~self._near_place_awarded)
+        self._near_place_awarded |= newly_near
+        rew_near_place = self.cfg.rew_near_place * newly_near.float()
+
         # [4단계] Place
         placed    = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
         rew_place = self.cfg.rew_place * placed.float()
@@ -272,7 +279,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         self._prev_dist_box_goal = dist_box_goal.detach().clone()
 
-        return rew_approach + rew_grasp + rew_transport + rew_place + self.cfg.rew_time
+        return rew_approach + rew_grasp + rew_transport + rew_near_place + rew_place + self.cfg.rew_time
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         ee_pos, _ = self._get_ee_pose()
@@ -351,11 +358,12 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._goal_pos_w[env_ids_t, 1] = env_orig[:, 1] + local_goal_y
         self._goal_pos_w[env_ids_t, 2] = 1.15
 
-        self._grasped[env_ids_t]            = False
-        self._frozen_box_state[env_ids_t]   = 0.0
-        self._grasp_ee_offset[env_ids_t]    = 0.0
-        self._prev_dist_ee_box[env_ids_t]   = 999.0
-        self._prev_dist_box_goal[env_ids_t] = (box_state[:, :3] - self._goal_pos_w[env_ids_t]).norm(dim=1)
+        self._grasped[env_ids_t]             = False
+        self._frozen_box_state[env_ids_t]    = 0.0
+        self._grasp_ee_offset[env_ids_t]     = 0.0
+        self._prev_dist_ee_box[env_ids_t]    = 999.0
+        self._prev_dist_box_goal[env_ids_t]  = (box_state[:, :3] - self._goal_pos_w[env_ids_t]).norm(dim=1)
+        self._near_place_awarded[env_ids_t]  = False
 
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
         ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]

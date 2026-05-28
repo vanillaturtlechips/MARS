@@ -46,7 +46,7 @@ from envs.warehouse.warehouse_manipulation_env import (
 CURRICULUM_STAGES = [
     (0.20, 20.0, 20),    # 1단계: 최근 20iter 평균 grasp_rate 20% 이상 시 진급
     (0.30, 25.0, 20),    # 2단계: 25% 이상
-    (0.38, 30.0, 20),    # 3단계: 30% 이상
+    (0.38, 28.0, 30),    # 3단계: 28% 이상 (딥 흡수용 window 30)
     (0.45, None,  None), # 4단계: 최종 (진급 없음)
 ]
 
