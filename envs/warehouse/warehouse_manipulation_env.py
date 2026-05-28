@@ -61,9 +61,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_approach:   float = 0.3    # exp(-d*5) 기반, not_grasped 시 (낮춤: hover local optimum 방지)
     rew_grasp:      float = 50.0   # one-time grasp bonus (축소: 200→50)
     rew_transport:  float = 300.0  # delta 기반: (prev_dist - curr_dist) * grasped
-    rew_transport_dense: float = 0.0  # 제거: stand-still local optimum 완전 차단
+    rew_transport_dense: float = 0.15  # 방향 gradient (place_threshold=0.10m이므로 hover 불가 → 안전)
     rew_place:      float = 200.0  # 최종 거치 성공 (축소: 500→200)
-    rew_time:       float = -0.1   # 시간 패널티 (완화: -0.5→-0.1)
+    rew_time:       float = -0.2   # 시간 패널티 강화 (-0.1→-0.2): grasp 후 멈춤 방지
 
     grasp_dist_threshold: float = 0.15
     place_dist_threshold: float = 0.10
@@ -255,9 +255,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         rew_grasp = self.cfg.rew_grasp * newly_grasped.float()
 
         # [3단계] Transport: dense(방향 힌트) + delta(이동 보상) 하이브리드
-        dist_delta    = (self._prev_dist_box_goal - dist_box_goal).clamp(min=0)  # 단방향: 멀어져도 페널티 없음
+        dist_delta    = self._prev_dist_box_goal - dist_box_goal  # 양방향: 멀어지면 패널티, 가까워지면 보상
         rew_transport = (self.cfg.rew_transport * dist_delta
-                         + self.cfg.rew_transport_dense * torch.exp(-dist_box_goal * 3.0)
+                         + self.cfg.rew_transport_dense * torch.exp(-dist_box_goal * 5.0)
                          ) * grasped_f
 
         # [4단계] Place

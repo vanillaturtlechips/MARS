@@ -42,31 +42,52 @@ from envs.warehouse.warehouse_manipulation_env import (
     OBS_DIM,
 )
 
-# 커리큘럼 단계: (시작 iter, box_spawn_dist)
-CURRICULUM = [
-    (0,    0.20),   # 1단계: 20cm  → approach+grasp 학습
-    (500,  0.20),   # 2단계: 20cm  → approach+grasp 심화
-    (1000, 0.30),   # 3단계: 30cm  → transport 입문
-    (1500, 0.38),   # 4단계: 38cm  → transport 심화
-    (2000, 0.45),   # 5단계: 45cm  → 풀 pick & place
+# grasp_rate 기반 커리큘럼: (box_spawn_dist, 진급 grasp_rate 기준%, 연속 확인 iter 수)
+CURRICULUM_STAGES = [
+    (0.20, 20.0, 30),    # 1단계: grasp_rate 20% 이상 30iter 유지 시 진급
+    (0.30, 25.0, 30),    # 2단계: 25% 이상 30iter
+    (0.38, 30.0, 30),    # 3단계: 30% 이상 30iter
+    (0.45, None,  None), # 4단계: 최종 (진급 없음)
 ]
 
 
-def _apply_curriculum(env: WarehouseManipulationEnv, iteration: int) -> None:
-    """iter 기준으로 box_spawn_dist를 단계적으로 올림."""
-    dist = CURRICULUM[0][1]
-    for start_iter, spawn_dist in CURRICULUM:
-        if iteration >= start_iter:
-            dist = spawn_dist
-    if env.cfg.box_spawn_dist != dist:
-        print(f"[Curriculum] iter={iteration}: box_spawn_dist {env.cfg.box_spawn_dist:.2f} → {dist:.2f}")
-        env.cfg.box_spawn_dist = dist
+class CurriculumManager:
+    def __init__(self, env: WarehouseManipulationEnv) -> None:
+        self.env   = env
+        self.stage = 0
+        self.consec = 0
+        self._apply()
+
+    def _apply(self) -> None:
+        dist = CURRICULUM_STAGES[self.stage][0]
+        if self.env.cfg.box_spawn_dist != dist:
+            print(f"[Curriculum] Stage {self.stage + 1}/{len(CURRICULUM_STAGES)}: "
+                  f"box_spawn_dist → {dist:.2f}m")
+            self.env.cfg.box_spawn_dist = dist
+
+    def step(self, grasp_rate: float) -> None:
+        """매 iter 호출. grasp_rate(%) 기준으로 다음 단계 진급 여부 판단."""
+        if self.stage >= len(CURRICULUM_STAGES) - 1:
+            return
+        _, threshold, confirm = CURRICULUM_STAGES[self.stage]
+        if grasp_rate >= threshold:
+            self.consec += 1
+        else:
+            self.consec = 0
+        if self.consec >= confirm:
+            old_dist = CURRICULUM_STAGES[self.stage][0]
+            self.stage  += 1
+            self.consec  = 0
+            new_dist = CURRICULUM_STAGES[self.stage][0]
+            print(f"[Curriculum] 진급! grasp_rate={grasp_rate:.1f}% ≥ {threshold:.0f}% "
+                  f"({confirm}iter 유지) → dist {old_dist:.2f} → {new_dist:.2f}m")
+            self._apply()
 
 
 def main():
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
-    env_cfg.box_spawn_dist = CURRICULUM[0][1]
+    env_cfg.box_spawn_dist = CURRICULUM_STAGES[0][0]
     env = WarehouseManipulationEnv(env_cfg)
 
     runner_cfg = RslRlOnPolicyRunnerCfg()
@@ -96,9 +117,11 @@ def main():
         runner.load(args.resume_ckpt)
         print("[Resume] checkpoint loaded (std 유지)")
 
+    curriculum = CurriculumManager(env)
+
     start_iter = runner.current_learning_iteration  # resume 시 900, 신규 시 0
-    print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, curriculum 5단계\n")
-    print(f"커리큘럼: {CURRICULUM}\n")
+    print(f"\n[Phase 2] obs={OBS_DIM}D, {args.num_envs} envs, grasp_rate 기반 커리큘럼\n")
+    print(f"커리큘럼: {CURRICULUM_STAGES}\n")
     print(f"[시작 iter] {start_iter} → {args.max_iter}\n")
 
     import torch as _torch
@@ -111,14 +134,16 @@ def main():
     _std_lowered        = False   # 한 번만 낮춤
 
     for iteration in range(start_iter, args.max_iter):
-        _apply_curriculum(env, iteration)
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
         with _torch.no_grad():
             runner.alg.policy.std.data.clamp_(0.1, STD_MAX)
 
+        log = env.extras.get("log", {})
+        grasp_rate = log.get("grasp_rate", 0.0)
+        curriculum.step(grasp_rate)
+
         # transport_delta 모니터링 → std 자동 낮춤
         if not _std_lowered:
-            log = env.extras.get("log", {})
             td = log.get("transport_delta", 0.0)
             if td > TRANSPORT_THRESHOLD:
                 _transport_consec += 1
