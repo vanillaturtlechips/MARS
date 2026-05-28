@@ -61,7 +61,7 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     rew_approach:   float = 0.3    # exp(-d*5) 기반, not_grasped 시 (낮춤: hover local optimum 방지)
     rew_grasp:      float = 50.0   # one-time grasp bonus (축소: 200→50)
     rew_transport:  float = 300.0  # delta 기반: (prev_dist - curr_dist) * grasped
-    rew_transport_dense: float = 0.5  # 방향 힌트용 exp(-dist*3) * grasped (낮춤: stand-still local optimum 방지)
+    rew_transport_dense: float = 0.0  # 제거: stand-still local optimum 완전 차단
     rew_place:      float = 200.0  # 최종 거치 성공 (축소: 500→200)
     rew_time:       float = -0.1   # 시간 패널티 (완화: -0.5→-0.1)
 
