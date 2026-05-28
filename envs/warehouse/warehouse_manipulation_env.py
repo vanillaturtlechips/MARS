@@ -342,9 +342,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state[:, 7:13] = 0.0
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
-        # goal: 박스에서 0.25~0.40m 떨어진 위치, 테이블 범위 안으로 클램핑
+        # goal: 박스에서 0.45~0.60m 떨어진 위치, 테이블 범위 안으로 클램핑
         theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-        r     = sample_uniform(0.25, 0.40,  (n,), device=self.device)
+        r     = sample_uniform(0.45, 0.60,  (n,), device=self.device)
         local_goal_x = (local_box_x + r * torch.cos(theta)).clamp(0.55, 1.45)
         local_goal_y = (local_box_y + r * torch.sin(theta)).clamp(-0.30, 0.30)
         self._goal_pos_w[env_ids_t, 0] = env_orig[:, 0] + local_goal_x
