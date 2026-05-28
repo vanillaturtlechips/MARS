@@ -70,7 +70,7 @@ class CurriculumManager:
         if self.stage >= len(CURRICULUM_STAGES) - 1:
             return
         _, threshold, window = CURRICULUM_STAGES[self.stage]
-        self._history.append(grasp_rate)
+        self._history.append(float(grasp_rate))
         if len(self._history) > window:
             self._history.pop(0)
         if len(self._history) < window:
