@@ -90,6 +90,7 @@ def main():
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env_cfg.box_spawn_dist = CURRICULUM_STAGES[0][0]
+    env_cfg.force_grasp_on_reset = True   # transport 학습 부트스트랩: 50% 환경 force_grasp
     env = WarehouseManipulationEnv(env_cfg)
 
     runner_cfg = RslRlOnPolicyRunnerCfg()
@@ -141,7 +142,8 @@ def main():
             runner.alg.policy.std.data.clamp_(0.1, STD_MAX)
 
         log = env.extras.get("log", {})
-        grasp_rate = log.get("grasp_rate", 0.0)
+        # force_grasp 제외한 natural_grasp_rate로 커리큘럼 판단
+        grasp_rate = log.get("natural_grasp_rate", log.get("grasp_rate", 0.0))
         curriculum.step(grasp_rate)
 
         # transport_delta 모니터링 → std 자동 낮춤
