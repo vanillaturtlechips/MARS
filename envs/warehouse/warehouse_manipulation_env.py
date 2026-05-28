@@ -265,10 +265,22 @@ class WarehouseManipulationEnv(DirectRLEnv):
         if newly_grasped.any():
             new_ids = newly_grasped.nonzero(as_tuple=True)[0]
             self._frozen_box_state[new_ids] = self.box.data.root_state_w[new_ids].clone()
-            self._grasp_ee_offset[new_ids]  = box_pos[new_ids] - ee_pos[new_ids]
-            # grasp 직후 prev_dist 초기화 — delta 튐 방지
-            box_pos_eff_new = ee_pos[new_ids] + self._grasp_ee_offset[new_ids]
-            self._prev_dist_box_goal[new_ids] = (box_pos_eff_new - self._goal_pos_w[new_ids]).norm(dim=1)
+            # offset=0: box → EE에 snap (force_grasp와 동일한 obs → 학습된 transport 행동 전이)
+            self._grasp_ee_offset[new_ids]  = 0.0
+            # goal 재설정: grasp 시점 EE 기준 0.25~0.45m (force_grasp 분포 일치)
+            n_new        = len(new_ids)
+            env_orig_new = self.scene.env_origins[new_ids]
+            r_new  = sample_uniform(0.25, 0.45, (n_new,), device=self.device)
+            th_new = sample_uniform(0.0, 6.2832, (n_new,), device=self.device)
+            lx_new = (ee_pos[new_ids, 0] - env_orig_new[:, 0] + r_new * torch.cos(th_new)).clamp(0.55, 1.45)
+            ly_new = (ee_pos[new_ids, 1] - env_orig_new[:, 1] + r_new * torch.sin(th_new)).clamp(-0.30, 0.30)
+            self._goal_pos_w[new_ids, 0] = env_orig_new[:, 0] + lx_new
+            self._goal_pos_w[new_ids, 1] = env_orig_new[:, 1] + ly_new
+            self._goal_pos_w[new_ids, 2] = 1.15
+            g_vec_new = torch.stack([lx_new - (ee_pos[new_ids, 0] - env_orig_new[:, 0]),
+                                     ly_new - (ee_pos[new_ids, 1] - env_orig_new[:, 1]),
+                                     torch.zeros(n_new, device=self.device)], dim=1)
+            self._prev_dist_box_goal[new_ids] = g_vec_new.norm(dim=1)
 
         box_pos_eff = torch.where(
             self._grasped.unsqueeze(1).expand(-1, 3),
