@@ -327,7 +327,7 @@ class WarehouseTransportEnv(DirectRLEnv):
         dist_to_goal = (ref_pos - self._goal_pos_w).norm(dim=1)
         settled  = self._steps_after_rel >= self.cfg.settle_steps
         placed   = ~self._grasped & settled & (dist_to_goal < self.cfg.place_dist_threshold)
-        fell_off = box_pos[:, 2] < 0.9   # 테이블에서 떨어진 경우 조기 종료
+        fell_off = ~self._grasped & (box_pos[:, 2] < 0.9)  # grasped 중엔 EE=box이므로 체크 제외
         timed_out = self.episode_length_buf >= self.max_episode_length - 1
 
         done = placed | fell_off | timed_out
