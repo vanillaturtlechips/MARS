@@ -99,6 +99,14 @@ class WarehouseTransportEnv(DirectRLEnv):
         # 절대 EE 목표 위치: new_q=current_q+delta_q 대신 IK가 항상 이 목표를 추적
         # zero action → cmd_ee = home_ee → 중력 드리프트를 능동적으로 상쇄
         self._cmd_ee_pos       = torch.zeros(n, 3, device=d)
+        # _reset_idx 후 scene.update() 없이 _apply_action이 실행되면
+        # robot.data.joint_pos는 stale(이전 ep 끝 위치) → target_q=stale_q →
+        # arm이 home에서 멀어짐 → force_grasp ee_now가 wrong → carry_dist 폭등
+        # pending 환경은 stale 대신 _home_q를 joint target으로 사용
+        _home_q_vals = torch.tensor(
+            [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785], device=d
+        )
+        self._home_q = _home_q_vals.unsqueeze(0).expand(n, -1).clone()
 
         self._stat_placed   = 0
         self._stat_episodes = 0
@@ -186,9 +194,23 @@ class WarehouseTransportEnv(DirectRLEnv):
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
         delta_q = torch.bmm(J_dls, delta_to_cmd.unsqueeze(-1)).squeeze(-1).clamp(-0.1, 0.1)
-        new_q   = (self.robot.data.joint_pos[:, :7] + delta_q).clamp(-2.8, 2.8)
 
-        gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
+        # pending 환경: stale robot.data.joint_pos 대신 _home_q 사용
+        # (reset 후 scene.update() 없이 실행되므로 data는 이전 ep 끝 위치)
+        base_q = torch.where(
+            self._pending.unsqueeze(1).expand(-1, 7),
+            self._home_q,
+            self.robot.data.joint_pos[:, :7],
+        )
+        new_q = (base_q + delta_q).clamp(-2.8, 2.8)
+
+        # pending 환경 그리퍼는 닫힘 유지 (force_grasp 전 물리적 안정)
+        gripper_action = torch.where(
+            self._pending,
+            torch.full((n,), -1.0, device=self.device),  # 닫힘 (-1 = closed)
+            self._actions[:, 3],
+        )
+        gripper_pos = ((gripper_action.unsqueeze(1) + 1.0) / 2.0) * 0.04
         target_q = self.robot.data.joint_pos.clone()
         target_q[:, :7] = new_q
         target_q[:, 7:9] = gripper_pos.expand(-1, 2)
@@ -405,6 +427,9 @@ class WarehouseTransportEnv(DirectRLEnv):
         self._newly_released[env_ids_t]   = False
         self._steps_after_rel[env_ids_t]  = 0.0
         self._cmd_ee_pos[env_ids_t]       = 0.0  # force_grasp에서 ee_now로 재설정됨
+        # _home_q: pending 스텝에서 stale robot.data 대신 사용할 joint target
+        _hq = home_pose[:, :7]
+        self._home_q[env_ids_t] = _hq
 
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
         return (
