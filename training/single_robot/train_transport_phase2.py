@@ -114,6 +114,7 @@ def main():
     env_cfg.rew_release_near     = 50.0   # goal 근처 release one-time bonus (유지)
     env_cfg.rew_carry_dist       = 1.0    # -dist/step (유지)
     env_cfg.rew_time             = -0.05  # Phase 2: 시간 압박 강화 (release 지연 억제)
+    env_cfg.rew_grip_penalty     = 1.5    # near-goal gripper-close 패널티 (soft, xy 기준)
     env_cfg.episode_length_s     = 10.0   # Phase 1(8s)보다 길게: release + 착지 시간 확보
     env_cfg.goal_spawn_dist      = CURRICULUM_STAGES[0][0]
 
@@ -160,19 +161,35 @@ def main():
             runner.alg.policy.actor[-1].bias.data.zero_()
         print("[Init] 랜덤 초기화 (Phase 1 체크포인트 없음)")
 
+    # Step 0: gripper bias 직접 수정 (+0.68 → -0.8)
+    # Phase 1에서 굳어진 gripper-close 습관을 탐색 시작 전에 강제로 역전
+    # actor 마지막 레이어 bias[-1]이 gripper 출력 (action dim 3번째 = index -1)
+    with _torch.no_grad():
+        runner.alg.policy.actor[-1].bias.data[-1] = -0.8
+    print(f"[Grip Init] actor bias[-1] → {runner.alg.policy.actor[-1].bias.data[-1]:.3f}  "
+          f"(grip_mean +0.68 → -0.8 override)")
+
     curriculum = Phase2CurriculumManager(env)
     start_iter = runner.current_learning_iteration
+
+    # Bootstrap 설정: env에 주입 (매 iter _current_iter도 갱신)
+    BOOTSTRAP_N = 40    # 40 iter 동안 강제 release (linear decay)
+    BOOTSTRAP_P = 0.15  # 최대 15% 확률 → iter 증가에 따라 0까지 감소
+    env._bootstrap_n = BOOTSTRAP_N
+    env._bootstrap_p = BOOTSTRAP_P
 
     print(f"\n{'='*60}")
     print(f"[Phase 2 Transport] obs={TRANSPORT_OBS_DIM}D, {args.num_envs} envs")
     print(f"  enable_release=True  near_release_dist={env_cfg.near_release_dist}m")
     print(f"  place_goal_z={env_cfg.place_goal_z}m  place_dist_threshold={env_cfg.place_dist_threshold}m")
-    print(f"  rew_place={env_cfg.rew_place}  episode_length={env_cfg.episode_length_s}s")
+    print(f"  rew_place={env_cfg.rew_place}  rew_grip_penalty={env_cfg.rew_grip_penalty}")
+    print(f"  bootstrap: N={BOOTSTRAP_N} iter, p={BOOTSTRAP_P} (linear decay)")
     print(f"  커리큘럼: {CURRICULUM_STAGES}")
     print(f"  [시작 iter] {start_iter} → {args.max_iter}")
     print(f"{'='*60}\n")
 
     for iteration in range(start_iter, args.max_iter):
+        env._current_iter = iteration  # bootstrap p_now 계산용
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
         with _torch.no_grad():
             # Phase 2: 탐색 범위 축소 (release 행동은 gripper 하나라 크게 필요 없음)
@@ -184,9 +201,10 @@ def main():
         ik_err     = float(log.get("ik_err",      0.0))
         grip_mean  = float(log.get("grip_action_mean", 0.0))
         grip_std   = float(log.get("grip_action_std",  0.0))
-        reached_pct = float(log.get("term_reached",   0.0))
-        placed_pct  = float(log.get("term_placed",    0.0))
-        release_pct = float(log.get("release_rate",   0.0))
+        reached_pct   = float(log.get("term_reached",   0.0))
+        placed_pct    = float(log.get("term_placed",    0.0))
+        release_pct   = float(log.get("release_rate",   0.0))
+        force_rel_pct = float(log.get("force_rel_rate", 0.0))
 
         stage = curriculum.step(place_rate)
 
@@ -194,14 +212,16 @@ def main():
         if iteration - start_iter < 3:
             wn  = runner.alg.policy.actor[-1].weight.data.norm().item()
             std = runner.alg.policy.std.data.mean().item()
+            grip_bias = runner.alg.policy.actor[-1].bias.data[-1].item()
             print(f"  [Diag iter{iteration+1}] w_norm={wn:.4f}  std={std:.4f}  "
-                  f"carry_dist={carry_dist:.4f}  ik_err={ik_err:.4f}")
+                  f"grip_bias={grip_bias:+.3f}  carry_dist={carry_dist:.4f}")
 
+        p_now = BOOTSTRAP_P * max(0.0, 1.0 - iteration / BOOTSTRAP_N)
         print(f"[iter {iteration+1:4d}] place_rate={place_rate:.1f}%  "
-              f"carry_dist={carry_dist:.3f}m  ik_err={ik_err:.3f}m  "
+              f"carry_dist={carry_dist:.3f}m  "
               f"grip={grip_mean:+.2f}±{grip_std:.2f}  "
-              f"release={release_pct:.1f}%  placed={placed_pct:.1f}%  "
-              f"stage={stage+1}/{len(CURRICULUM_STAGES)}")
+              f"release={release_pct:.1f}%  force={force_rel_pct:.1f}%(p={p_now:.3f})  "
+              f"placed={placed_pct:.1f}%  stage={stage+1}/{len(CURRICULUM_STAGES)}")
 
         if (iteration + 1) % args.save_interval == 0:
             runner.current_learning_iteration = iteration + 1

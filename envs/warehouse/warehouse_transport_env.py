@@ -67,6 +67,7 @@ class WarehouseTransportEnvCfg(DirectRLEnvCfg):
     rew_release_near: float = 50.0   # one-time: near_release_dist 이내에서 release 시 보너스
     rew_place:        float = 0.0    # Phase1 carry-only: terminal bonus 없이 -dist/step만으로 carry 유도
     rew_time:         float = -0.02  # 약한 시간 압박
+    rew_grip_penalty: float = 0.0    # near-goal gripper-close 패널티 계수 (0=비활성화)
 
     # 판정 기준
     near_release_dist:        float = 0.12   # 이 거리 이내일 때만 release 허용 (공간 gating)
@@ -118,6 +119,12 @@ class WarehouseTransportEnv(DirectRLEnv):
         self._stat_placed   = 0
         self._stat_episodes = 0
         self._stat_window   = 5000  # 8192 envs → iter당 ~8800 에피소드, window 너무 작으면 44번 리셋
+
+        # Bootstrap forced release 상태 (train loop에서 주입)
+        self._current_iter  = 9999  # 현재 iteration (매 iter train loop에서 갱신)
+        self._bootstrap_n   = 0     # 강제 release 적용 iter 수 (0=비활성화)
+        self._bootstrap_p   = 0.0   # 강제 release 기본 확률
+        self._force_released = torch.zeros(n, dtype=torch.bool, device=d)
 
     # ── Scene ────────────────────────────────────────────────────────
 
@@ -174,7 +181,8 @@ class WarehouseTransportEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self._actions = actions.clone().clamp(-1.0, 1.0)
-        self._newly_released[:] = False  # decimation(2) 때문에 _apply_action이 2번 호출됨
+        self._newly_released[:] = False   # decimation(2) 때문에 _apply_action이 2번 호출됨
+        self._force_released[:] = False   # 동일 이유로 여기서 초기화
                                          # 여기서 초기화해야 _get_rewards에 도달할 때 살아있음
 
         # cmd_ee 누적: _apply_action이 decimation=2번 호출되므로 여기서 1번만 수행
@@ -228,11 +236,25 @@ class WarehouseTransportEnv(DirectRLEnv):
         ee_pos = self.robot.data.body_pos_w[:, self._ee_body_idx]
         ee_vel = self.robot.data.body_lin_vel_w[:, self._ee_body_idx]
 
+        # Forced release bootstrap: 초기 N iter 동안 near-goal env 일부를 강제로 release
+        # linear decay: iter=0→p_max, iter=N→0
+        # action override(-1.0): PPO가 "gripper open → 200 보너스"를 올바르게 귀속하도록
+        if self.cfg.enable_release and self._bootstrap_n > 0:
+            p_now = self._bootstrap_p * max(0.0, 1.0 - self._current_iter / self._bootstrap_n)
+            near_xy = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
+            force_rel = (self._grasped
+                         & (near_xy < 0.15)
+                         & (torch.rand(n, device=self.device) < p_now))
+            self._actions[force_rel, 3] = -1.0  # credit assignment: gripper open으로 귀속
+            self._force_released |= force_rel
+        else:
+            force_rel = torch.zeros(n, dtype=torch.bool, device=self.device)
+
         # Phase 1: enable_release=False → release 비활성화
         # Phase 2: enable_release=True  → gripper action < threshold 시 release 허용
         wants_release = (self._grasped
                          & (self._actions[:, 3] < self.cfg.release_action_threshold)
-                         & self.cfg.enable_release)
+                         & self.cfg.enable_release) | force_rel
         if wants_release.any():
             rel_ids = wants_release.nonzero(as_tuple=True)[0]
             state = self._frozen_box_state[rel_ids].clone()
@@ -371,6 +393,13 @@ class WarehouseTransportEnv(DirectRLEnv):
         # [4] 시간 패널티 (약함)
         rew_time = self.cfg.rew_time
 
+        # [5] Near-goal gripper-close 패널티 (soft, xy 기준)
+        # goal 근처에서 gripper를 닫은 채 있을수록 선형 증가 → 경계 hovering 방지
+        # xy 기준: goal_z(1.15m)와 EE_z(1.30m) 차이(0.15m)가 3D dist를 왜곡하므로
+        xy_dist_goal = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
+        grip_pen_w = (1.0 - xy_dist_goal / self.cfg.near_release_dist).clamp(0.0, 1.0)
+        rew_grip_pen = -self.cfg.rew_grip_penalty * grip_pen_w * self._grasped.float()
+
         # Logging
         log = self.extras.setdefault("log", {})
         log["dist_to_goal"]   = dist_to_goal.mean().item()
@@ -378,6 +407,7 @@ class WarehouseTransportEnv(DirectRLEnv):
         log["grasp_rate"]     = grasped_f.mean().item() * 100.0
         log["release_rate"]   = self._newly_released.float().mean().item() * 100.0
         log["placed_this_step"] = placed.float().mean().item() * 100.0
+        log["force_rel_rate"] = self._force_released.float().mean().item() * 100.0
 
         # 진단 로그
         # IK 추적 오차: cmd_ee와 실제 EE 거리 — 크면 IK solver/joint limit 문제
@@ -390,7 +420,7 @@ class WarehouseTransportEnv(DirectRLEnv):
         self._stat_placed   += placed.sum().item()
         self._stat_episodes += placed.sum().item()  # 임시 (done에서 정확히 계산)
 
-        return rew_carry + rew_dir + rew_release + rew_place + rew_time
+        return rew_carry + rew_dir + rew_release + rew_place + rew_time + rew_grip_pen
 
     # ── Done ─────────────────────────────────────────────────────────
 
