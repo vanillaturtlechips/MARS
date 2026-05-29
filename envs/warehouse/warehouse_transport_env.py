@@ -170,14 +170,16 @@ class WarehouseTransportEnv(DirectRLEnv):
         self._newly_released[:] = False  # decimation(2) 때문에 _apply_action이 2번 호출됨
                                          # 여기서 초기화해야 _get_rewards에 도달할 때 살아있음
 
+        # cmd_ee 누적: _apply_action이 decimation=2번 호출되므로 여기서 1번만 수행
+        # 기존에 _apply_action 내부에서 누적했을 때: 매 env step 2× 누적
+        # → action=0.3 → cmd_ee +6cm, EE 실제 이동 ≈ 2cm → ik_err 4cm/step 누적
+        # → 112 step 후 ik_err ≈ 0.9m → IK 추적 불가 → carry_dist 발산
+        not_pending = (~self._pending).float().unsqueeze(1)
+        self._cmd_ee_pos += self._actions[:, :3] * 0.03 * not_pending
+
     def _apply_action(self) -> None:
         n = self.num_envs
         ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]
-
-        # 절대 EE 목표 누적 (중력 드리프트 방지)
-        # pending 상태: force_grasp 전 → cmd_ee_pos=0.0 이므로 누적 건너뜀
-        not_pending = (~self._pending).float().unsqueeze(1)
-        self._cmd_ee_pos += self._actions[:, :3] * 0.03 * not_pending
 
         # DLS IK: current EE → cmd_ee_pos
         # pending 환경은 delta=0 → joint target = current_q → 로봇 그대로 유지
