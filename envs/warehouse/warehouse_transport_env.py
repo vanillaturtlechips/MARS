@@ -74,6 +74,13 @@ class WarehouseTransportEnvCfg(DirectRLEnvCfg):
     release_action_threshold: float = -0.3   # gripper action 이 값 이하 → release
     settle_steps:             int   = 8      # release 후 N step 이상 지나야 place 판정
 
+    # Phase 2 제어
+    # True: 그리퍼 release 활성화 (Phase 2), False: carry-only (Phase 1)
+    enable_release: bool  = False
+    # ≥0: force_grasp 시 goal z를 이 고정값으로 설정 (Phase 2: 1.15 = table top)
+    # <0: ee_now[:, 2] 사용 (Phase 1 기본값)
+    place_goal_z:   float = -1.0
+
     # 커리큘럼 (train_transport.py에서 직접 설정)
     goal_spawn_dist: float = 0.10
 
@@ -221,11 +228,11 @@ class WarehouseTransportEnv(DirectRLEnv):
         ee_pos = self.robot.data.body_pos_w[:, self._ee_body_idx]
         ee_vel = self.robot.data.body_lin_vel_w[:, self._ee_body_idx]
 
-        # Phase 1 carry-only: release 비활성화 (episode_length_buf > max_episode_length 불가능)
-        # carry_dist < 0.05m 달성 후 Phase 2에서 release 추가
+        # Phase 1: enable_release=False → release 비활성화
+        # Phase 2: enable_release=True  → gripper action < threshold 시 release 허용
         wants_release = (self._grasped
                          & (self._actions[:, 3] < self.cfg.release_action_threshold)
-                         & (self.episode_length_buf > self.max_episode_length))
+                         & self.cfg.enable_release)
         if wants_release.any():
             rel_ids = wants_release.nonzero(as_tuple=True)[0]
             state = self._frozen_box_state[rel_ids].clone()
@@ -300,7 +307,12 @@ class WarehouseTransportEnv(DirectRLEnv):
                 th = sample_uniform(0.0, 6.2832, (n_act,), device=self.device)
                 self._goal_pos_w[act_ids, 0] = ee_now[:, 0] + r * torch.cos(th)
                 self._goal_pos_w[act_ids, 1] = ee_now[:, 1] + r * torch.sin(th)
-                self._goal_pos_w[act_ids, 2] = ee_now[:, 2]  # EE 홈 z에 맞춤 (1.15 고정→거리 0.18m 버그 수정)
+                # Phase 1: EE home z (중력 드리프트 없이 reach 가능)
+                # Phase 2: 고정 table top z (box 착지 목표)
+                if self.cfg.place_goal_z >= 0:
+                    self._goal_pos_w[act_ids, 2] = self.cfg.place_goal_z
+                else:
+                    self._goal_pos_w[act_ids, 2] = ee_now[:, 2]
 
                 # Phase 1 carry: box를 지하 5m로 이동 (충돌 완전 차단)
                 # -0.08m 오프셋은 여전히 right finger와 겹칠 수 있음
@@ -341,7 +353,9 @@ class WarehouseTransportEnv(DirectRLEnv):
             self._newly_released & (xy_dist_at_release < self.cfg.near_release_dist)
         ).float()
 
-        # [3] Place: Phase1=EE reach goal 0.05m / Phase2=release 후 착지
+        # [3] Place:
+        #   Phase 1 (enable_release=False): EE reach goal 0.05m → terminal bonus
+        #   Phase 2 (enable_release=True):  release 후 박스 물리 착지만 성공
         self._steps_after_rel = torch.where(
             ~self._grasped,
             self._steps_after_rel + 1.0,
@@ -350,7 +364,9 @@ class WarehouseTransportEnv(DirectRLEnv):
         settled = self._steps_after_rel >= self.cfg.settle_steps
         placed  = ~self._grasped & settled & (dist_to_goal < self.cfg.place_dist_threshold)
         reached = self._grasped & (dist_to_goal < 0.05)
-        rew_place = self.cfg.rew_place * (placed | reached).float()
+        # Phase 2: rew_place는 물리 착지(placed)에만 지급 — reached는 중간 상태
+        success = placed if self.cfg.enable_release else (placed | reached)
+        rew_place = self.cfg.rew_place * success.float()
 
         # [4] 시간 패널티 (약함)
         rew_time = self.cfg.rew_time
@@ -391,9 +407,15 @@ class WarehouseTransportEnv(DirectRLEnv):
         fell_off = ~self._grasped & (box_pos[:, 2] < 0.9)
         timed_out = self.episode_length_buf >= self.max_episode_length - 1
 
-        done = placed | reached | fell_off | timed_out
+        # Phase 2: reached는 done 조건에서 제외 — EE가 goal에 닿아도 episode 계속
+        # → policy가 "carry-only로 episode 끝내기" local optimum에 빠지는 것 방지
+        if self.cfg.enable_release:
+            done = placed | fell_off | timed_out
+        else:
+            done = placed | reached | fell_off | timed_out
 
-        self._stat_placed   += ((placed | reached) & done).sum().item()
+        success_for_stat = placed if self.cfg.enable_release else (placed | reached)
+        self._stat_placed   += (success_for_stat & done).sum().item()
         self._stat_episodes += done.sum().item()
         if self._stat_episodes >= self._stat_window:
             self._stat_placed   = 0
