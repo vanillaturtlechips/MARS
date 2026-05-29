@@ -230,7 +230,7 @@ class WarehouseTransportEnv(DirectRLEnv):
             rel_ids = wants_release.nonzero(as_tuple=True)[0]
             state = self._frozen_box_state[rel_ids].clone()
             state[:, :3]    = ee_pos[rel_ids]
-            state[:, 2]    -= 0.08  # kinematic lock과 동일한 오프셋 유지
+            state[:, 2]    -= 0.08  # release 시: EE 아래 8cm에서 낙하 시작
             state[:, 7:13]  = 0.0
             self.box.write_root_state_to_sim(state, rel_ids)
             self._grasped[rel_ids]         = False
@@ -241,8 +241,8 @@ class WarehouseTransportEnv(DirectRLEnv):
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
             frozen = self._frozen_box_state[grasped_ids].clone()
-            frozen[:, :3]   = ee_pos[grasped_ids]
-            frozen[:, 2]   -= 0.08  # finger tip 8cm 아래 유지 (충돌체 중첩 방지)
+            frozen[:, :2]   = ee_pos[grasped_ids, :2]
+            frozen[:, 2]    = -5.0  # 지하: 충돌 완전 차단 (Phase 1)
             frozen[:, 7:13] = 0.0
             self.box.write_root_state_to_sim(frozen, grasped_ids)
 
@@ -302,12 +302,13 @@ class WarehouseTransportEnv(DirectRLEnv):
                 self._goal_pos_w[act_ids, 1] = ee_now[:, 1] + r * torch.sin(th)
                 self._goal_pos_w[act_ids, 2] = ee_now[:, 2]  # EE 홈 z에 맞춤 (1.15 고정→거리 0.18m 버그 수정)
 
-                # 박스를 EE 아래 0.08m에 snap (finger geometry와 겹침 방지)
-                # box center = panda_leftfinger tip → finger 내부 완전 파고듦
-                # → PhysX가 매 step 수백N 척력 발생 → arm joints 편차 → carry_dist 폭등
+                # Phase 1 carry: box를 지하 5m로 이동 (충돌 완전 차단)
+                # -0.08m 오프셋은 여전히 right finger와 겹칠 수 있음
+                # Phase 1에서 box 물리 위치는 관측/보상에 영향 없음 (ee_pos 기준)
+                # Phase 2 release 시점에 실제 EE 아래로 복원
                 state = self.box.data.root_state_w[act_ids].clone()
-                state[:, :3]   = ee_now
-                state[:, 2]   -= 0.08  # finger tip 8cm 아래: 충돌체 중첩 해소
+                state[:, :2]   = ee_now[:, :2]
+                state[:, 2]    = -5.0
                 state[:, 7:13] = 0.0
                 self.box.write_root_state_to_sim(state, act_ids)
                 self._frozen_box_state[act_ids] = state
