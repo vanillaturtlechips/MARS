@@ -167,12 +167,18 @@ class WarehouseTransportEnv(DirectRLEnv):
         ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]
 
         # 절대 EE 목표 누적 (중력 드리프트 방지)
-        # new_q = current_q + delta_q 방식은 매 step 드리프트가 target으로 굳어짐
-        # → 대신 cmd_ee_pos를 절대 목표로 유지하고 IK가 항상 그곳을 향함
-        self._cmd_ee_pos += self._actions[:, :3] * 0.03
+        # pending 상태: force_grasp 전 → cmd_ee_pos=0.0 이므로 누적 건너뜀
+        not_pending = (~self._pending).float().unsqueeze(1)
+        self._cmd_ee_pos += self._actions[:, :3] * 0.03 * not_pending
 
         # DLS IK: current EE → cmd_ee_pos
-        delta_to_cmd = self._cmd_ee_pos - ee_pos
+        # pending 환경은 delta=0 → joint target = current_q → 로봇 그대로 유지
+        # (이전 버그: delta = 0.0 - ee_pos → 로봇이 월드 원점으로 날아감)
+        delta_to_cmd = torch.where(
+            self._pending.unsqueeze(1).expand(-1, 3),
+            torch.zeros_like(ee_pos),
+            self._cmd_ee_pos - ee_pos,
+        )
         jac     = self.robot.root_physx_view.get_jacobians()
         J       = jac[:, self._jac_body_idx, :3, :7]
         lam     = 0.05
@@ -258,16 +264,16 @@ class WarehouseTransportEnv(DirectRLEnv):
                 n_act    = len(act_ids)
 
                 # goal: EE 기준 goal_spawn_dist 거리에 랜덤 배치
+                # lx.clamp(0.55, 1.45) 제거: EE local x ≈ 0.3m일 때 clamp가
+                # 실제 최소 거리를 0.20~0.25m로 강제 → 커리큘럼 0.10m 무력화
                 r  = sample_uniform(
                     self.cfg.goal_spawn_dist * 0.7,
                     self.cfg.goal_spawn_dist * 1.3,
                     (n_act,), device=self.device,
                 )
                 th = sample_uniform(0.0, 6.2832, (n_act,), device=self.device)
-                lx = (ee_now[:, 0] - env_orig[:, 0] + r * torch.cos(th)).clamp(0.55, 1.45)
-                ly = (ee_now[:, 1] - env_orig[:, 1] + r * torch.sin(th)).clamp(-0.30, 0.30)
-                self._goal_pos_w[act_ids, 0] = env_orig[:, 0] + lx
-                self._goal_pos_w[act_ids, 1] = env_orig[:, 1] + ly
+                self._goal_pos_w[act_ids, 0] = ee_now[:, 0] + r * torch.cos(th)
+                self._goal_pos_w[act_ids, 1] = ee_now[:, 1] + r * torch.sin(th)
                 self._goal_pos_w[act_ids, 2] = ee_now[:, 2]  # EE 홈 z에 맞춤 (1.15 고정→거리 0.18m 버그 수정)
 
                 # 박스를 EE 위치에 snap
