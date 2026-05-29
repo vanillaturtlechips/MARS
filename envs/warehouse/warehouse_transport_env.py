@@ -195,7 +195,7 @@ class WarehouseTransportEnv(DirectRLEnv):
         JT      = J.transpose(-2, -1)
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
-        delta_q = torch.bmm(J_dls, delta_to_cmd.unsqueeze(-1)).squeeze(-1).clamp(-0.1, 0.1)
+        delta_q = torch.bmm(J_dls, delta_to_cmd.unsqueeze(-1)).squeeze(-1).clamp(-0.3, 0.3)  # 0.1→0.3: 중력 보상
 
         # pending 환경: stale robot.data.joint_pos 대신 _home_q 사용
         # (reset 후 scene.update() 없이 실행되므로 data는 이전 ep 끝 위치)
