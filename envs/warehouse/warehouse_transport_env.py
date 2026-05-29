@@ -182,13 +182,12 @@ class WarehouseTransportEnv(DirectRLEnv):
         ee_pos = self.robot.data.body_pos_w[:, self._ee_body_idx]
         ee_vel = self.robot.data.body_lin_vel_w[:, self._ee_body_idx]
 
-        # Release: 공간 gating + gripper action → 물리 handoff
-        # near_release_dist 이내일 때만 허용: random policy가 즉시 release하는 것을 방지
-        # z는 무시: goal z=1.15m 고정, EE z≈1.30m → 3D dist≈0.18m로 gate 영구 불통 버그 수정
-        dist_for_gate = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
+        # Release: 시간 gating + gripper action → 물리 handoff
+        # 공간 gating(dist<0.12m)은 deadlock: carry 없이 release 불가, release 없이 carry 학습 불가
+        # 시간 gating: 에피소드 시작 15 steps 이후부터 release 허용 (최소 transport 시도 강제)
         wants_release = (self._grasped
                          & (self._actions[:, 3] < self.cfg.release_action_threshold)
-                         & (dist_for_gate < self.cfg.near_release_dist))
+                         & (self.episode_length_buf > 15))
         if wants_release.any():
             rel_ids = wants_release.nonzero(as_tuple=True)[0]
             state = self._frozen_box_state[rel_ids].clone()
