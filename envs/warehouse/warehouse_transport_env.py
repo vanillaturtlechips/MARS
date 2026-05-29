@@ -337,10 +337,13 @@ class WarehouseTransportEnv(DirectRLEnv):
         if self._stat_episodes >= self._stat_window:
             self._stat_placed   = 0
             self._stat_episodes = 0
+
+        log = self.extras.setdefault("log", {})
+        log["term_placed"]   = placed.float().mean().item() * 100.0
+        log["term_fell_off"] = fell_off.float().mean().item() * 100.0
+        log["term_timed_out"] = timed_out.float().mean().item() * 100.0
         if self._stat_episodes > 0:
-            self.extras.setdefault("log", {})["place_rate"] = (
-                self._stat_placed / self._stat_episodes * 100.0
-            )
+            log["place_rate"] = self._stat_placed / self._stat_episodes * 100.0
 
         return placed | fell_off, timed_out
 
