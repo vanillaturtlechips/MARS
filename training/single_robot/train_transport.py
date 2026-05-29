@@ -100,7 +100,7 @@ def main():
     runner_cfg.logger                = "tensorboard"
     runner_cfg.empirical_normalization = True
     runner_cfg.policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=0.10,  # 1.0→0.10: 높은 std가 EE를 매 step 0.05m 날려 state 차이 소멸
         actor_hidden_dims=[256, 128, 64],
         critic_hidden_dims=[256, 128, 64],
         activation="elu",
@@ -133,7 +133,7 @@ def main():
     for iteration in range(start_iter, args.max_iter):
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
         with _torch.no_grad():
-            runner.alg.policy.std.data.clamp_(0.05, 0.5)
+            runner.alg.policy.std.data.clamp_(0.02, 0.30)  # max 0.5→0.30: 과도한 drift 방지
 
         log        = env.extras.get("log", {})
         place_rate = float(log.get("place_rate", 0.0))
