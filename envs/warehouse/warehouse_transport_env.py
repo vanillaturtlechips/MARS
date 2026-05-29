@@ -175,7 +175,7 @@ class WarehouseTransportEnv(DirectRLEnv):
         # → action=0.3 → cmd_ee +6cm, EE 실제 이동 ≈ 2cm → ik_err 4cm/step 누적
         # → 112 step 후 ik_err ≈ 0.9m → IK 추적 불가 → carry_dist 발산
         not_pending = (~self._pending).float().unsqueeze(1)
-        self._cmd_ee_pos += self._actions[:, :3] * 0.03 * not_pending
+        self._cmd_ee_pos += self._actions[:, :3] * 0.01 * not_pending  # 0.03→0.01: ik_err 3× 감소
 
     def _apply_action(self) -> None:
         n = self.num_envs
