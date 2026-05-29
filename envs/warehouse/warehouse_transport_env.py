@@ -68,13 +68,13 @@ class WarehouseTransportEnvCfg(DirectRLEnvCfg):
     rew_time:         float = -0.02  # 약한 시간 압박
 
     # 판정 기준
-    near_release_dist:        float = 0.25   # 이 거리 이내 release → 보너스
+    near_release_dist:        float = 0.12   # 이 거리 이내일 때만 release 허용 (공간 gating)
     place_dist_threshold:     float = 0.15   # 착지 후 goal까지 이 거리 이내 → 성공
     release_action_threshold: float = -0.3   # gripper action 이 값 이하 → release
     settle_steps:             int   = 8      # release 후 N step 이상 지나야 place 판정
 
     # 커리큘럼 (train_transport.py에서 직접 설정)
-    goal_spawn_dist: float = 0.20
+    goal_spawn_dist: float = 0.10
 
 
 class WarehouseTransportEnv(DirectRLEnv):
@@ -179,18 +179,21 @@ class WarehouseTransportEnv(DirectRLEnv):
         ee_pos = self.robot.data.body_pos_w[:, self._ee_body_idx]
         ee_vel = self.robot.data.body_lin_vel_w[:, self._ee_body_idx]
 
-        # Release: grasped + gripper action < threshold → 물리 handoff
+        # Release: 공간 gating + gripper action → 물리 handoff
+        # near_release_dist 이내일 때만 허용: random policy가 즉시 release하는 것을 방지
+        dist_for_gate = (ee_pos - self._goal_pos_w).norm(dim=1)
         self._newly_released[:] = False
-        wants_release = self._grasped & (self._actions[:, 3] < self.cfg.release_action_threshold)
+        wants_release = (self._grasped
+                         & (self._actions[:, 3] < self.cfg.release_action_threshold)
+                         & (dist_for_gate < self.cfg.near_release_dist))
         if wants_release.any():
             rel_ids = wants_release.nonzero(as_tuple=True)[0]
             state = self._frozen_box_state[rel_ids].clone()
-            state[:, :3]   = ee_pos[rel_ids]       # 현재 EE 위치에서 해제
-            state[:, 7:10] = ee_vel[rel_ids]        # EE 속도 인계 → 자연스러운 handoff
-            state[:, 10:13] = 0.0
+            state[:, :3]    = ee_pos[rel_ids]  # 현재 EE 위치에서 해제
+            state[:, 7:13]  = 0.0              # 속도 0: EE vel 인계 시 box 날아가는 버그 수정
             self.box.write_root_state_to_sim(state, rel_ids)
-            self._grasped[rel_ids]        = False
-            self._newly_released[rel_ids] = True
+            self._grasped[rel_ids]         = False
+            self._newly_released[rel_ids]  = True
             self._steps_after_rel[rel_ids] = 0
 
         # Kinematic lock: 아직 grasped인 envs

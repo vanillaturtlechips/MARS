@@ -45,9 +45,10 @@ from envs.warehouse.warehouse_transport_env import (
 
 # place_rate 이동평균 기반 커리큘럼: (goal_spawn_dist, 진급 place_rate%, window)
 CURRICULUM_STAGES = [
-    (0.20, 40.0, 15),   # 1단계: 최근 15iter 평균 40% 이상 → 진급
-    (0.35, 40.0, 15),   # 2단계
-    (0.50, None, None), # 3단계: 최종
+    (0.10, 50.0, 15),   # 1단계: 매우 가까움 → release 행동 부트스트랩
+    (0.20, 40.0, 15),   # 2단계: carry 0.20m 학습
+    (0.35, 35.0, 15),   # 3단계: carry 0.35m
+    (0.50, None, None), # 4단계: 최종
 ]
 
 
