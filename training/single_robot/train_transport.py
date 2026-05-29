@@ -121,13 +121,12 @@ def main():
         runner.load(args.resume_ckpt)
         print(f"[Resume] {args.resume_ckpt}")
     else:
-        # Actor output layer zero-init: mean = 0 강제
-        # 없으면 Xavier random mean ~N(0, 0.5)이 noise(0.10)를 압도 → carry_dist=0.61m 유지
-        # 있으면 action = N(0, 0.10) → EE barely moves → carry_dist ≈ 0.10m → VF 학습 가능
         with _torch.no_grad():
             runner.alg.policy.actor[-1].weight.data.zero_()
             runner.alg.policy.actor[-1].bias.data.zero_()
-        print("[Init] Actor output layer zero-initialized: action ~ N(0, 0.10)")
+            wn = runner.alg.policy.actor[-1].weight.data.norm().item()
+            bn = runner.alg.policy.actor[-1].bias.data.norm().item()
+        print(f"[Init] zero-init: weight_norm={wn:.6f}, bias_norm={bn:.6f}, std={runner.alg.policy.std.data.mean():.4f}")
 
     curriculum = TransportCurriculumManager(env)
     start_iter = runner.current_learning_iteration
@@ -141,9 +140,16 @@ def main():
     for iteration in range(start_iter, args.max_iter):
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
         with _torch.no_grad():
-            runner.alg.policy.std.data.clamp_(0.02, 0.30)  # max 0.5→0.30: 과도한 drift 방지
+            runner.alg.policy.std.data.clamp_(0.02, 0.30)
 
         log        = env.extras.get("log", {})
+
+        # 처음 3 iter: 진단 출력
+        if iteration - start_iter < 3:
+            wn  = runner.alg.policy.actor[-1].weight.data.norm().item()
+            std = runner.alg.policy.std.data.mean().item()
+            cd  = float(log.get("carry_dist", -1))
+            print(f"  [Diag iter{iteration+1}] w_norm={wn:.4f}  std={std:.4f}  carry_dist={cd:.4f}")
         place_rate = float(log.get("place_rate", 0.0))
         carry_dist = float(log.get("carry_dist", 0.0))
         grasp_rate = float(log.get("grasp_rate", 0.0))
