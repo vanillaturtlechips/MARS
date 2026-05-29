@@ -259,7 +259,7 @@ class WarehouseTransportEnv(DirectRLEnv):
                 ly = (ee_now[:, 1] - env_orig[:, 1] + r * torch.sin(th)).clamp(-0.30, 0.30)
                 self._goal_pos_w[act_ids, 0] = env_orig[:, 0] + lx
                 self._goal_pos_w[act_ids, 1] = env_orig[:, 1] + ly
-                self._goal_pos_w[act_ids, 2] = 1.15
+                self._goal_pos_w[act_ids, 2] = ee_now[:, 2]  # EE 홈 z에 맞춤 (1.15 고정→거리 0.18m 버그 수정)
 
                 # 박스를 EE 위치에 snap
                 state = self.box.data.root_state_w[act_ids].clone()
@@ -352,7 +352,7 @@ class WarehouseTransportEnv(DirectRLEnv):
         if self._stat_episodes > 0:
             log["place_rate"] = self._stat_placed / self._stat_episodes * 100.0
 
-        return placed | fell_off, timed_out
+        return placed | reached | fell_off, timed_out
 
     # ── Reset ────────────────────────────────────────────────────────
 
