@@ -70,6 +70,13 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     grasp_dist_threshold: float = 0.15
     place_dist_threshold: float = 0.15  # 0.10→0.15m 완화: place 경험 빈도 증가
 
+    # release 관련 (Phase 2 transport에서 검증된 값)
+    near_release_dist:        float = 0.20  # XY 거리: 이 안에서만 release 허용
+    release_action_threshold: float = -0.3  # gripper action < 이 값 → release
+    settle_steps:             int   = 10    # release 후 box 안착 판정 대기 (physics steps)
+    rew_release_near:         float = 50.0  # goal 근처 release one-time bonus
+    rew_grip_penalty:         float = 1.5   # goal 근처 gripper 닫힘 soft 패널티
+
     # 커리큘럼: 박스 spawn 거리 (EE 기준)
     # 훈련 스크립트에서 단계별로 올림
     box_spawn_dist: float = 0.20   # 시작: 0.20m (grasp_threshold보다 충분히 멀게)
@@ -102,6 +109,16 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._near_place_awarded  = torch.zeros(n, dtype=torch.bool, device=d)
         self._force_grasped_mask  = torch.zeros(n, dtype=torch.bool, device=d)
         self._force_grasp_pending = torch.zeros(n, dtype=torch.bool, device=d)
+
+        # release 추적 텐서 (Phase 2 transport 방식)
+        self._has_released    = torch.zeros(n, dtype=torch.bool,  device=d)
+        self._steps_after_rel = torch.zeros(n, dtype=torch.long,  device=d)
+        self._newly_released  = torch.zeros(n, dtype=torch.bool,  device=d)
+        self._force_released  = torch.zeros(n, dtype=torch.bool,  device=d)
+        # bootstrap: 훈련 스크립트에서 주입
+        self._bootstrap_n  = 0
+        self._bootstrap_p  = 0.0
+        self._current_iter = 9999
 
         self._stat_placed   = 0
         self._stat_episodes = 0
@@ -166,10 +183,13 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self._actions = actions.clone().clamp(-1.0, 1.0)
+        self._newly_released[:] = False
+        self._force_released[:] = False
 
     def _apply_action(self) -> None:
         n = self.num_envs
         delta_pos = self._actions[:, :3] * 0.03
+        ee_pos, _ = self._get_ee_pose()
 
         # DLS IK
         jac = self.robot.root_physx_view.get_jacobians()
@@ -192,12 +212,43 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # grasped 상태: 박스를 EE에 고정 (물리적 그리퍼 대신 kinematic lock)
         if self._grasped.any():
-            ee_pos, _ = self._get_ee_pose()
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
             frozen = self._frozen_box_state[grasped_ids].clone()
             frozen[:, :3] = ee_pos[grasped_ids] + self._grasp_ee_offset[grasped_ids]
             frozen[:, 7:13] = 0.0
             self.box.write_root_state_to_sim(frozen, grasped_ids)
+
+        # ── Release (Phase 2 transport 방식) ──────────────────────────
+        # Bootstrap: 초기 N iter 동안 near-goal에서 강제 release
+        if self._bootstrap_n > 0:
+            p_now = self._bootstrap_p * max(0.0, 1.0 - self._current_iter / self._bootstrap_n)
+            near_xy_bs = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
+            force_rel = (self._grasped & (near_xy_bs < self.cfg.near_release_dist)
+                         & (torch.rand(n, device=self.device) < p_now))
+            self._actions[force_rel, 3] = -1.0
+            self._force_released |= force_rel
+        else:
+            force_rel = torch.zeros(n, dtype=torch.bool, device=self.device)
+
+        near_xy = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
+        wants_release = (self._grasped
+                         & (self._actions[:, 3] < self.cfg.release_action_threshold)
+                         & (near_xy < self.cfg.near_release_dist)) | force_rel
+
+        if wants_release.any():
+            rel_ids = wants_release.nonzero(as_tuple=True)[0]
+            rel_state = self._frozen_box_state[rel_ids].clone()
+            rel_state[:, :3] = ee_pos[rel_ids]
+            rel_state[:, 2] -= 0.08   # finger collision 방지 (Bug 10과 동일)
+            rel_state[:, 7:13] = 0.0
+            self.box.write_root_state_to_sim(rel_state, rel_ids)
+            self._grasped[rel_ids]         = False
+            self._newly_released[rel_ids]  = True
+            self._has_released[rel_ids]    = True
+            self._steps_after_rel[rel_ids] = 0
+
+        # release 후 안착 대기 카운터
+        self._steps_after_rel[~self._grasped & self._has_released] += 1
 
     def _get_observations(self) -> dict:
         ee_pos, _  = self._get_ee_pose()
@@ -309,15 +360,29 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._near_place_awarded |= newly_near
         rew_near_place = self.cfg.rew_near_place * newly_near.float()
 
-        # [4단계] Place
-        placed    = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+        # [4단계] 실제 물리 착지 (Phase 2 transport 방식)
+        settled   = self._has_released & (self._steps_after_rel >= self.cfg.settle_steps)
+        placed    = ~self._grasped & settled & (dist_box_goal < self.cfg.place_dist_threshold)
         rew_place = self.cfg.rew_place * placed.float()
+
+        # [5단계] goal 근처 release one-time bonus
+        near_xy_rel = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
+        rew_release_near = self.cfg.rew_release_near * (
+            self._newly_released & (near_xy_rel < self.cfg.near_release_dist)
+        ).float()
+
+        # [6단계] grip penalty: goal 근처서 계속 쥐고 있으면 soft 패널티
+        near_xy = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
+        grip_pen_w = (1.0 - near_xy / self.cfg.near_release_dist).clamp(0.0, 1.0)
+        rew_grip_pen = -self.cfg.rew_grip_penalty * grip_pen_w * grasped_f
 
         log = self.extras.setdefault("log", {})
         log["dist_ee_box"]     = dist_ee_box.mean().item()
         log["grasp_rate"]      = grasped_f.mean().item() * 100.0
         log["dist_box_goal"]   = (dist_box_goal * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
         log["transport_delta"] = (self._prev_dist_box_goal - dist_box_goal)[self._grasped].mean().item() if self._grasped.any() else 0.0
+        log["release_rate"]    = self._newly_released.float().mean().item() * 100.0
+        log["force_rel_rate"]  = self._force_released.float().mean().item() * 100.0
         # force_grasp 제외한 자연 grasp rate (커리큘럼 기준 지표)
         natural_mask = ~self._force_grasped_mask
         if natural_mask.any():
@@ -327,32 +392,39 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         # approach 단계 -0.5/step, transport(grasped) 단계 -0.1/step
         rew_time_actual = self.cfg.rew_time * not_grasped + self.cfg.rew_time_grasped * grasped_f
-        return rew_approach + rew_grasp + rew_transport + rew_near_place + rew_place + rew_time_actual
+        return (rew_approach + rew_grasp + rew_transport + rew_near_place
+                + rew_place + rew_release_near + rew_grip_pen + rew_time_actual)
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         ee_pos, _ = self._get_ee_pose()
+        box_pos = self.box.data.root_pos_w
         box_pos_eff = torch.where(
             self._grasped.unsqueeze(1).expand(-1, 3),
             ee_pos + self._grasp_ee_offset,
-            self.box.data.root_pos_w,
+            box_pos,
         )
         dist_box_goal = (box_pos_eff - self._goal_pos_w).norm(dim=1)
-        placed    = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
+
+        # 실제 물리 착지 (Phase 2 transport 방식)
+        settled  = self._has_released & (self._steps_after_rel >= self.cfg.settle_steps)
+        placed   = ~self._grasped & settled & (dist_box_goal < self.cfg.place_dist_threshold)
+        fell_off = ~self._grasped & self._has_released & (box_pos[:, 2] < 0.9)
         timed_out = self.episode_length_buf >= self.max_episode_length - 1
 
-        done = placed | timed_out
-        # episode 종료 시점에만 카운트 (placed & done이 동시에 True인 env만)
+        done = placed | fell_off | timed_out
         self._stat_placed   += (placed & done).sum().item()
         self._stat_episodes += done.sum().item()
-        # rolling window: 500 에피소드마다 리셋
         if self._stat_episodes >= self._stat_window:
             self._stat_placed   = 0
             self._stat_episodes = 0
+
+        log = self.extras.setdefault("log", {})
+        log["term_placed"]   = placed.float().mean().item() * 100.0
+        log["term_fell_off"] = fell_off.float().mean().item() * 100.0
         if self._stat_episodes > 0:
-            self.extras.setdefault("log", {})["place_rate"] = (
-                self._stat_placed / self._stat_episodes * 100
-            )
-        return placed, timed_out
+            log["place_rate"] = self._stat_placed / self._stat_episodes * 100.0
+
+        return placed | fell_off, timed_out
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
@@ -414,6 +486,10 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._prev_dist_ee_box[env_ids_t]    = 999.0
         self._prev_dist_box_goal[env_ids_t]  = (box_state[:, :3] - self._goal_pos_w[env_ids_t]).norm(dim=1)
         self._near_place_awarded[env_ids_t]  = False
+        self._has_released[env_ids_t]        = False
+        self._steps_after_rel[env_ids_t]     = 0
+        self._newly_released[env_ids_t]      = False
+        self._force_released[env_ids_t]      = False
 
         # force_grasp: reset에서는 pending 표시만 → 실제 EE 기반 활성화는 step 1에서 (_get_rewards)
         if self.cfg.force_grasp_on_reset and n > 0:
