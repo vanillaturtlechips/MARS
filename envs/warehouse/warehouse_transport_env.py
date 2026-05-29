@@ -63,7 +63,7 @@ class WarehouseTransportEnvCfg(DirectRLEnvCfg):
 
     # 보상
     rew_carry_dist:   float = 0.3    # -dist × k / step (grasped 중). 손익분기점 없음
-    rew_dir:          float = 5.0    # dot(ee_vel, goal_dir) per step: 즉각 방향 보상 (carry 학습 가속)
+    rew_dir:          float = 1.0    # dot(ee_vel, goal_dir) per step: 즉각 방향 보상 (carry 학습 가속)
     rew_release_near: float = 50.0   # one-time: near_release_dist 이내에서 release 시 보너스
     rew_place:        float = 300.0  # 박스가 goal 근처에 착지+정착
     rew_time:         float = -0.02  # 약한 시간 압박
@@ -99,7 +99,7 @@ class WarehouseTransportEnv(DirectRLEnv):
 
         self._stat_placed   = 0
         self._stat_episodes = 0
-        self._stat_window   = 200
+        self._stat_window   = 5000  # 8192 envs → iter당 ~8800 에피소드, window 너무 작으면 44번 리셋
 
     # ── Scene ────────────────────────────────────────────────────────
 
