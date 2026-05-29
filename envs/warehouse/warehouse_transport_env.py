@@ -62,10 +62,10 @@ class WarehouseTransportEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상
-    rew_carry_dist:   float = 0.3    # -dist × k / step
-    rew_dir:          float = 1.0    # dot(ee_vel, goal_dir) per step: 즉각 방향 보상 (carry 학습 가속)
+    rew_carry_dist:   float = 1.0    # -dist × k / step (rew_dir 제거 후 핵심 신호)
+    rew_dir:          float = 0.0    # 0 = 비활성화 (ee_vel noise가 advantage SNR 파괴)
     rew_release_near: float = 50.0   # one-time: near_release_dist 이내에서 release 시 보너스
-    rew_place:        float = 300.0  # 박스가 goal 근처에 착지+정착
+    rew_place:        float = 0.0    # Phase1 carry-only: terminal bonus 없이 -dist/step만으로 carry 유도
     rew_time:         float = -0.02  # 약한 시간 압박
 
     # 판정 기준

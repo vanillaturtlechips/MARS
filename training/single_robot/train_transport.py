@@ -109,7 +109,7 @@ def main():
     env_wrapped = RslRlVecEnvWrapper(env)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"]   = "PPO"
-    cfg_dict["algorithm"]["entropy_coef"] = 0.01   # 탐색 강화 (release 행동 발견 필요)
+    cfg_dict["algorithm"]["entropy_coef"] = 0.001  # 낮춤: entropy pressure가 std 감소 방해
     cfg_dict["algorithm"]["learning_rate"] = args.lr
     runner = OnPolicyRunner(env_wrapped, cfg_dict,
                             log_dir="logs/warehouse_transport",
