@@ -161,13 +161,8 @@ def main():
             runner.alg.policy.actor[-1].bias.data.zero_()
         print("[Init] 랜덤 초기화 (Phase 1 체크포인트 없음)")
 
-    # Step 0: gripper bias 직접 수정 (+0.68 → -0.8)
-    # Phase 1에서 굳어진 gripper-close 습관을 탐색 시작 전에 강제로 역전
-    # actor 마지막 레이어 bias[-1]이 gripper 출력 (action dim 3번째 = index -1)
-    with _torch.no_grad():
-        runner.alg.policy.actor[-1].bias.data[-1] = -0.8
-    print(f"[Grip Init] actor bias[-1] → {runner.alg.policy.actor[-1].bias.data[-1]:.3f}  "
-          f"(grip_mean +0.68 → -0.8 override)")
+    grip_bias = runner.alg.policy.actor[-1].bias.data[-1].item()
+    print(f"[Grip Init] actor bias[-1] = {grip_bias:+.3f}  (bias override 없음 — bootstrap+penalty로 탐색)")
 
     curriculum = Phase2CurriculumManager(env)
     start_iter = runner.current_learning_iteration
