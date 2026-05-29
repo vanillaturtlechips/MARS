@@ -275,11 +275,13 @@ class WarehouseTransportEnv(DirectRLEnv):
         ref_pos   = torch.where(self._grasped.unsqueeze(1).expand(-1, 3), ee_pos, box_pos)
         dist_to_goal = (ref_pos - self._goal_pos_w).norm(dim=1)
 
-        # [1] Carry: 거리에 비례한 step 패널티 (grasped 중만. 손익분기점 없음)
-        rew_carry = -self.cfg.rew_carry_dist * dist_to_goal * grasped_f
+        # [1] Dist 패널티: grasped/released 모두 적용 (grasped_f 제거)
+        # grasped_f를 곱하면 release가 즉각 패널티 탈출구가 되어 local optimum 발생
+        # → release 후에도 box-goal 거리 패널티 유지, goal 근처 release를 강제
+        rew_carry = -self.cfg.rew_carry_dist * dist_to_goal
 
         # [1b] 방향 보상: dot(ee_vel, goal_dir) — goal 방향으로 이동 시 즉각 양수 보상
-        # '-dist' 단독으론 학습 신호가 너무 약함 (long-horizon credit assignment 문제)
+        # grasped 중에만 적용 (released 후엔 EE vel이 의미 없음)
         ee_vel    = self.robot.data.body_lin_vel_w[:, self._ee_body_idx]
         goal_dir  = (self._goal_pos_w - ee_pos) / (
             (self._goal_pos_w - ee_pos).norm(dim=1, keepdim=True).clamp(min=1e-6)
