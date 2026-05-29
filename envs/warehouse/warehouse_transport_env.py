@@ -227,8 +227,9 @@ class WarehouseTransportEnv(DirectRLEnv):
         if wants_release.any():
             rel_ids = wants_release.nonzero(as_tuple=True)[0]
             state = self._frozen_box_state[rel_ids].clone()
-            state[:, :3]    = ee_pos[rel_ids]  # 현재 EE 위치에서 해제
-            state[:, 7:13]  = 0.0              # 속도 0: EE vel 인계 시 box 날아가는 버그 수정
+            state[:, :3]    = ee_pos[rel_ids]
+            state[:, 2]    -= 0.08  # kinematic lock과 동일한 오프셋 유지
+            state[:, 7:13]  = 0.0
             self.box.write_root_state_to_sim(state, rel_ids)
             self._grasped[rel_ids]         = False
             self._newly_released[rel_ids]  = True
@@ -238,7 +239,8 @@ class WarehouseTransportEnv(DirectRLEnv):
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
             frozen = self._frozen_box_state[grasped_ids].clone()
-            frozen[:, :3]   = ee_pos[grasped_ids]   # offset=0: box = EE
+            frozen[:, :3]   = ee_pos[grasped_ids]
+            frozen[:, 2]   -= 0.08  # finger tip 8cm 아래 유지 (충돌체 중첩 방지)
             frozen[:, 7:13] = 0.0
             self.box.write_root_state_to_sim(frozen, grasped_ids)
 
@@ -298,9 +300,12 @@ class WarehouseTransportEnv(DirectRLEnv):
                 self._goal_pos_w[act_ids, 1] = ee_now[:, 1] + r * torch.sin(th)
                 self._goal_pos_w[act_ids, 2] = ee_now[:, 2]  # EE 홈 z에 맞춤 (1.15 고정→거리 0.18m 버그 수정)
 
-                # 박스를 EE 위치에 snap
+                # 박스를 EE 아래 0.08m에 snap (finger geometry와 겹침 방지)
+                # box center = panda_leftfinger tip → finger 내부 완전 파고듦
+                # → PhysX가 매 step 수백N 척력 발생 → arm joints 편차 → carry_dist 폭등
                 state = self.box.data.root_state_w[act_ids].clone()
                 state[:, :3]   = ee_now
+                state[:, 2]   -= 0.08  # finger tip 8cm 아래: 충돌체 중첩 해소
                 state[:, 7:13] = 0.0
                 self.box.write_root_state_to_sim(state, act_ids)
                 self._frozen_box_state[act_ids] = state
@@ -354,6 +359,14 @@ class WarehouseTransportEnv(DirectRLEnv):
         log["grasp_rate"]     = grasped_f.mean().item() * 100.0
         log["release_rate"]   = self._newly_released.float().mean().item() * 100.0
         log["placed_this_step"] = placed.float().mean().item() * 100.0
+
+        # 진단 로그
+        # IK 추적 오차: cmd_ee와 실제 EE 거리 — 크면 IK solver/joint limit 문제
+        ik_err = (self._cmd_ee_pos - ee_pos).norm(dim=1)
+        log["ik_err"] = (ik_err * grasped_f).sum().item() / (grasped_f.sum().item() + 1e-6)
+        # 그리퍼 액션 분포: -0.3 벽을 탐색하는지 확인
+        log["grip_action_mean"] = self._actions[:, 3].mean().item()
+        log["grip_action_std"]  = self._actions[:, 3].std().item()
 
         self._stat_placed   += placed.sum().item()
         self._stat_episodes += placed.sum().item()  # 임시 (done에서 정확히 계산)
