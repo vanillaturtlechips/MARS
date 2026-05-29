@@ -63,7 +63,8 @@ class WarehouseTransportEnvCfg(DirectRLEnvCfg):
 
     # 보상
     rew_carry_dist:   float = 0.3    # -dist × k / step (grasped 중). 손익분기점 없음
-    rew_release_near: float = 50.0   # one-time: goal 0.25m 이내에서 release 시 보너스
+    rew_dir:          float = 5.0    # dot(ee_vel, goal_dir) per step: 즉각 방향 보상 (carry 학습 가속)
+    rew_release_near: float = 50.0   # one-time: near_release_dist 이내에서 release 시 보너스
     rew_place:        float = 300.0  # 박스가 goal 근처에 착지+정착
     rew_time:         float = -0.02  # 약한 시간 압박
 
@@ -155,6 +156,8 @@ class WarehouseTransportEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self._actions = actions.clone().clamp(-1.0, 1.0)
+        self._newly_released[:] = False  # decimation(2) 때문에 _apply_action이 2번 호출됨
+                                         # 여기서 초기화해야 _get_rewards에 도달할 때 살아있음
 
     def _apply_action(self) -> None:
         n = self.num_envs
@@ -182,7 +185,6 @@ class WarehouseTransportEnv(DirectRLEnv):
         # Release: 공간 gating + gripper action → 물리 handoff
         # near_release_dist 이내일 때만 허용: random policy가 즉시 release하는 것을 방지
         dist_for_gate = (ee_pos - self._goal_pos_w).norm(dim=1)
-        self._newly_released[:] = False
         wants_release = (self._grasped
                          & (self._actions[:, 3] < self.cfg.release_action_threshold)
                          & (dist_for_gate < self.cfg.near_release_dist))
@@ -276,7 +278,15 @@ class WarehouseTransportEnv(DirectRLEnv):
         # [1] Carry: 거리에 비례한 step 패널티 (grasped 중만. 손익분기점 없음)
         rew_carry = -self.cfg.rew_carry_dist * dist_to_goal * grasped_f
 
-        # [2] Release near goal: goal 0.25m 이내에서 그리퍼 열면 one-time 보너스
+        # [1b] 방향 보상: dot(ee_vel, goal_dir) — goal 방향으로 이동 시 즉각 양수 보상
+        # '-dist' 단독으론 학습 신호가 너무 약함 (long-horizon credit assignment 문제)
+        ee_vel    = self.robot.data.body_lin_vel_w[:, self._ee_body_idx]
+        goal_dir  = (self._goal_pos_w - ee_pos) / (
+            (self._goal_pos_w - ee_pos).norm(dim=1, keepdim=True).clamp(min=1e-6)
+        )
+        rew_dir   = self.cfg.rew_dir * (ee_vel * goal_dir).sum(dim=1) * grasped_f
+
+        # [2] Release near goal: near_release_dist 이내에서 그리퍼 열면 one-time 보너스
         rew_release = self.cfg.rew_release_near * (
             self._newly_released & (dist_to_goal < self.cfg.near_release_dist)
         ).float()
@@ -305,7 +315,7 @@ class WarehouseTransportEnv(DirectRLEnv):
         self._stat_placed   += placed.sum().item()
         self._stat_episodes += placed.sum().item()  # 임시 (done에서 정확히 계산)
 
-        return rew_carry + rew_release + rew_place + rew_time
+        return rew_carry + rew_dir + rew_release + rew_place + rew_time
 
     # ── Done ─────────────────────────────────────────────────────────
 
