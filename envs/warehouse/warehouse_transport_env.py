@@ -96,6 +96,9 @@ class WarehouseTransportEnv(DirectRLEnv):
         self._newly_released   = torch.zeros(n, dtype=torch.bool, device=d)
         self._steps_after_rel  = torch.zeros(n, device=d)
         self._actions          = torch.zeros(n, 4, device=d)
+        # 절대 EE 목표 위치: new_q=current_q+delta_q 대신 IK가 항상 이 목표를 추적
+        # zero action → cmd_ee = home_ee → 중력 드리프트를 능동적으로 상쇄
+        self._cmd_ee_pos       = torch.zeros(n, 3, device=d)
 
         self._stat_placed   = 0
         self._stat_episodes = 0
@@ -161,16 +164,22 @@ class WarehouseTransportEnv(DirectRLEnv):
 
     def _apply_action(self) -> None:
         n = self.num_envs
-        delta_pos = self._actions[:, :3] * 0.03
+        ee_pos  = self.robot.data.body_pos_w[:, self._ee_body_idx]
 
-        # DLS IK
+        # 절대 EE 목표 누적 (중력 드리프트 방지)
+        # new_q = current_q + delta_q 방식은 매 step 드리프트가 target으로 굳어짐
+        # → 대신 cmd_ee_pos를 절대 목표로 유지하고 IK가 항상 그곳을 향함
+        self._cmd_ee_pos += self._actions[:, :3] * 0.03
+
+        # DLS IK: current EE → cmd_ee_pos
+        delta_to_cmd = self._cmd_ee_pos - ee_pos
         jac     = self.robot.root_physx_view.get_jacobians()
         J       = jac[:, self._jac_body_idx, :3, :7]
         lam     = 0.05
         JT      = J.transpose(-2, -1)
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
-        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1).clamp(-0.1, 0.1)
+        delta_q = torch.bmm(J_dls, delta_to_cmd.unsqueeze(-1)).squeeze(-1).clamp(-0.1, 0.1)
         new_q   = (self.robot.data.joint_pos[:, :7] + delta_q).clamp(-2.8, 2.8)
 
         gripper_pos = ((self._actions[:, 3:4] + 1.0) / 2.0) * 0.04
@@ -269,6 +278,8 @@ class WarehouseTransportEnv(DirectRLEnv):
                 self._frozen_box_state[act_ids] = state
                 self._grasped[act_ids]          = True
                 self._pending[act_ids]          = False
+                # cmd_ee = 현재 EE 위치로 초기화 (zero action이면 여기를 유지)
+                self._cmd_ee_pos[act_ids]       = ee_now
 
         grasped_f = self._grasped.float()
         ref_pos   = torch.where(self._grasped.unsqueeze(1).expand(-1, 3), ee_pos, box_pos)
@@ -387,6 +398,7 @@ class WarehouseTransportEnv(DirectRLEnv):
         self._frozen_box_state[env_ids_t] = 0.0
         self._newly_released[env_ids_t]   = False
         self._steps_after_rel[env_ids_t]  = 0.0
+        self._cmd_ee_pos[env_ids_t]       = 0.0  # force_grasp에서 ee_now로 재설정됨
 
     def _get_ee_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
         return (
