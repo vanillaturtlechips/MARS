@@ -184,7 +184,8 @@ class WarehouseTransportEnv(DirectRLEnv):
 
         # Release: 공간 gating + gripper action → 물리 handoff
         # near_release_dist 이내일 때만 허용: random policy가 즉시 release하는 것을 방지
-        dist_for_gate = (ee_pos - self._goal_pos_w).norm(dim=1)
+        # z는 무시: goal z=1.15m 고정, EE z≈1.30m → 3D dist≈0.18m로 gate 영구 불통 버그 수정
+        dist_for_gate = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
         wants_release = (self._grasped
                          & (self._actions[:, 3] < self.cfg.release_action_threshold)
                          & (dist_for_gate < self.cfg.near_release_dist))
@@ -287,8 +288,10 @@ class WarehouseTransportEnv(DirectRLEnv):
         rew_dir   = self.cfg.rew_dir * (ee_vel * goal_dir).sum(dim=1) * grasped_f
 
         # [2] Release near goal: near_release_dist 이내에서 그리퍼 열면 one-time 보너스
+        # gate와 동일하게 xy 수평 거리로 판정
+        xy_dist_at_release = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
         rew_release = self.cfg.rew_release_near * (
-            self._newly_released & (dist_to_goal < self.cfg.near_release_dist)
+            self._newly_released & (xy_dist_at_release < self.cfg.near_release_dist)
         ).float()
 
         # [3] Place: release 후 settle_steps 이상 경과 + goal 이내 착지
