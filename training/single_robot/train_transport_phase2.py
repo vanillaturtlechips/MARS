@@ -164,7 +164,10 @@ def main():
     grip_bias = runner.alg.policy.actor[-1].bias.data[-1].item()
     print(f"[Grip Init] actor bias[-1] = {grip_bias:+.3f}  (bias override 없음 — bootstrap+penalty로 탐색)")
 
-    curriculum = Phase2CurriculumManager(env)
+    # 커리큘럼은 항상 Stage 1에서 시작 (stat 버그로 인한 오진급 방지)
+    # stat 버그: _get_rewards에서 placed/episodes를 이중 계산 → place_rate 과대 표시
+    # → Stage 1→2→3 즉시 진급 → goal=0.50m에서 13step 만에 release → 학습 불가
+    curriculum = Phase2CurriculumManager(env)  # __init__에서 stage=0, goal=0.15m 설정
     start_iter = runner.current_learning_iteration
 
     # Bootstrap 설정: env에 주입 (매 iter _current_iter도 갱신)
@@ -179,7 +182,7 @@ def main():
     print(f"  place_goal_z={env_cfg.place_goal_z}m  place_dist_threshold={env_cfg.place_dist_threshold}m")
     print(f"  rew_place={env_cfg.rew_place}  rew_grip_penalty={env_cfg.rew_grip_penalty}")
     print(f"  bootstrap: N={BOOTSTRAP_N} iter, p={BOOTSTRAP_P} (linear decay)")
-    print(f"  커리큘럼: {CURRICULUM_STAGES}")
+    print(f"  커리큘럼: {CURRICULUM_STAGES}  ← 항상 Stage 1(goal=0.15m)부터 시작")
     print(f"  [시작 iter] {start_iter} → {args.max_iter}")
     print(f"{'='*60}\n")
 

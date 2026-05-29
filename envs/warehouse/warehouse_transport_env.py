@@ -252,9 +252,13 @@ class WarehouseTransportEnv(DirectRLEnv):
 
         # Phase 1: enable_release=False → release 비활성화
         # Phase 2: enable_release=True  → gripper action < threshold 시 release 허용
+        # near_release_dist 게이팅: goal에서 멀면 release 자체를 막음
+        # → 조기 release local optimum 차단 (goal 0.50m에서 7%/step 랜덤 release 방지)
+        near_xy_for_rel = (ee_pos[:, :2] - self._goal_pos_w[:, :2]).norm(dim=1)
         wants_release = (self._grasped
                          & (self._actions[:, 3] < self.cfg.release_action_threshold)
-                         & self.cfg.enable_release) | force_rel
+                         & self.cfg.enable_release
+                         & (near_xy_for_rel < self.cfg.near_release_dist)) | force_rel
         if wants_release.any():
             rel_ids = wants_release.nonzero(as_tuple=True)[0]
             state = self._frozen_box_state[rel_ids].clone()
@@ -416,9 +420,6 @@ class WarehouseTransportEnv(DirectRLEnv):
         # 그리퍼 액션 분포: -0.3 벽을 탐색하는지 확인
         log["grip_action_mean"] = self._actions[:, 3].mean().item()
         log["grip_action_std"]  = self._actions[:, 3].std().item()
-
-        self._stat_placed   += placed.sum().item()
-        self._stat_episodes += placed.sum().item()  # 임시 (done에서 정확히 계산)
 
         return rew_carry + rew_dir + rew_release + rew_place + rew_time + rew_grip_pen
 
