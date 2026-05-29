@@ -115,9 +115,19 @@ def main():
                             log_dir="logs/warehouse_transport",
                             device=env_wrapped.device)
 
+    import torch as _torch
+
     if args.resume_ckpt:
         runner.load(args.resume_ckpt)
         print(f"[Resume] {args.resume_ckpt}")
+    else:
+        # Actor output layer zero-init: mean = 0 강제
+        # 없으면 Xavier random mean ~N(0, 0.5)이 noise(0.10)를 압도 → carry_dist=0.61m 유지
+        # 있으면 action = N(0, 0.10) → EE barely moves → carry_dist ≈ 0.10m → VF 학습 가능
+        with _torch.no_grad():
+            runner.alg.policy.actor[-1].weight.data.zero_()
+            runner.alg.policy.actor[-1].bias.data.zero_()
+        print("[Init] Actor output layer zero-initialized: action ~ N(0, 0.10)")
 
     curriculum = TransportCurriculumManager(env)
     start_iter = runner.current_learning_iteration
@@ -127,8 +137,6 @@ def main():
     print(f"커리큘럼: {CURRICULUM_STAGES}")
     print(f"[시작 iter] {start_iter} → {args.max_iter}")
     print(f"{'='*60}\n")
-
-    import torch as _torch
 
     for iteration in range(start_iter, args.max_iter):
         runner.learn(num_learning_iterations=1, init_at_random_ep_len=(iteration == 0))
