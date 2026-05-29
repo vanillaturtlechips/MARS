@@ -114,10 +114,10 @@ def main():
             runner.alg.policy.std.data.clamp_(0.1, 0.4)
 
         log = env.extras.get("log", {})
-        td        = log.get("transport_delta", 0.0)
-        gr        = log.get("grasp_rate", 0.0)
-        dist_goal = log.get("dist_box_goal", 0.0)
-        place_r   = log.get("place_rate", 0.0)
+        td        = float(log.get("transport_delta", 0.0))
+        gr        = float(log.get("grasp_rate", 0.0))
+        dist_goal = float(log.get("dist_box_goal", 0.0))
+        place_r   = float(log.get("place_rate", 0.0))
 
         # surrogate_loss는 rsl_rl이 이미 stdout으로 출력함
         # 핵심 지표만 추가 출력
