@@ -62,7 +62,7 @@ class WarehouseTransportEnvCfg(DirectRLEnvCfg):
     )
 
     # 보상
-    rew_carry_dist:   float = 0.3    # -dist × k / step (grasped 중). 손익분기점 없음
+    rew_carry_dist:   float = 1.0    # -dist × k / step. Phase1: carry-only (signal 강화)
     rew_dir:          float = 1.0    # dot(ee_vel, goal_dir) per step: 즉각 방향 보상 (carry 학습 가속)
     rew_release_near: float = 50.0   # one-time: near_release_dist 이내에서 release 시 보너스
     rew_place:        float = 300.0  # 박스가 goal 근처에 착지+정착
@@ -182,12 +182,11 @@ class WarehouseTransportEnv(DirectRLEnv):
         ee_pos = self.robot.data.body_pos_w[:, self._ee_body_idx]
         ee_vel = self.robot.data.body_lin_vel_w[:, self._ee_body_idx]
 
-        # Release: 시간 gating + gripper action → 물리 handoff
-        # 공간 gating(dist<0.12m)은 deadlock: carry 없이 release 불가, release 없이 carry 학습 불가
-        # 시간 gating: 에피소드 시작 15 steps 이후부터 release 허용 (최소 transport 시도 강제)
+        # Phase 1 carry-only: release 비활성화 (episode_length_buf > max_episode_length 불가능)
+        # carry_dist < 0.05m 달성 후 Phase 2에서 release 추가
         wants_release = (self._grasped
                          & (self._actions[:, 3] < self.cfg.release_action_threshold)
-                         & (self.episode_length_buf > 15))
+                         & (self.episode_length_buf > self.max_episode_length))
         if wants_release.any():
             rel_ids = wants_release.nonzero(as_tuple=True)[0]
             state = self._frozen_box_state[rel_ids].clone()
@@ -295,7 +294,7 @@ class WarehouseTransportEnv(DirectRLEnv):
             self._newly_released & (xy_dist_at_release < self.cfg.near_release_dist)
         ).float()
 
-        # [3] Place: release 후 settle_steps 이상 경과 + goal 이내 착지
+        # [3] Place: Phase1=EE reach goal 0.05m / Phase2=release 후 착지
         self._steps_after_rel = torch.where(
             ~self._grasped,
             self._steps_after_rel + 1.0,
@@ -303,7 +302,8 @@ class WarehouseTransportEnv(DirectRLEnv):
         )
         settled = self._steps_after_rel >= self.cfg.settle_steps
         placed  = ~self._grasped & settled & (dist_to_goal < self.cfg.place_dist_threshold)
-        rew_place = self.cfg.rew_place * placed.float()
+        reached = self._grasped & (dist_to_goal < 0.05)
+        rew_place = self.cfg.rew_place * (placed | reached).float()
 
         # [4] 시간 패널티 (약함)
         rew_time = self.cfg.rew_time
@@ -331,12 +331,14 @@ class WarehouseTransportEnv(DirectRLEnv):
         dist_to_goal = (ref_pos - self._goal_pos_w).norm(dim=1)
         settled  = self._steps_after_rel >= self.cfg.settle_steps
         placed   = ~self._grasped & settled & (dist_to_goal < self.cfg.place_dist_threshold)
-        fell_off = ~self._grasped & (box_pos[:, 2] < 0.9)  # grasped 중엔 EE=box이므로 체크 제외
+        # Phase 1: EE가 goal 0.05m 이내 도달하면 carry 성공 (release 없이 종료)
+        reached  = self._grasped & (dist_to_goal < 0.05)
+        fell_off = ~self._grasped & (box_pos[:, 2] < 0.9)
         timed_out = self.episode_length_buf >= self.max_episode_length - 1
 
-        done = placed | fell_off | timed_out
+        done = placed | reached | fell_off | timed_out
 
-        self._stat_placed   += (placed & done).sum().item()
+        self._stat_placed   += ((placed | reached) & done).sum().item()
         self._stat_episodes += done.sum().item()
         if self._stat_episodes >= self._stat_window:
             self._stat_placed   = 0
@@ -344,6 +346,7 @@ class WarehouseTransportEnv(DirectRLEnv):
 
         log = self.extras.setdefault("log", {})
         log["term_placed"]   = placed.float().mean().item() * 100.0
+        log["term_reached"]  = reached.float().mean().item() * 100.0
         log["term_fell_off"] = fell_off.float().mean().item() * 100.0
         log["term_timed_out"] = timed_out.float().mean().item() * 100.0
         if self._stat_episodes > 0:
