@@ -79,7 +79,8 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
 
     # 커리큘럼: 박스 spawn 거리 (EE 기준)
     # 훈련 스크립트에서 단계별로 올림
-    box_spawn_dist: float = 0.20   # 시작: 0.20m (grasp_threshold보다 충분히 멀게)
+    box_spawn_dist:  float = 0.20   # 시작: 0.20m (grasp_threshold보다 충분히 멀게)
+    goal_spawn_dist: float = 0.10   # transport env와 동일 (0.10m, 0.7~1.3× 변동)
 
     force_grasp_on_reset:  bool  = False
     force_grasp_fraction:  float = 0.50   # force_grasp 적용 비율 (0.50 = 50%)
@@ -295,7 +296,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 ee_now   = ee_pos[act_ids]
                 env_orig = self.scene.env_origins[act_ids]
                 n_act    = len(act_ids)
-                r  = sample_uniform(0.25, 0.40, (n_act,), device=self.device)
+                r  = sample_uniform(self.cfg.goal_spawn_dist * 0.7, self.cfg.goal_spawn_dist * 1.3, (n_act,), device=self.device)
                 th = sample_uniform(0.0, 6.2832, (n_act,), device=self.device)
                 lx = (ee_now[:, 0] - env_orig[:, 0] + r * torch.cos(th)).clamp(0.55, 1.45)
                 ly = (ee_now[:, 1] - env_orig[:, 1] + r * torch.sin(th)).clamp(-0.30, 0.30)
@@ -326,7 +327,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
             # goal 재설정: grasp 시점 EE 기준 0.25~0.45m (force_grasp 분포 일치)
             n_new        = len(new_ids)
             env_orig_new = self.scene.env_origins[new_ids]
-            r_new  = sample_uniform(0.25, 0.45, (n_new,), device=self.device)
+            r_new  = sample_uniform(self.cfg.goal_spawn_dist * 0.7, self.cfg.goal_spawn_dist * 1.3, (n_new,), device=self.device)
             th_new = sample_uniform(0.0, 6.2832, (n_new,), device=self.device)
             lx_new = (ee_pos[new_ids, 0] - env_orig_new[:, 0] + r_new * torch.cos(th_new)).clamp(0.55, 1.45)
             ly_new = (ee_pos[new_ids, 1] - env_orig_new[:, 1] + r_new * torch.sin(th_new)).clamp(-0.30, 0.30)
@@ -474,9 +475,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         box_state[:, 7:13] = 0.0
         self.box.write_root_state_to_sim(box_state, env_ids_t)
 
-        # goal: 박스에서 0.45~0.60m 떨어진 위치, 테이블 범위 안으로 클램핑
+        # goal: box에서 goal_spawn_dist 거리 (transport env 동일 방식)
         theta = sample_uniform(0.0, 6.2832, (n,), device=self.device)
-        r     = sample_uniform(0.45, 0.60,  (n,), device=self.device)
+        r     = sample_uniform(self.cfg.goal_spawn_dist * 0.7, self.cfg.goal_spawn_dist * 1.3, (n,), device=self.device)
         local_goal_x = (local_box_x + r * torch.cos(theta)).clamp(0.55, 1.45)
         local_goal_y = (local_box_y + r * torch.sin(theta)).clamp(-0.30, 0.30)
         self._goal_pos_w[env_ids_t, 0] = env_orig[:, 0] + local_goal_x

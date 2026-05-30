@@ -53,10 +53,13 @@ from envs.warehouse.warehouse_manipulation_env import (
     OBS_DIM,
 )
 
+# (box_spawn_dist, goal_spawn_dist, place_rate_threshold, window)
 CURRICULUM_STAGES = [
-    (0.20, 20.0, 10),   # Stage 1: 10iter 평균 place_rate ≥ 20%
-    (0.30, 20.0, 15),   # Stage 2: 15iter 평균 place_rate ≥ 20%
-    (0.45, None, None), # Stage 3: 최종
+    (0.05, 0.10, 30.0, 10),   # Stage 1: transport 모델 분포 (goal 0.07~0.13m)
+    (0.10, 0.20, 25.0, 10),   # Stage 2: goal 거리 확장
+    (0.20, 0.30, 20.0, 15),   # Stage 3: box spawn 확장
+    (0.30, 0.40, 20.0, 15),   # Stage 4
+    (0.45, 0.50, None, None), # Stage 5: 최종
 ]
 
 BOOTSTRAP_N = 40    # 40 iter 동안 강제 release
@@ -71,16 +74,16 @@ class PickPlaceCurriculumManager:
         self._apply()
 
     def _apply(self) -> None:
-        dist = CURRICULUM_STAGES[self.stage][0]
-        if self.env.cfg.box_spawn_dist != dist:
-            print(f"[Curriculum] Stage {self.stage + 1}/{len(CURRICULUM_STAGES)}: "
-                  f"box_spawn_dist → {dist:.2f}m")
-            self.env.cfg.box_spawn_dist = dist
+        box_d, goal_d = CURRICULUM_STAGES[self.stage][:2]
+        self.env.cfg.box_spawn_dist  = box_d
+        self.env.cfg.goal_spawn_dist = goal_d
+        print(f"[Curriculum] Stage {self.stage + 1}/{len(CURRICULUM_STAGES)}: "
+              f"box_spawn={box_d:.2f}m  goal_spawn={goal_d:.2f}m")
 
     def step(self, place_rate: float) -> int:
         if self.stage >= len(CURRICULUM_STAGES) - 1:
             return self.stage
-        _, threshold, window = CURRICULUM_STAGES[self.stage]
+        _, _, threshold, window = CURRICULUM_STAGES[self.stage]
         self._history.append(float(place_rate))
         if len(self._history) > window:
             self._history.pop(0)
@@ -88,12 +91,9 @@ class PickPlaceCurriculumManager:
             return self.stage
         avg = sum(self._history) / window
         if avg >= threshold:
-            old = CURRICULUM_STAGES[self.stage][0]
             self.stage   += 1
             self._history = []
-            new = CURRICULUM_STAGES[self.stage][0]
-            print(f"[Curriculum] 진급! 이동평균 place_rate={avg:.1f}% ≥ {threshold:.0f}% "
-                  f"→ box_spawn {old:.2f} → {new:.2f}m")
+            print(f"[Curriculum] 진급! 이동평균 place_rate={avg:.1f}% ≥ {threshold:.0f}%")
             self._apply()
         return self.stage
 
@@ -102,6 +102,7 @@ def main():
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs       = args.num_envs
     env_cfg.box_spawn_dist       = CURRICULUM_STAGES[0][0]
+    env_cfg.goal_spawn_dist      = CURRICULUM_STAGES[0][1]
     env_cfg.force_grasp_on_reset = True    # 50% force_grasp: approach+grasp도 계속 연습
     env_cfg.near_release_dist    = 0.20
     env_cfg.place_dist_threshold = 0.20    # Phase 2와 동일하게 완화
