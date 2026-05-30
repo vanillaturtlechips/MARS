@@ -35,8 +35,15 @@ parser.add_argument("--teacher_ckpt",  type=str,   default="logs/warehouse_trans
 parser.add_argument("--resume_ckpt",   type=str,   default=None,
                     help="중간 저장 체크포인트 재개")
 parser.add_argument("--lr",            type=float, default=1e-4,
-                    help="Fine-tuning lr (Teacher보다 낮게)")
+                    help="Fine-tuning lr (Teacher보다 낮게). 0 = 정책 고정(순수 평가)")
 parser.add_argument("--save_interval", type=int,   default=100)
+# ── transport 격리 진단 옵션 ──────────────────────────────────────────
+parser.add_argument("--freeze_stage",   type=int, default=-1,
+                    help="커리큘럼 고정 stage index (-1=커리큘럼 사용). 격리 진단용")
+parser.add_argument("--force_grasp_frac", type=float, default=0.50,
+                    help="force_grasp 비율. 1.0=전부 grasp 상태 시작(transport 격리)")
+parser.add_argument("--no_release",     action="store_true",
+                    help="release 차단(near_release_dist=0). transport_delta만 측정")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -99,16 +106,25 @@ class PickPlaceCurriculumManager:
 
 
 def main():
+    # 격리 진단: freeze_stage 지정 시 해당 stage 설정으로 고정
+    init_stage = args.freeze_stage if args.freeze_stage >= 0 else 0
+
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs       = args.num_envs
-    env_cfg.box_spawn_dist       = CURRICULUM_STAGES[0][0]
-    env_cfg.goal_spawn_dist      = CURRICULUM_STAGES[0][1]
-    env_cfg.force_grasp_on_reset = True    # 50% force_grasp: approach+grasp도 계속 연습
-    env_cfg.near_release_dist    = 0.12    # 0.20→0.12: goal 더 가까이서만 release (place 성공 위해)
+    env_cfg.box_spawn_dist       = CURRICULUM_STAGES[init_stage][0]
+    env_cfg.goal_spawn_dist      = CURRICULUM_STAGES[init_stage][1]
+    env_cfg.force_grasp_on_reset = True
+    env_cfg.force_grasp_fraction = args.force_grasp_frac   # 1.0 = transport 격리
+    env_cfg.near_release_dist    = 0.0 if args.no_release else 0.12
     env_cfg.place_dist_threshold = 0.25    # 0.20→0.25: release z offset(-0.08) 흡수
     env_cfg.rew_release_near     = 15.0    # 50→15: place(200) dominant — release 자체 수확 방지
     env_cfg.rew_grip_penalty     = 0.0   # scratch 훈련 시 transport local optimum 방지
     env_cfg.episode_length_s     = 12.0   # approach+grasp+transport+place: 충분한 시간
+
+    if args.freeze_stage >= 0:
+        print(f"\n[격리 진단] freeze_stage={args.freeze_stage}  "
+              f"box_spawn={env_cfg.box_spawn_dist}  goal_spawn={env_cfg.goal_spawn_dist}  "
+              f"force_grasp={args.force_grasp_frac}  no_release={args.no_release}  lr={args.lr}\n")
 
     env = WarehouseManipulationEnv(env_cfg)
 
@@ -148,11 +164,15 @@ def main():
     else:
         print("[Init] 랜덤 초기화 (Teacher 체크포인트 없음)")
 
-    # Bootstrap 주입
-    env._bootstrap_n = BOOTSTRAP_N
-    env._bootstrap_p = BOOTSTRAP_P
+    # Bootstrap 주입 (격리 진단 시 끔 — 순수 transport_delta 측정)
+    if args.freeze_stage >= 0:
+        env._bootstrap_n = 0
+        env._bootstrap_p = 0.0
+    else:
+        env._bootstrap_n = BOOTSTRAP_N
+        env._bootstrap_p = BOOTSTRAP_P
 
-    curriculum = PickPlaceCurriculumManager(env)
+    curriculum = None if args.freeze_stage >= 0 else PickPlaceCurriculumManager(env)
     start_iter = runner.current_learning_iteration
 
     print(f"\n{'='*60}")
@@ -178,11 +198,13 @@ def main():
         release_rate = float(log.get("release_rate",      0.0))
         force_rel    = float(log.get("force_rel_rate",    0.0))
 
-        stage = curriculum.step(place_rate)
+        transport_delta = float(log.get("transport_delta", 0.0))
+        stage = curriculum.step(place_rate) if curriculum is not None else args.freeze_stage
         p_now = BOOTSTRAP_P * max(0.0, 1.0 - iteration / BOOTSTRAP_N)
 
         print(f"[iter {iteration+1:4d}] place_rate={place_rate:.1f}%  "
               f"grasp={nat_grasp:.1f}%  dist={dist_box_goal:.3f}m  "
+              f"t_delta={transport_delta:+.4f}  "
               f"release={release_rate:.1f}%  force={force_rel:.1f}%(p={p_now:.3f})  "
               f"stage={stage+1}/{len(CURRICULUM_STAGES)}")
 
