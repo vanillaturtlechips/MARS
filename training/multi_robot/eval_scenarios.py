@@ -73,6 +73,15 @@ SCENARIOS: dict[str, dict] = {
         "spawns": [(-4.0, 0.0), (4.0, 0.3), (0.0, 4.0)],
         "goals":  [( 4.0, 0.0), (-4.0, 0.3), (0.0, -4.0)],
     },
+    # ── 동적 장애물 회피 전용 (로봇 평행 직진 → 로봇 간 교착 0, 순수 장애물 우회 측정) ──
+    "S6_obstacle_detour": {
+        "desc": "동적 장애물 회피 — 평행 직진 중 경로에 장애물 출현, 우회 도달",
+        "spawns": [(-4.0, -2.0), (-4.0, 0.0), (-4.0, 2.0)],
+        "goals":  [( 4.0, -2.0), ( 4.0, 0.0), ( 4.0, 2.0)],
+        # 장애물 2개를 로봇0(y=-2)·로봇1(y=0) 경로 정면에 고정. 로봇2(y=2)는 대조군(장애물 없음)
+        "obstacles": [(0.0, -2.0), (0.0, 0.0)],
+        "obstacle_spawn_step": 25,   # 로봇이 장애물 도달 전 출현 → 회피 기동 시간 확보
+    },
 }
 
 
@@ -172,6 +181,17 @@ def run_scenario(
         for i in range(N_ROBOTS):
             env._goal_pos_w[:, i, 0] = orig[:, 0] + goals[i][0]
             env._goal_pos_w[:, i, 1] = orig[:, 1] + goals[i][1]
+
+        # 동적 장애물: 시나리오 지정 위치·등장시점으로 강제 (랜덤 override)
+        obstacles = scenario.get("obstacles")
+        if obstacles and env.cfg.enable_dynamic_obstacles:
+            spawn_step = scenario.get("obstacle_spawn_step", 25)
+            for o, (ox, oy) in enumerate(obstacles):
+                if o < env.cfg.n_dynamic_obstacles:
+                    env._obst_pos_local[:, o, 0] = ox
+                    env._obst_pos_local[:, o, 1] = oy
+            env._obst_spawn_step[all_ids] = float(spawn_step)
+            env._obst_active[all_ids] = False
 
         recorded  = torch.zeros(N_ENVS, dtype=torch.bool, device=device)
         ep_lens   = torch.zeros(N_ENVS, device=device)
