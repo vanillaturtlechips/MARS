@@ -76,8 +76,8 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
 
     rew_collision: float  = -200.0  # 충돌 = 즉사 (교착 -90과 확실한 차이)
     rew_goal: float       =    6.0  # 목표 도달 보상
-    rew_stationary: float =   -0.45  # 절충: -0.6은 S6(장애물회피) 좋지만 S3(좁은통로 양보) 박살
-                                      #       -0.3 원본은 S3 좋지만 S6 회피 약함 → 0.45로 양쪽 균형 시도
+    rew_stationary: float =   -0.6  # S6 장애물회피 98% 달성값. -0.45 절충은 S6/S1 박살(에바)로 폐기.
+                                     # S3/S4 좁은통로·동일목표 교착은 orchestrator 영역(레이어 분리)
 
     # 동적 장애물 (갑자기 출현하는 정지 장애물). False면 기존 동작 100% 보존
     enable_dynamic_obstacles: bool = False
