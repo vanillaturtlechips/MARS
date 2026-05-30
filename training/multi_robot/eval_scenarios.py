@@ -23,6 +23,8 @@ parser.add_argument("--ckpt",           type=str, required=True)
 parser.add_argument("--num_episodes",   type=int, default=100)
 parser.add_argument("--num_eval_envs",  type=int, default=16, help="병렬 eval env 수")
 parser.add_argument("--tag",            type=str, default="model")
+parser.add_argument("--enable_obstacles", action="store_true", default=False,
+                    help="동적 장애물 켜고 평가 (fine-tune 모델 회피/도달 측정)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 args.headless = getattr(args, "headless", False)
@@ -256,6 +258,9 @@ def main():
 
     env_cfg = WarehouseMARLEnvCfg()
     env_cfg.scene.num_envs = args.num_eval_envs
+    env_cfg.enable_dynamic_obstacles = args.enable_obstacles
+    if args.enable_obstacles:
+        print("[Eval] 동적 장애물 활성화 — 회피/도달 측정\n")
     env = WarehouseMARLEnv(env_cfg)
 
     results = []
