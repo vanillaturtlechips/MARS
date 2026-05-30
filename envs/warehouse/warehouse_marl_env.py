@@ -34,6 +34,11 @@ from .warehouse_obstacle_env import SHELF_CENTERS, SHELF_HALF, _shelf_aabb_dist,
 
 N_ROBOTS = 3
 OBS_PER_ROBOT = 7 + 5 * (N_ROBOTS - 1)   # 17
+OBS_PER_ROBOT_BATTERY = OBS_PER_ROBOT + 3  # 20: + battery_level(1) + 충전소 상대위치(2)
+
+
+def obs_per_robot(enable_battery: bool) -> int:
+    return OBS_PER_ROBOT_BATTERY if enable_battery else OBS_PER_ROBOT
 
 # 로봇 간 충돌 판정 거리
 ROBOT_COLLISION_DIST = 0.55   # m (로봇 폭 0.5m + 여유)
@@ -354,6 +359,24 @@ class WarehouseMARLEnv(DirectRLEnv):
                 other_dists.append(torch.cat([rel_body_xy, d, vel_rel_body], dim=1))
 
             obs_i = torch.cat([goal_body, goal_dist, vel_body, omega_z, shelf_dist] + other_dists, dim=1)
+
+            # 배터리 + 가장 가까운 충전소 방향(body frame) — enable_battery 시 +3D
+            if self.cfg.enable_battery:
+                chargers = torch.tensor(
+                    CHARGER_POSITIONS[:self.cfg.n_chargers],
+                    device=self.device, dtype=torch.float32,
+                )  # (C, 2)
+                local_pos = pos_w - self.scene.env_origins[:, :2]   # (N, 2)
+                dists = (local_pos.unsqueeze(1) - chargers.unsqueeze(0)).norm(dim=2)  # (N, C)
+                nidx = dists.argmin(dim=1)                          # (N,)
+                charger_w = self.scene.env_origins[:, :2] + chargers[nidx]  # world (N,2)
+                cvec_3d = torch.cat([
+                    charger_w - pos_w,
+                    torch.zeros(self.num_envs, 1, device=self.device),
+                ], dim=1)
+                charger_body = quat_apply_inverse(quat, cvec_3d)[:, :2]
+                obs_i = torch.cat([obs_i, self._battery[:, i:i+1], charger_body], dim=1)
+
             obs_list.append(obs_i)
 
         obs = torch.cat(obs_list, dim=1)   # (N, N_ROBOTS * OBS_PER_ROBOT) = (N, 51)
