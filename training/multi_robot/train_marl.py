@@ -30,6 +30,8 @@ parser.add_argument("--reset_noise_std", type=float, default=None,
                     help="체크포인트 로드 후 noise_std 강제 설정 (예: 0.5). 미지정 시 체크포인트 값 유지")
 parser.add_argument("--enable_obstacles", action="store_true", default=False,
                     help="동적 장애물(갑자기 출현) 활성화 — model_9999 fine-tune용")
+parser.add_argument("--enable_battery", action="store_true", default=False,
+                    help="배터리/충전소 활성화 — obs 17→20D (model_9999는 ippo_ckpt로 actor partial transfer)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -47,7 +49,9 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
-from envs.warehouse.warehouse_marl_env import WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT
+from envs.warehouse.warehouse_marl_env import (
+    WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT, obs_per_robot,
+)
 from envs.warehouse.ippo_wrapper import IPPOReshapeWrapper
 
 ACT_DIM = 3
@@ -74,18 +78,23 @@ def make_mappo_runner_cfg(num_envs: int, max_iter: int) -> RslRlOnPolicyRunnerCf
 
 
 def main():
+    obr = obs_per_robot(args.enable_battery)   # 17 또는 20
     env_cfg = WarehouseMARLEnvCfg()
     env_cfg.scene.num_envs    = args.num_envs
-    env_cfg.observation_space = OBS_PER_ROBOT * N_ROBOTS   # 27 (joint)
+    env_cfg.enable_battery    = args.enable_battery
+    env_cfg.observation_space = obr * N_ROBOTS
+    env_cfg.state_space       = obr * N_ROBOTS
     env_cfg.action_space      = ACT_DIM * N_ROBOTS          # 9
     env_cfg.enable_dynamic_obstacles = args.enable_obstacles
     if args.enable_obstacles:
-        print("[MAPPO] 동적 장애물 활성화 — obs 차원 유지(min 거리), fine-tune 모드")
+        print("[MAPPO] 동적 장애물 활성화 — obs 차원 유지(min 거리)")
+    if args.enable_battery:
+        print(f"[MAPPO] 배터리/충전소 활성화 — obs {obr}D. model_9999는 --ippo_ckpt로 actor partial transfer 권장")
 
     env = WarehouseMARLEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
-    env = IPPOReshapeWrapper(env, N_ROBOTS, OBS_PER_ROBOT)
-    # actor obs=OBS_PER_ROBOT per-robot — IPPO 체크포인트와 호환
+    env = IPPOReshapeWrapper(env, N_ROBOTS, obr)
+    # actor obs=obr per-robot (battery 시 20D) — IPPO 체크포인트 actor partial 호환
 
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
     cfg_dict = runner_cfg.to_dict()
@@ -100,12 +109,20 @@ def main():
             runner.alg.policy.std.data.fill_(args.reset_noise_std)
             print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
     elif args.ippo_ckpt and not args.from_scratch:
-        print(f"[MAPPO] actor-only 로드 (IPPO→MAPPO): {args.ippo_ckpt}")
+        print(f"[MAPPO] actor partial 로드 (IPPO→MAPPO): {args.ippo_ckpt}")
         ckpt = torch.load(args.ippo_ckpt, map_location=env.device, weights_only=False)
         sd = ckpt.get("model_state_dict", ckpt)
         actor_sd = {k: v for k, v in sd.items() if k.startswith("actor.")}
-        runner.alg.policy.load_state_dict(actor_sd, strict=False)
-        print(f"[MAPPO] actor 로드 완료 | critic 새로 초기화")
+        # obs 차원이 다르면(battery: 17→20) 입력층 size mismatch → shape 일치 레이어만 transfer
+        model_sd = runner.alg.policy.state_dict()
+        filtered = {k: v for k, v in actor_sd.items()
+                    if k in model_sd and v.shape == model_sd[k].shape}
+        skipped = [k for k in actor_sd if k not in filtered]
+        runner.alg.policy.load_state_dict(filtered, strict=False)
+        print(f"[MAPPO] actor {len(filtered)}층 transfer | 입력층 등 {len(skipped)}개 새로 초기화: {skipped}")
+        if args.reset_noise_std is not None:
+            runner.alg.policy.std.data.fill_(args.reset_noise_std)
+            print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
         if args.reset_noise_std is not None:
             runner.alg.policy.std.data.fill_(args.reset_noise_std)
             print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
