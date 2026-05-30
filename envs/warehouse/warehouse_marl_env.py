@@ -218,6 +218,27 @@ class WarehouseMARLEnv(DirectRLEnv):
             state[:, 7:]  = 0.0
             obst.write_root_state_to_sim(state)
 
+    def _dynamic_obstacle_dist(self, local_pos: torch.Tensor) -> torch.Tensor:
+        """로봇 local 위치 → 가장 가까운 '등장한' 동적 장애물까지 AABB 거리 (N,).
+        비활성(지하)·비활성화 시 무한대 → min 연산에 영향 없음 (obs 분포 보존)."""
+        n = local_pos.shape[0]
+        min_d = torch.full((n,), 1e6, device=self.device)
+        if not self.cfg.enable_dynamic_obstacles:
+            return min_d
+        half_x = self.cfg.obstacle_size[0] / 2.0
+        half_y = self.cfg.obstacle_size[1] / 2.0
+        for o in range(self.cfg.n_dynamic_obstacles):
+            ox = self._obst_pos_local[:, o, 0]
+            oy = self._obst_pos_local[:, o, 1]
+            diff = torch.stack([
+                (local_pos[:, 0] - ox).abs() - half_x,
+                (local_pos[:, 1] - oy).abs() - half_y,
+            ], dim=1).clamp(min=0.0)
+            d = diff.norm(dim=1)
+            d = torch.where(self._obst_active[:, o], d, torch.full_like(d, 1e6))
+            min_d = torch.minimum(min_d, d)
+        return min_d
+
     def _apply_action(self) -> None:
         for i, robot in enumerate(self.robots):
             quat = robot.data.root_quat_w
@@ -254,7 +275,10 @@ class WarehouseMARLEnv(DirectRLEnv):
             omega_z    = ang_vel_w[:, 2:3]
 
             local_pos  = pos_w - self.scene.env_origins[:, :2]
-            shelf_dist = _shelf_aabb_dist(local_pos).unsqueeze(1).clamp(max=5.0)
+            # 선반 + 등장한 동적 장애물 중 가장 가까운 거리 (obs 차원 유지: 1채널)
+            nearest = torch.minimum(_shelf_aabb_dist(local_pos),
+                                    self._dynamic_obstacle_dist(local_pos))
+            shelf_dist = nearest.unsqueeze(1).clamp(max=5.0)
 
             # 다른 로봇까지 상대 위치(body frame) + 거리 + 상대 속도 — 5-dim per robot
             other_dists = []
