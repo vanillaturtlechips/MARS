@@ -102,6 +102,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._box_mass           = torch.ones(n, device=d)
         self._grasped            = torch.zeros(n, dtype=torch.bool, device=d)
         self._actions            = torch.zeros(n, self.cfg.action_space, device=d)
+        self._cmd_ee_pos         = torch.zeros(n, 3, device=d)   # transport env 방식: 누적 위치 명령
+        self._home_q             = torch.zeros(n, 7, device=d)   # reset 후 pending 중 joint 기준
         self._grasp_ee_offset    = torch.zeros(n, 3, device=d)
         self._frozen_box_state   = torch.zeros(n, 13, device=d)
         self._prev_dist_ee_box    = torch.full((n,), 999.0, device=d)
@@ -185,20 +187,22 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
         self._newly_released[:] = False
         self._force_released[:] = False
+        # transport env과 동일: env step마다 1번만 cmd 누적 (decimation=2 호출 전)
+        self._cmd_ee_pos += self._actions[:, :3] * 0.01
 
     def _apply_action(self) -> None:
         n = self.num_envs
-        delta_pos = self._actions[:, :3] * 0.03
         ee_pos, _ = self._get_ee_pose()
 
-        # DLS IK
+        # transport env과 동일: cmd_ee_pos 추적 방식 DLS IK
+        delta_to_cmd = self._cmd_ee_pos - ee_pos
         jac = self.robot.root_physx_view.get_jacobians()
         J   = jac[:, self._jac_body_idx, :3, :7]
         lam = 0.05
         JT      = J.transpose(-2, -1)
         JJT_reg = torch.bmm(J, JT) + lam * torch.eye(3, device=self.device).unsqueeze(0).expand(n, -1, -1)
         J_dls   = torch.bmm(JT, torch.linalg.inv(JJT_reg))
-        delta_q = torch.bmm(J_dls, delta_pos.unsqueeze(-1)).squeeze(-1).clamp(-0.1, 0.1)
+        delta_q = torch.bmm(J_dls, delta_to_cmd.unsqueeze(-1)).squeeze(-1).clamp(-0.3, 0.3)
 
         new_q = (self.robot.data.joint_pos[:, :7] + delta_q).clamp(-2.8, 2.8)
 
@@ -491,6 +495,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._steps_after_rel[env_ids_t]     = 0
         self._newly_released[env_ids_t]      = False
         self._force_released[env_ids_t]      = False
+        # cmd_ee_pos를 현재 EE 위치로 초기화 (transport env 방식)
+        self._cmd_ee_pos[env_ids_t]          = ee_pos_n
+        self._home_q[env_ids_t]              = home_pose[:, :7]
 
         # force_grasp: reset에서는 pending 표시만 → 실제 EE 기반 활성화는 step 1에서 (_get_rewards)
         if self.cfg.force_grasp_on_reset and n > 0:
