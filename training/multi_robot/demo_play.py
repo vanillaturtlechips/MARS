@@ -20,6 +20,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="MARS 데모 플레이어")
 parser.add_argument("--checkpoint", type=str, required=True)
 parser.add_argument("--num_envs",   type=int, default=1)
+parser.add_argument("--max_steps",  type=int, default=0, help="0=무한(GUI 데모), N=N step 후 종료(headless 검증)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -187,12 +188,19 @@ def main():
     obs = env.get_observations()
     if isinstance(obs, tuple):
         obs = obs[0]
+    step = 0
     while simulation_app.is_running():
         with torch.inference_mode():
             actions = policy.act_inference(obs)
         obs, _, _, _ = env.step(actions)
         if isinstance(obs, tuple):
             obs = obs[0]
+        step += 1
+        if step % 50 == 0:
+            print(f"[Demo] step {step} 진행 중...")
+        if args.max_steps > 0 and step >= args.max_steps:
+            print(f"[Demo] {args.max_steps} step 완료 — 종료")
+            break
     env.close()
 
 
