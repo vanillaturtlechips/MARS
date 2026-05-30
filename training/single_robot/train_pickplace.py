@@ -16,7 +16,7 @@ Phase 2 transport에서 검증된 구조:
 실행:
   python training/single_robot/train_pickplace.py \\
       --headless --num_envs 2048 \\
-      --teacher_ckpt logs/warehouse_manipulation_teacher/model_2999.pt
+      --teacher_ckpt logs/warehouse_transport_phase2/model_600.pt
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs",      type=int,   default=2048)
 parser.add_argument("--max_iter",      type=int,   default=600)
-parser.add_argument("--teacher_ckpt",  type=str,   default=None,
-                    help="Teacher 체크포인트 (model_2999.pt)")
+parser.add_argument("--teacher_ckpt",  type=str,   default="logs/warehouse_transport_phase2/model_600.pt",
+                    help="Transport Phase 2 체크포인트 (model_600.pt)")
 parser.add_argument("--resume_ckpt",   type=str,   default=None,
                     help="중간 저장 체크포인트 재개")
 parser.add_argument("--lr",            type=float, default=1e-4,
@@ -120,8 +120,8 @@ def main():
     runner_cfg.empirical_normalization = True
     runner_cfg.policy = RslRlPpoActorCriticCfg(
         init_noise_std=0.10,
-        actor_hidden_dims=[512, 256, 128],
-        critic_hidden_dims=[512, 256, 128],
+        actor_hidden_dims=[256, 128, 64],   # transport Phase 2와 동일 → model_600.pt 로드 가능
+        critic_hidden_dims=[256, 128, 64],
         activation="elu",
     )
 

@@ -34,7 +34,7 @@ try:
 except ImportError:
     from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
 
-OBS_DIM = 31  # +1 for is_grasped
+OBS_DIM = 23  # transport env과 동일: goal_rel(3)+dist(1)+ee_vel(3)+jpos7(7)+jvel7(7)+gripper(1)+grasped(1)
 
 
 @configclass
@@ -256,26 +256,27 @@ class WarehouseManipulationEnv(DirectRLEnv):
         joint_vel  = self.robot.data.joint_vel
         gripper_w  = joint_pos[:, 7:8] + joint_pos[:, 8:9]
         box_pos    = self.box.data.root_pos_w
-        box_quat   = self.box.data.root_quat_w
+        ee_vel     = self.robot.data.body_lin_vel_w[:, self._ee_body_idx]
 
-        # grasped면 carried 위치 기준으로 goal_rel 계산
-        box_pos_eff = torch.where(
+        # transport env과 동일한 구조:
+        # not_grasped → goal_rel = box-ee (approach 방향)
+        # grasped     → goal_rel = goal-ee (transport 방향, transport model 호환)
+        goal_rel = torch.where(
             self._grasped.unsqueeze(1).expand(-1, 3),
-            ee_pos + self._grasp_ee_offset,
-            box_pos,
+            self._goal_pos_w - ee_pos,   # grasped: box-to-goal (transport env 동일)
+            box_pos - ee_pos,            # not grasped: ee-to-box (approach)
         )
-        goal_rel = self._goal_pos_w - box_pos_eff
+        dist = goal_rel.norm(dim=1, keepdim=True)
 
         obs = torch.cat([
-            box_pos - ee_pos,           # 3
-            box_quat,                   # 4
-            self._box_mass.unsqueeze(1),# 1
-            gripper_w,                  # 1
-            goal_rel,                   # 3
-            joint_pos[:, :9],           # 9
-            joint_vel[:, :9],           # 9
-            self._grasped.float().unsqueeze(1),  # 1  ← 파지 여부
-        ], dim=1)  # (N, 31)
+            goal_rel,                                    # 3
+            dist,                                        # 1
+            ee_vel,                                      # 3
+            joint_pos[:, :7],                            # 7
+            joint_vel[:, :7],                            # 7
+            gripper_w,                                   # 1
+            self._grasped.float().unsqueeze(1),          # 1
+        ], dim=1)  # (N, 23)
         return {"policy": obs}
 
     def _get_rewards(self) -> torch.Tensor:
