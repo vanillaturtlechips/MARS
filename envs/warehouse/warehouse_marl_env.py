@@ -45,6 +45,9 @@ SPAWN_OFFSETS = [
     ( 0.0,  1.5),
 ]
 
+# 충전소 위치 (env-local) — 맵 코너, 선반(±2,±2.5)과 안 겹침
+CHARGER_POSITIONS = [(-5.0, 5.0), (5.0, -5.0)]
+
 
 @configclass
 class WarehouseMARLEnvCfg(DirectRLEnvCfg):
@@ -90,6 +93,15 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     # 과하면 끼였을 때 누적 폭발(VF loss) → -30/step: 회피 유인 유지하며 안정
     rew_obstacle_collision: float = -30.0
 
+    # 배터리 + 충전소 (enable_battery=False면 기존 동작·obs 차원 100% 보존)
+    enable_battery: bool = False
+    n_chargers: int = 2
+    battery_drain: float = 0.0025       # step당 소모 (시작 0.3이면 ~120step에 방전)
+    battery_charge: float = 0.02        # 충전소 근처 step당 회복
+    charge_radius: float = 0.6          # 충전 판정 거리
+    battery_init_min: float = 0.3
+    battery_init_max: float = 1.0
+
 
 class WarehouseMARLEnv(DirectRLEnv):
     cfg: WarehouseMARLEnvCfg
@@ -107,6 +119,10 @@ class WarehouseMARLEnv(DirectRLEnv):
             self._obst_pos_local  = torch.zeros(self.num_envs, no, 2, device=d)  # env-local 등장 위치
             self._obst_spawn_step = torch.zeros(self.num_envs, no, device=d)     # 등장 시점(step)
             self._obst_active     = torch.zeros(self.num_envs, no, dtype=torch.bool, device=d)
+
+        # 배터리 버퍼 (로봇별 0~1)
+        if self.cfg.enable_battery:
+            self._battery = torch.ones(self.num_envs, N_ROBOTS, device=self.device)
 
     # ------------------------------------------------------------------
     # Scene: 로봇 N대 + 선반 4개
@@ -182,6 +198,21 @@ class WarehouseMARLEnv(DirectRLEnv):
                 )
                 self.obstacles.append(RigidObject(obst_cfg))
 
+        # 충전소: 낮은 패드(시각 표식, collision 없이 로봇이 위로 지나감)
+        if self.cfg.enable_battery:
+            charger_cfg = sim_utils.CuboidCfg(
+                size=(1.0, 1.0, 0.05),
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(0.1, 0.9, 0.3), metallic=0.0
+                ),
+            )
+            for c, (cx, cy) in enumerate(CHARGER_POSITIONS[:self.cfg.n_chargers]):
+                charger_cfg.func(
+                    f"/World/envs/env_0/Charger_{c}", charger_cfg,
+                    translation=(cx, cy, 0.025),
+                    orientation=(1.0, 0.0, 0.0, 0.0),
+                )
+
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
@@ -200,6 +231,26 @@ class WarehouseMARLEnv(DirectRLEnv):
         # actions: (N, N_ROBOTS * 3) → (N, N_ROBOTS, 3)
         self._actions = actions.clone().clamp(-1.0, 1.0).view(self.num_envs, N_ROBOTS, 3)
         self._update_obstacles()
+        self._update_battery()
+
+    def _update_battery(self) -> None:
+        """step마다 배터리 소모, 충전소 charge_radius 이내면 회복."""
+        if not self.cfg.enable_battery:
+            return
+        self._battery -= self.cfg.battery_drain
+        origins = self.scene.env_origins[:, :2]
+        for i, robot in enumerate(self.robots):
+            local = robot.data.root_pos_w[:, :2] - origins   # (N, 2)
+            on_charger = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            for cx, cy in CHARGER_POSITIONS[:self.cfg.n_chargers]:
+                d = ((local[:, 0] - cx) ** 2 + (local[:, 1] - cy) ** 2).sqrt()
+                on_charger |= (d < self.cfg.charge_radius)
+            self._battery[:, i] = torch.where(
+                on_charger,
+                self._battery[:, i] + self.cfg.battery_charge,
+                self._battery[:, i],
+            )
+        self._battery.clamp_(0.0, 1.0)
 
     def _update_obstacles(self) -> None:
         """episode_length_buf가 등장 시점 도달 시 장애물을 지하→지상으로 올림 (kinematic)."""
@@ -461,3 +512,10 @@ class WarehouseMARLEnv(DirectRLEnv):
                 (n, no), device=self.device,
             )
             self._obst_active[env_ids_t] = False
+
+        # 배터리 초기화 (로봇별 랜덤 0.3~1.0)
+        if self.cfg.enable_battery:
+            self._battery[env_ids_t] = sample_uniform(
+                self.cfg.battery_init_min, self.cfg.battery_init_max,
+                (n, N_ROBOTS), device=self.device,
+            )
