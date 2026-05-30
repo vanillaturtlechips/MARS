@@ -57,12 +57,12 @@ from envs.warehouse.ippo_wrapper import IPPOReshapeWrapper
 ACT_DIM = 3
 
 
-def make_mappo_runner_cfg(num_envs: int, max_iter: int) -> RslRlOnPolicyRunnerCfg:
+def make_mappo_runner_cfg(num_envs: int, max_iter: int, exp_name: str = "warehouse_mappo") -> RslRlOnPolicyRunnerCfg:
     runner_cfg = RslRlOnPolicyRunnerCfg()
     runner_cfg.num_steps_per_env  = 24
     runner_cfg.max_iterations     = max_iter
     runner_cfg.save_interval      = 200
-    runner_cfg.experiment_name    = "warehouse_mappo"
+    runner_cfg.experiment_name    = exp_name
     runner_cfg.run_name           = f"mappo_n{N_ROBOTS}_env{num_envs}"
     runner_cfg.logger             = "tensorboard"
     runner_cfg.empirical_normalization = True
@@ -96,11 +96,13 @@ def main():
     env = IPPOReshapeWrapper(env, N_ROBOTS, obr)
     # actor obs=obr per-robot (battery 시 20D) — IPPO 체크포인트 actor partial 호환
 
-    runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter)
+    # 배터리 정책은 obs 20D 별개 → 기존 17D 모델 덮어쓰기 방지로 경로 분리
+    exp_name = "warehouse_mappo_battery" if args.enable_battery else "warehouse_mappo"
+    runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter, exp_name)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
     cfg_dict["algorithm"]["entropy_coef"] = 0.001  # per-robot 보상으로 신호 깨끗해져 낮은 값 충분
-    runner = OnPolicyRunner(env, cfg_dict, log_dir="logs/warehouse_mappo", device=env.device)
+    runner = OnPolicyRunner(env, cfg_dict, log_dir=f"logs/{exp_name}", device=env.device)
 
     if args.mappo_ckpt and not args.from_scratch:
         print(f"[MAPPO] full 로드 (이어서 훈련): {args.mappo_ckpt}")
@@ -132,8 +134,8 @@ def main():
         print("[경고] --mappo_ckpt 또는 --ippo_ckpt 지정 권장")
 
     print(f"\n[True CTDE MAPPO]")
-    print(f"  Actor obs : {OBS_PER_ROBOT}-dim per-robot (goal+vel+shelf+relative_robots)")
-    print(f"  Critic obs: {OBS_PER_ROBOT * N_ROBOTS}-dim global state")
+    print(f"  Actor obs : {obr}-dim per-robot (goal+vel+shelf+relative_robots{'+battery+charger' if args.enable_battery else ''})")
+    print(f"  Critic obs: {obr * N_ROBOTS}-dim global state")
     print(f"  Reward    : per-robot (credit assignment)")
     print(f"  {args.num_envs} envs × {N_ROBOTS} robots = {args.num_envs * N_ROBOTS} virtual envs\n")
 
