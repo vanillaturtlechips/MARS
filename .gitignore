@@ -6,6 +6,7 @@ logs/**/*.pt
 !logs/warehouse_mappo/model_9999.pt
 !logs/warehouse_transport/model_200.pt
 !logs/warehouse_transport_phase2/model_600.pt
+!logs/warehouse_pickplace/model_300.pt
 logs/**/events.out.tfevents.*
 logs/**/git/
 
