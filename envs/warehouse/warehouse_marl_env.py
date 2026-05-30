@@ -78,6 +78,15 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     rew_goal: float       =    6.0  # 목표 도달 보상
     rew_stationary: float =   -0.3  # per-robot 정지 패널티
 
+    # 동적 장애물 (갑자기 출현하는 정지 장애물). False면 기존 동작 100% 보존
+    enable_dynamic_obstacles: bool = False
+    n_dynamic_obstacles: int = 2
+    obstacle_size: tuple = (0.7, 0.7, 1.0)
+    obstacle_spawn_step_min: int = 30   # 등장 시점(step) 범위 — 에피소드 도중 출현
+    obstacle_spawn_step_max: int = 90
+    obstacle_z: float = 0.5             # 등장 시 z (지하 -5.0에서 올라옴)
+    rew_obstacle_collision: float = -200.0  # 동적 장애물 충돌 페널티
+
 
 class WarehouseMARLEnv(DirectRLEnv):
     cfg: WarehouseMARLEnvCfg
@@ -87,6 +96,14 @@ class WarehouseMARLEnv(DirectRLEnv):
         self._goal_pos_w = torch.zeros(self.num_envs, N_ROBOTS, 2, device=self.device)
         self._actions = torch.zeros(self.num_envs, N_ROBOTS, 3, device=self.device)
         self._prev_positions: torch.Tensor | None = None   # delta repulsion 버퍼
+
+        # 동적 장애물 상태 버퍼
+        if self.cfg.enable_dynamic_obstacles:
+            no = self.cfg.n_dynamic_obstacles
+            d = self.device
+            self._obst_pos_local  = torch.zeros(self.num_envs, no, 2, device=d)  # env-local 등장 위치
+            self._obst_spawn_step = torch.zeros(self.num_envs, no, device=d)     # 등장 시점(step)
+            self._obst_active     = torch.zeros(self.num_envs, no, dtype=torch.bool, device=d)
 
     # ------------------------------------------------------------------
     # Scene: 로봇 N대 + 선반 4개
@@ -143,11 +160,32 @@ class WarehouseMARLEnv(DirectRLEnv):
                 orientation=(1.0, 0.0, 0.0, 0.0),
             )
 
+        # 동적 장애물: kinematic cuboid, 초기 지하 -5m (등장 전)
+        self.obstacles: list[RigidObject] = []
+        if self.cfg.enable_dynamic_obstacles:
+            for o in range(self.cfg.n_dynamic_obstacles):
+                obst_cfg = RigidObjectCfg(
+                    prim_path=f"/World/envs/env_.*/DynObstacle_{o}",
+                    spawn=sim_utils.CuboidCfg(
+                        size=self.cfg.obstacle_size,
+                        rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+                        mass_props=sim_utils.MassPropertiesCfg(mass=100.0),
+                        collision_props=sim_utils.CollisionPropertiesCfg(),
+                        visual_material=sim_utils.PreviewSurfaceCfg(
+                            diffuse_color=(0.9, 0.5, 0.1), metallic=0.0
+                        ),
+                    ),
+                    init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -5.0)),
+                )
+                self.obstacles.append(RigidObject(obst_cfg))
+
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
         for i, robot in enumerate(self.robots):
             self.scene.rigid_objects[f"robot_{i}"] = robot
+        for o, obst in enumerate(self.obstacles):
+            self.scene.rigid_objects[f"obstacle_{o}"] = obst
 
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
@@ -158,6 +196,27 @@ class WarehouseMARLEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         # actions: (N, N_ROBOTS * 3) → (N, N_ROBOTS, 3)
         self._actions = actions.clone().clamp(-1.0, 1.0).view(self.num_envs, N_ROBOTS, 3)
+        self._update_obstacles()
+
+    def _update_obstacles(self) -> None:
+        """episode_length_buf가 등장 시점 도달 시 장애물을 지하→지상으로 올림 (kinematic)."""
+        if not self.cfg.enable_dynamic_obstacles:
+            return
+        origins = self.scene.env_origins  # (N, 3)
+        for o, obst in enumerate(self.obstacles):
+            active = self.episode_length_buf >= self._obst_spawn_step[:, o]   # (N,)
+            self._obst_active[:, o] = active
+            state = obst.data.default_root_state.clone()                      # (N, 13)
+            state[:, 0] = origins[:, 0] + self._obst_pos_local[:, o, 0]
+            state[:, 1] = origins[:, 1] + self._obst_pos_local[:, o, 1]
+            state[:, 2] = torch.where(
+                active,
+                torch.full_like(state[:, 2], self.cfg.obstacle_z),
+                torch.full_like(state[:, 2], -5.0),
+            )
+            state[:, 3:7] = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
+            state[:, 7:]  = 0.0
+            obst.write_root_state_to_sim(state)
 
     def _apply_action(self) -> None:
         for i, robot in enumerate(self.robots):
@@ -354,3 +413,16 @@ class WarehouseMARLEnv(DirectRLEnv):
         if self._prev_positions is not None:
             for i, robot in enumerate(self.robots):
                 self._prev_positions[env_ids_t, i] = robot.data.root_pos_w[env_ids_t, :2]
+
+        # 동적 장애물: 등장 위치(env 중앙 영역)·시점 랜덤화, 비활성으로 초기화
+        if self.cfg.enable_dynamic_obstacles:
+            no = self.cfg.n_dynamic_obstacles
+            self._obst_pos_local[env_ids_t] = sample_uniform(
+                -3.0, 3.0, (n, no, 2), device=self.device
+            )
+            self._obst_spawn_step[env_ids_t] = sample_uniform(
+                float(self.cfg.obstacle_spawn_step_min),
+                float(self.cfg.obstacle_spawn_step_max),
+                (n, no), device=self.device,
+            )
+            self._obst_active[env_ids_t] = False
