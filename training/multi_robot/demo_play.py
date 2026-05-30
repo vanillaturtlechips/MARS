@@ -180,9 +180,19 @@ def main():
     runner.load(args.checkpoint)
 
     print(f"\n[Demo] 체크포인트 로드: {args.checkpoint}")
-    print(f"[Demo] 로봇 {N_ROBOTS}대, noise_std=0.01 (결정론적)\n")
+    print(f"[Demo] 로봇 {N_ROBOTS}대 — inference 루프 (학습 안 함, 결정론적)\n")
 
-    runner.learn(num_learning_iterations=999999, init_at_random_ep_len=False)
+    # 데모: 정책 고정 inference (act_inference = actor mean, std 미사용 → std 음수 에러 회피)
+    policy = runner.alg.policy
+    obs = env.get_observations()
+    if isinstance(obs, tuple):
+        obs = obs[0]
+    while simulation_app.is_running():
+        with torch.inference_mode():
+            actions = policy.act_inference(obs)
+        obs, _, _, _ = env.step(actions)
+        if isinstance(obs, tuple):
+            obs = obs[0]
     env.close()
 
 
