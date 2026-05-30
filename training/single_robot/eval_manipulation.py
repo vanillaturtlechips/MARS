@@ -66,12 +66,21 @@ class EvalManipulationEnv(WarehouseManipulationEnv):
     def _get_dones(self):
         terminated, timed_out = super()._get_dones()
 
+        # env 실제 정의와 일치: release 기반 물리 착지
+        #   placed  = ~grasped & settled & box가 goal 근처
+        #   dropped = ~grasped & has_released & box 낙하
         ee_pos, _ = self._get_ee_pose()
-        box_pos_carried = ee_pos + self._grasp_ee_offset
-        dist_box_goal   = (box_pos_carried - self._goal_pos_w).norm(dim=1)
+        box_pos = self.box.data.root_pos_w
+        box_pos_eff = torch.where(
+            self._grasped.unsqueeze(1).expand(-1, 3),
+            ee_pos + self._grasp_ee_offset,
+            box_pos,
+        )
+        dist_box_goal = (box_pos_eff - self._goal_pos_w).norm(dim=1)
 
-        placed  = self._grasped & (dist_box_goal < self.cfg.place_dist_threshold)
-        dropped = self._grasped & (self.box.data.root_pos_w[:, 2] < 0.30)
+        settled = self._has_released & (self._steps_after_rel >= self.cfg.settle_steps)
+        placed  = (~self._grasped) & settled & (dist_box_goal < self.cfg.place_dist_threshold)
+        dropped = (~self._grasped) & self._has_released & (box_pos[:, 2] < 0.9)
 
         self._outcome[timed_out]               = 3
         self._outcome[terminated & dropped]    = 2
@@ -186,7 +195,7 @@ def eval_ckpt(ckpt_path: str, env: EvalManipulationEnv, num_episodes: int, devic
     obs_mismatch = (ckpt_obs_dim != OBS_DIM or ckpt_act_dim != env_act_dim)
     if obs_mismatch:
         print(f"  [경고] 체크포인트({ckpt_obs_dim}→{ckpt_act_dim})와 "
-              f"현재 env({env_obs_dim}→{env_act_dim}) 불일치 → 랜덤 policy 사용")
+              f"현재 env({OBS_DIM}→{env_act_dim}) 불일치 → 랜덤 policy 사용")
 
     obs_dict, _ = env.reset()
     env.reset_stats()          # 초기 reset 이후에 카운터 초기화
@@ -230,6 +239,13 @@ def main():
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env_cfg.enable_background = True
+    # train_pickplace와 동일 설정 (최종 stage 5 난이도로 실전 평가)
+    env_cfg.force_grasp_on_reset = False    # 평가: approach+grasp부터 전체 파이프라인
+    env_cfg.box_spawn_dist       = 0.45     # stage 5
+    env_cfg.goal_spawn_dist      = 0.50     # stage 5
+    env_cfg.near_release_dist    = 0.12
+    env_cfg.place_dist_threshold = 0.25
+    env_cfg.episode_length_s     = 12.0
     env = EvalManipulationEnv(env_cfg)
 
     print(f"\n[Eval] 에피소드: {args.num_episodes}, 병렬 env: {args.num_envs}\n")
