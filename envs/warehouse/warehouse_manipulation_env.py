@@ -216,11 +216,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
         target_q[:, 7:9] = gripper_pos.expand(-1, 2)
         self.robot.set_joint_position_target(target_q)
 
-        # grasped 상태: 박스를 EE에 고정 (물리적 그리퍼 대신 kinematic lock)
+        # grasped 상태: box를 지하 -5m로 숨김 (transport env 동일)
+        # → box 질량/충돌이 EE IK 추적 방해하는 것 차단 (model_600 학습 환경과 일치)
+        #   release 시 box를 EE 위치에 재등장시켜 안착 (아래 release 로직)
         if self._grasped.any():
             grasped_ids = self._grasped.nonzero(as_tuple=True)[0]
             frozen = self._frozen_box_state[grasped_ids].clone()
-            frozen[:, :3] = ee_pos[grasped_ids] + self._grasp_ee_offset[grasped_ids]
+            frozen[:, :2]   = ee_pos[grasped_ids, :2]
+            frozen[:, 2]    = -5.0
             frozen[:, 7:13] = 0.0
             self.box.write_root_state_to_sim(frozen, grasped_ids)
 
