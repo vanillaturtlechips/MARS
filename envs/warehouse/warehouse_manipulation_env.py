@@ -317,8 +317,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
 
         dist_ee_box = (ee_pos - box_pos).norm(dim=1)
 
-        # grasp 감지: 엄격해진 threshold (0.04m) — 실제로 접근해야 잡힘
-        newly_grasped = (~self._grasped) & (dist_ee_box < self.cfg.grasp_dist_threshold)
+        # grasp 감지: 한 번 release한 env는 재grasp 차단 (에피소드당 1 place 시도)
+        # → grasp/release 무한 수확 사이클 방지 (reward hacking 차단)
+        newly_grasped = (~self._grasped) & (~self._has_released) & (dist_ee_box < self.cfg.grasp_dist_threshold)
         self._grasped |= newly_grasped
         if newly_grasped.any():
             new_ids = newly_grasped.nonzero(as_tuple=True)[0]

@@ -104,9 +104,9 @@ def main():
     env_cfg.box_spawn_dist       = CURRICULUM_STAGES[0][0]
     env_cfg.goal_spawn_dist      = CURRICULUM_STAGES[0][1]
     env_cfg.force_grasp_on_reset = True    # 50% force_grasp: approach+grasp도 계속 연습
-    env_cfg.near_release_dist    = 0.20
-    env_cfg.place_dist_threshold = 0.20    # Phase 2와 동일하게 완화
-    env_cfg.rew_release_near     = 50.0
+    env_cfg.near_release_dist    = 0.12    # 0.20→0.12: goal 더 가까이서만 release (place 성공 위해)
+    env_cfg.place_dist_threshold = 0.25    # 0.20→0.25: release z offset(-0.08) 흡수
+    env_cfg.rew_release_near     = 15.0    # 50→15: place(200) dominant — release 자체 수확 방지
     env_cfg.rew_grip_penalty     = 0.0   # scratch 훈련 시 transport local optimum 방지
     env_cfg.episode_length_s     = 12.0   # approach+grasp+transport+place: 충분한 시간
 
