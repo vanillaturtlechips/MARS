@@ -314,6 +314,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
                 self._grasped[act_ids]            = True
                 self._force_grasped_mask[act_ids] = True
                 self._force_grasp_pending[act_ids]= False
+                # cmd_ee = 현재 EE로 리셋 (approach 잔재 제거 → transport 정상 추적)
+                self._cmd_ee_pos[act_ids]         = ee_now
 
         dist_ee_box = (ee_pos - box_pos).norm(dim=1)
 
@@ -326,6 +328,8 @@ class WarehouseManipulationEnv(DirectRLEnv):
             self._frozen_box_state[new_ids] = self.box.data.root_state_w[new_ids].clone()
             # offset=0: box → EE에 snap (force_grasp와 동일한 obs → 학습된 transport 행동 전이)
             self._grasp_ee_offset[new_ids]  = 0.0
+            # cmd_ee = 현재 EE로 리셋 (approach 잔재 제거 → transport 정상 추적)
+            self._cmd_ee_pos[new_ids]       = ee_pos[new_ids]
             # goal 재설정: grasp 시점 EE 기준 0.25~0.45m (force_grasp 분포 일치)
             n_new        = len(new_ids)
             env_orig_new = self.scene.env_origins[new_ids]
