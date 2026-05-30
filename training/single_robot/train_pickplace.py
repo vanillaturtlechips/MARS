@@ -106,7 +106,7 @@ def main():
     env_cfg.near_release_dist    = 0.20
     env_cfg.place_dist_threshold = 0.20    # Phase 2와 동일하게 완화
     env_cfg.rew_release_near     = 50.0
-    env_cfg.rew_grip_penalty     = 1.5
+    env_cfg.rew_grip_penalty     = 0.0   # scratch 훈련 시 transport local optimum 방지
     env_cfg.episode_length_s     = 12.0   # approach+grasp+transport+place: 충분한 시간
 
     env = WarehouseManipulationEnv(env_cfg)
