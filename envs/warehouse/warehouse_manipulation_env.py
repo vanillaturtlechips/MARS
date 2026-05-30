@@ -295,20 +295,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
             if act_mask.any():
                 act_ids  = act_mask.nonzero(as_tuple=True)[0]
                 ee_now   = ee_pos[act_ids]
-                env_orig = self.scene.env_origins[act_ids]
                 n_act    = len(act_ids)
                 r  = sample_uniform(self.cfg.goal_spawn_dist * 0.7, self.cfg.goal_spawn_dist * 1.3, (n_act,), device=self.device)
                 th = sample_uniform(0.0, 6.2832, (n_act,), device=self.device)
-                lx = (ee_now[:, 0] - env_orig[:, 0] + r * torch.cos(th)).clamp(0.55, 1.45)
-                ly = (ee_now[:, 1] - env_orig[:, 1] + r * torch.sin(th)).clamp(-0.30, 0.30)
-                self._goal_pos_w[act_ids, 0] = env_orig[:, 0] + lx
-                self._goal_pos_w[act_ids, 1] = env_orig[:, 1] + ly
+                # transport env 동일: ee 중심 정확히 r 거리 (clamp 없음 → OOD 방지)
+                self._goal_pos_w[act_ids, 0] = ee_now[:, 0] + r * torch.cos(th)
+                self._goal_pos_w[act_ids, 1] = ee_now[:, 1] + r * torch.sin(th)
                 self._goal_pos_w[act_ids, 2] = 1.15
-                # prev_dist = 실제 dist (spike 없음)
-                g_vec = torch.stack([lx - (ee_now[:, 0] - env_orig[:, 0]),
-                                     ly - (ee_now[:, 1] - env_orig[:, 1]),
-                                     torch.zeros(n_act, device=self.device)], dim=1)
-                self._prev_dist_box_goal[act_ids] = g_vec.norm(dim=1)
+                self._prev_dist_box_goal[act_ids] = r
                 self._grasp_ee_offset[act_ids]    = 0.0
                 self._frozen_box_state[act_ids]   = self.box.data.root_state_w[act_ids].clone()
                 self._grasped[act_ids]            = True
@@ -330,20 +324,14 @@ class WarehouseManipulationEnv(DirectRLEnv):
             self._grasp_ee_offset[new_ids]  = 0.0
             # cmd_ee = 현재 EE로 리셋 (approach 잔재 제거 → transport 정상 추적)
             self._cmd_ee_pos[new_ids]       = ee_pos[new_ids]
-            # goal 재설정: grasp 시점 EE 기준 0.25~0.45m (force_grasp 분포 일치)
-            n_new        = len(new_ids)
-            env_orig_new = self.scene.env_origins[new_ids]
+            # goal 재설정: transport env 동일 — ee 중심 정확히 r 거리 (clamp 없음 → OOD 방지)
+            n_new  = len(new_ids)
             r_new  = sample_uniform(self.cfg.goal_spawn_dist * 0.7, self.cfg.goal_spawn_dist * 1.3, (n_new,), device=self.device)
             th_new = sample_uniform(0.0, 6.2832, (n_new,), device=self.device)
-            lx_new = (ee_pos[new_ids, 0] - env_orig_new[:, 0] + r_new * torch.cos(th_new)).clamp(0.55, 1.45)
-            ly_new = (ee_pos[new_ids, 1] - env_orig_new[:, 1] + r_new * torch.sin(th_new)).clamp(-0.30, 0.30)
-            self._goal_pos_w[new_ids, 0] = env_orig_new[:, 0] + lx_new
-            self._goal_pos_w[new_ids, 1] = env_orig_new[:, 1] + ly_new
+            self._goal_pos_w[new_ids, 0] = ee_pos[new_ids, 0] + r_new * torch.cos(th_new)
+            self._goal_pos_w[new_ids, 1] = ee_pos[new_ids, 1] + r_new * torch.sin(th_new)
             self._goal_pos_w[new_ids, 2] = 1.15
-            g_vec_new = torch.stack([lx_new - (ee_pos[new_ids, 0] - env_orig_new[:, 0]),
-                                     ly_new - (ee_pos[new_ids, 1] - env_orig_new[:, 1]),
-                                     torch.zeros(n_new, device=self.device)], dim=1)
-            self._prev_dist_box_goal[new_ids] = g_vec_new.norm(dim=1)
+            self._prev_dist_box_goal[new_ids] = r_new
 
         box_pos_eff = torch.where(
             self._grasped.unsqueeze(1).expand(-1, 3),
