@@ -76,14 +76,14 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
 
     rew_collision: float  = -200.0  # 충돌 = 즉사 (교착 -90과 확실한 차이)
     rew_goal: float       =    6.0  # 목표 도달 보상
-    rew_stationary: float =   -0.3  # per-robot 정지 패널티
+    rew_stationary: float =   -0.6  # per-robot 정지 패널티 (교착 탈출 유도: 멈추면 손해→우회)
 
     # 동적 장애물 (갑자기 출현하는 정지 장애물). False면 기존 동작 100% 보존
     enable_dynamic_obstacles: bool = False
     n_dynamic_obstacles: int = 2
     obstacle_size: tuple = (0.7, 0.7, 1.0)
-    obstacle_spawn_step_min: int = 30   # 등장 시점(step) 범위 — 에피소드 도중 출현
-    obstacle_spawn_step_max: int = 90
+    obstacle_spawn_step_min: int = 50   # 등장 시점(step) — 로봇이 진행한 뒤 출현(교착 완화)
+    obstacle_spawn_step_max: int = 130
     obstacle_z: float = 0.5             # 등장 시 z (지하 -5.0에서 올라옴)
     # per-step 페널티 (로봇-로봇 충돌 -200은 done 1회, 장애물은 done 안 하므로 작게)
     # 과하면 끼였을 때 누적 폭발(VF loss) → -30/step: 회피 유인 유지하며 안정
