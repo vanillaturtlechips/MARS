@@ -28,6 +28,8 @@ parser.add_argument("--mappo_ckpt",     type=str,   default=None, help="MAPPO �
 parser.add_argument("--from_scratch",   action="store_true", default=False)
 parser.add_argument("--reset_noise_std", type=float, default=None,
                     help="체크포인트 로드 후 noise_std 강제 설정 (예: 0.5). 미지정 시 체크포인트 값 유지")
+parser.add_argument("--enable_obstacles", action="store_true", default=False,
+                    help="동적 장애물(갑자기 출현) 활성화 — model_9999 fine-tune용")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -76,6 +78,9 @@ def main():
     env_cfg.scene.num_envs    = args.num_envs
     env_cfg.observation_space = OBS_PER_ROBOT * N_ROBOTS   # 27 (joint)
     env_cfg.action_space      = ACT_DIM * N_ROBOTS          # 9
+    env_cfg.enable_dynamic_obstacles = args.enable_obstacles
+    if args.enable_obstacles:
+        print("[MAPPO] 동적 장애물 활성화 — obs 차원 유지(min 거리), fine-tune 모드")
 
     env = WarehouseMARLEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
