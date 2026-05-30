@@ -154,12 +154,12 @@ class IPPOReshapeWrapper:
             return extras
         out = {}
         for k, v in extras.items():
-            if isinstance(v, torch.Tensor) and v.shape[0] == self._E:
+            if isinstance(v, torch.Tensor) and v.ndim > 0 and v.shape[0] == self._E:
                 out[k] = v.repeat_interleave(self.n, dim=0)
             elif isinstance(v, collections.abc.Mapping):
                 out[k] = {
                     kk: vv.repeat_interleave(self.n, dim=0)
-                    if isinstance(vv, torch.Tensor) and vv.shape[0] == self._E
+                    if isinstance(vv, torch.Tensor) and vv.ndim > 0 and vv.shape[0] == self._E
                     else vv
                     for kk, vv in v.items()
                 }

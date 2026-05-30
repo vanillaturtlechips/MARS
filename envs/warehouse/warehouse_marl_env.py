@@ -465,9 +465,9 @@ class WarehouseMARLEnv(DirectRLEnv):
         # mean_battery 유지/상승 = 충전함(학습됨), 하락+depleted↑ = 충전 안 함(탐색/보상 실패)
         if self.cfg.enable_battery:
             log = self.extras.setdefault("log", {})
-            log["mean_battery"]  = self._battery.mean()
-            log["depleted_pct"]  = (self._battery <= 1e-3).float().mean() * 100.0
-            log["min_battery"]   = self._battery.min()
+            log["mean_battery"]  = self._battery.mean().item()
+            log["depleted_pct"]  = (self._battery <= 1e-3).float().mean().item() * 100.0
+            log["min_battery"]   = self._battery.min().item()
 
         # wrapper가 per-robot 보상을 각 actor에 분배
         self.extras["per_robot_rewards"] = per_robot  # (N, N_ROBOTS)
