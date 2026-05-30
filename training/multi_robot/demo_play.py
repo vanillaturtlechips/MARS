@@ -49,8 +49,10 @@ from envs.warehouse.warehouse_obstacle_env import SHELF_CENTERS, SHELF_HALF, _sh
 from envs.warehouse.ippo_wrapper import IPPOReshapeWrapper
 
 
-IW_HUB_USD = f"{ISAAC_NUCLEUS_DIR}/Isaac/Robots/Idealworks/iw_hub/iw_hub.usd"
-WAREHOUSE_USD = f"{ISAAC_NUCLEUS_DIR}/Environments/Simple_Warehouse/full_warehouse.usd"
+# 검증된 절대 URL 직접 사용 (ISAAC_NUCLEUS_DIR 경로 불확실성 제거, manipulation env와 동일 패턴)
+_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
+IW_HUB_USD = f"{_ISAAC_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub_static.usd"
+WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
 
 
 class WarehouseDemoEnvCfg(WarehouseMARLEnvCfg):
