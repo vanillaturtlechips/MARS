@@ -62,54 +62,57 @@ class WarehouseDemoEnvCfg(WarehouseMARLEnvCfg):
 
 
 class WarehouseDemoEnv(WarehouseMARLEnv):
-    """시각화 전용 환경 — 물리는 동일, 시각 에셋만 교체."""
+    """시각화 전용 환경 — 물리 큐브 유지, iw.hub 외형 visual-only."""
+
+    def __init__(self, cfg, render_mode=None, **kwargs):
+        super().__init__(cfg, render_mode, **kwargs)
+        from isaacsim.core.prims import XFormPrim
+        self._robot_visuals = [
+            XFormPrim(f"/World/envs/env_.*/RobotVisual_{i}") for i in range(N_ROBOTS)
+        ]
+
+    def _apply_action(self):
+        super()._apply_action()
+        # iw.hub 외형을 큐브 root pose에 매 스텝 맞춤
+        for i, robot in enumerate(self.robots):
+            self._robot_visuals[i].set_world_poses(
+                positions=robot.data.root_pos_w,
+                orientations=robot.data.root_quat_w,
+            )
 
     def _setup_scene(self):
-        # ── 로봇: iw_hub USD (물리 cuboid 대신) ──────────────────────
+        # ── 로봇: 물리는 큐브(model_9999 동역학 100% 보존), 외형만 iw.hub ──
+        #    iw_hub_static은 RigidBodyAPI 없는 visual 메시 → 큐브 위에 얹고
+        #    _apply_action에서 매 스텝 큐브 pose로 동기화
         self.robots: list[RigidObject] = []
-        robot_colors = [
-            (0.2, 0.4, 0.8),
-            (0.8, 0.3, 0.2),
-            (0.2, 0.7, 0.3),
-        ]
         for i in range(N_ROBOTS):
-            try:
-                spawn_cfg = sim_utils.UsdFileCfg(
-                    usd_path=IW_HUB_USD,
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                        disable_gravity=False,
-                        linear_damping=2.0,
-                        angular_damping=5.0,
-                    ),
-                    mass_props=sim_utils.MassPropertiesCfg(mass=20.0),
-                    collision_props=sim_utils.CollisionPropertiesCfg(),
-                )
-                print(f"[Demo] iw_hub USD 로드 성공 — Robot_{i}")
-            except Exception:
-                # iw_hub 없으면 cuboid fallback
-                spawn_cfg = sim_utils.CuboidCfg(
-                    size=(0.5, 0.4, 0.3),
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                        disable_gravity=False,
-                        linear_damping=2.0,
-                        angular_damping=5.0,
-                    ),
-                    mass_props=sim_utils.MassPropertiesCfg(mass=20.0),
-                    collision_props=sim_utils.CollisionPropertiesCfg(),
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=robot_colors[i], metallic=0.3
-                    ),
-                )
-                print(f"[Demo] iw_hub 없음, Cuboid fallback — Robot_{i}")
-
             robot_cfg = RigidObjectCfg(
                 prim_path=f"/World/envs/env_.*/Robot_{i}",
-                spawn=spawn_cfg,
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.5, 0.4, 0.3),
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                        disable_gravity=False, linear_damping=2.0, angular_damping=5.0,
+                        max_linear_velocity=5.0, max_angular_velocity=10.0,
+                    ),
+                    mass_props=sim_utils.MassPropertiesCfg(mass=20.0),
+                    collision_props=sim_utils.CollisionPropertiesCfg(),
+                ),
                 init_state=RigidObjectCfg.InitialStateCfg(
                     pos=(SPAWN_OFFSETS[i][0], SPAWN_OFFSETS[i][1], 0.15)
                 ),
             )
             self.robots.append(RigidObject(robot_cfg))
+
+        # iw.hub 외형 (visual-only static 메시 — env_0에 두면 clone이 env_.* 복제)
+        _s = self.cfg.robot_visual_scale if hasattr(self.cfg, "robot_visual_scale") else 1.0
+        iw_visual = UsdFileCfg(usd_path=IW_HUB_USD, scale=(_s, _s, _s))
+        for i in range(N_ROBOTS):
+            iw_visual.func(
+                f"/World/envs/env_0/RobotVisual_{i}", iw_visual,
+                translation=(SPAWN_OFFSETS[i][0], SPAWN_OFFSETS[i][1], 0.0),
+                orientation=(1.0, 0.0, 0.0, 0.0),
+            )
+        print("[Demo] iw.hub visual-only 로드 (물리: 큐브 유지)")
 
         # ── 바닥: 창고 USD 시도, 실패 시 GroundPlane ─────────────────
         try:
