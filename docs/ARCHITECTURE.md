@@ -92,6 +92,14 @@ min 거리**로 계산된다. 실로봇에서는 **라이다 `/scan`의 최근�
 | 3+ | + 동적 장애물 회피 (fine-tune) | `warehouse_mappo/model_10998.pt` | **S6 97%** |
 | 4 | Orchestrator (LLM) | `agents/` (stub) | 설계 단계 |
 
+### 향후 과제
+
+- **배터리/충전소** — env(obs 20D·충전소·충전/방전 보상)는 구현 완료(`enable_battery`),
+  학습은 향후 과제. obs 차원 확장(17→20D)으로 actor 입력층·critic이 새로 초기화되어
+  fine-tune이 scratch 수준이 되는 게 난점. 본 프로젝트 fine-tune 성공 사례(동적 장애물)는
+  모두 입력층 보존(obs 차원 유지)이 전제였음. 해결엔 충분한 scratch 재학습 또는
+  critic transfer 구조가 필요.
+
 배포: `deploy/jetson/` (actor_phase15/phase2_final/phase3_marl.pt) + `ros2_bridge.py`
 
 ---
