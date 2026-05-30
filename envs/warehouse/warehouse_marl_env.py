@@ -104,11 +104,12 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     battery_drain: float = 0.0025       # step당 소모 (시작 0.3이면 ~120step에 방전)
     battery_charge: float = 0.02        # 충전소 근처 step당 회복
     charge_radius: float = 0.6          # 충전 판정 거리
-    battery_init_min: float = 0.3
-    battery_init_max: float = 1.0
-    battery_low_thresh: float = 0.3     # 이 아래면 충전 우선 (urgency 게이팅)
-    rew_battery_approach: float = 1.0   # 저전력 시 충전소 접근 보상 (urgency×거리)
-    rew_depleted: float = -5.0          # 방전(battery=0) step당 페널티
+    battery_init_min: float = 0.15      # 저전력 커리큘럼: 충전 경험 조밀 수집
+    battery_init_max: float = 0.5
+    battery_low_thresh: float = 0.4     # 조기 경보 (충전소 갈 시간 확보)
+    rew_charging: float = 2.0           # 충전소 위 충전 중 보상 (urgency 가중) — 양의 가치 앵커
+    rew_charger_progress: float = 3.0   # 충전소 접근 progress (potential-based, goal 방해 안 함)
+    rew_depleted: float = -0.3          # 방전 페널티 완화 (-5→-0.3, 음수 지배 제거)
 
 
 class WarehouseMARLEnv(DirectRLEnv):
@@ -128,9 +129,10 @@ class WarehouseMARLEnv(DirectRLEnv):
             self._obst_spawn_step = torch.zeros(self.num_envs, no, device=d)     # 등장 시점(step)
             self._obst_active     = torch.zeros(self.num_envs, no, dtype=torch.bool, device=d)
 
-        # 배터리 버퍼 (로봇별 0~1)
+        # 배터리 버퍼 (로봇별 0~1) + 충전소 거리 progress 버퍼
         if self.cfg.enable_battery:
             self._battery = torch.ones(self.num_envs, N_ROBOTS, device=self.device)
+            self._prev_charger_dist = torch.zeros(self.num_envs, N_ROBOTS, device=self.device)
 
     # ------------------------------------------------------------------
     # Scene: 로봇 N대 + 선반 4개
@@ -427,8 +429,8 @@ class WarehouseMARLEnv(DirectRLEnv):
                 hit = (obst_d < 0.1).float() * self.cfg.rew_obstacle_collision
                 per_robot[:, i] += hit
 
-        # 배터리: 저전력(urgency>0)일 때만 충전소 접근 유도, 방전 시 페널티
-        # urgency = (thresh - battery)/thresh, battery≥thresh면 0 → goal 추구 방해 안 함
+        # 배터리: 저전력(urgency>0)일 때만 작동, battery≥thresh면 0 → goal 추구 방해 안 함
+        #   ① 충전 중(충전소 위) 양의 보상 = 가치 앵커  ② 접근 progress(potential)  ③ 방전 페널티
         if self.cfg.enable_battery:
             origins2 = self.scene.env_origins[:, :2]
             chargers = torch.tensor(
@@ -441,7 +443,14 @@ class WarehouseMARLEnv(DirectRLEnv):
                            / self.cfg.battery_low_thresh).clamp(min=0.0)   # 0~1
                 local = robot.data.root_pos_w[:, :2] - origins2
                 cdist = (local.unsqueeze(1) - chargers.unsqueeze(0)).norm(dim=2).min(dim=1).values
-                per_robot[:, i] += -self.cfg.rew_battery_approach * urgency * cdist
+                # ① 충전 중 보상 (충전소 위 + 저전력) — 다 차면 urgency→0이라 자동 종료(죽치기 방지)
+                on_charger = (cdist < self.cfg.charge_radius).float()
+                per_robot[:, i] += on_charger * urgency * self.cfg.rew_charging
+                # ② potential-based 접근 progress (가까워진 만큼 +, goal 이동 방해 안 함)
+                progress = (self._prev_charger_dist[:, i] - cdist).clamp(-0.5, 0.5)
+                per_robot[:, i] += urgency * progress * self.cfg.rew_charger_progress
+                self._prev_charger_dist[:, i] = cdist
+                # ③ 방전 페널티 (완화)
                 per_robot[:, i] += (bat <= 1e-3).float() * self.cfg.rew_depleted
 
         # per-robot 정지 패널티 — 목표 미도달 시에만 패널티 (이미 도달한 로봇 제외)
@@ -556,9 +565,18 @@ class WarehouseMARLEnv(DirectRLEnv):
             )
             self._obst_active[env_ids_t] = False
 
-        # 배터리 초기화 (로봇별 랜덤 0.3~1.0)
+        # 배터리 초기화 + 충전소 거리 progress 버퍼 동기화 (delta=0 보장)
         if self.cfg.enable_battery:
             self._battery[env_ids_t] = sample_uniform(
                 self.cfg.battery_init_min, self.cfg.battery_init_max,
                 (n, N_ROBOTS), device=self.device,
             )
+            chargers = torch.tensor(
+                CHARGER_POSITIONS[:self.cfg.n_chargers],
+                device=self.device, dtype=torch.float32,
+            )
+            origins_r = self.scene.env_origins[env_ids_t, :2]
+            for i, robot in enumerate(self.robots):
+                local = robot.data.root_pos_w[env_ids_t, :2] - origins_r
+                cd = (local.unsqueeze(1) - chargers.unsqueeze(0)).norm(dim=2).min(dim=1).values
+                self._prev_charger_dist[env_ids_t, i] = cd
