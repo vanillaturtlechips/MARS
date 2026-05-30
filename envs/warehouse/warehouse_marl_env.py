@@ -85,7 +85,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     obstacle_spawn_step_min: int = 30   # 등장 시점(step) 범위 — 에피소드 도중 출현
     obstacle_spawn_step_max: int = 90
     obstacle_z: float = 0.5             # 등장 시 z (지하 -5.0에서 올라옴)
-    rew_obstacle_collision: float = -200.0  # 동적 장애물 충돌 페널티
+    # per-step 페널티 (로봇-로봇 충돌 -200은 done 1회, 장애물은 done 안 하므로 작게)
+    # 과하면 끼였을 때 누적 폭발(VF loss) → -30/step: 회피 유인 유지하며 안정
+    rew_obstacle_collision: float = -30.0
 
 
 class WarehouseMARLEnv(DirectRLEnv):
