@@ -30,9 +30,9 @@ from isaaclab.utils.math import sample_uniform
 _ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 
 try:
-    from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG
+    from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG
 except ImportError:
-    from isaaclab_assets import FRANKA_PANDA_CFG  # type: ignore
+    from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG  # type: ignore
 
 OBS_DIM = 23  # transport env과 동일: goal_rel(3)+dist(1)+ee_vel(3)+jpos7(7)+jvel7(7)+gripper(1)+grasped(1)
 
@@ -129,7 +129,7 @@ class WarehouseManipulationEnv(DirectRLEnv):
         self._stat_window   = 500  # 최근 N 에피소드 기준 place_rate 계산
 
     def _setup_scene(self):
-        franka_cfg = FRANKA_PANDA_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+        franka_cfg = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="/World/envs/env_.*/Robot")
         franka_cfg.init_state.pos = (0.0, 0.0, 0.80)
         self.robot = Articulation(franka_cfg)
 
