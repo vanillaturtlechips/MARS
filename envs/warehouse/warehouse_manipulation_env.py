@@ -60,8 +60,9 @@ class WarehouseManipulationEnvCfg(DirectRLEnvCfg):
     # 보상 가중치
     rew_approach:   float = 0.3    # exp(-d*5) 기반, not_grasped 시 (낮춤: hover local optimum 방지)
     rew_grasp:      float = 50.0   # one-time grasp bonus (축소: 200→50)
-    rew_transport:  float = 300.0  # delta 기반: (prev_dist - curr_dist) * grasped
-    rew_transport_dense: float = 0.0   # stand-still local optimum 방지: 0으로 고정 (delta-based만 사용)
+    rew_transport:  float = 300.0  # (사용 안 함) delta 기반 — local optimum 유발하여 폐기
+    rew_transport_dense: float = 0.0   # (사용 안 함)
+    rew_carry_dist: float = 1.0    # transport env 동일: -dist×k/step 연속 패널티 (손익분기점 없음)
     rew_near_place: float = 80.0       # one-time: box가 0.22m 이내 첫 진입 시 보너스
     rew_place:      float = 200.0  # 최종 거치 성공 (축소: 500→200)
     rew_time:        float = -0.5   # approach 단계 시간 패널티 (not_grasped)
@@ -355,11 +356,9 @@ class WarehouseManipulationEnv(DirectRLEnv):
         # [2단계] Grasp bonus (one-time)
         rew_grasp = self.cfg.rew_grasp * newly_grasped.float()
 
-        # [3단계] Transport: dense(방향 힌트) + delta(이동 보상) 하이브리드
-        dist_delta    = self._prev_dist_box_goal - dist_box_goal  # 양방향: 멀어지면 패널티, 가까워지면 보상
-        rew_transport = (self.cfg.rew_transport * dist_delta
-                         + self.cfg.rew_transport_dense * torch.exp(-dist_box_goal * 5.0)
-                         ) * grasped_f
+        # [3단계] Transport: transport env과 동일한 -dist×k/step 연속 패널티
+        # delta/potential은 local optimum 존재 → transport env에서 폐기, 동일하게 따름
+        rew_transport = -self.cfg.rew_carry_dist * dist_box_goal * grasped_f
 
         # [3.5단계] Near-place one-time bonus: box가 0.22m 이내 첫 진입 시
         newly_near = self._grasped & (dist_box_goal < 0.22) & (~self._near_place_awarded)
