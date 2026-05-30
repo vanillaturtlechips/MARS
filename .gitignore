@@ -4,6 +4,7 @@ logs/**/*.pt
 !logs/warehouse_obstacle_nav/model_100.pt
 !logs/warehouse_mappo/model_4999.pt
 !logs/warehouse_mappo/model_9999.pt
+!logs/warehouse_mappo/model_10998.pt
 !logs/warehouse_transport/model_200.pt
 !logs/warehouse_transport_phase2/model_600.pt
 !logs/warehouse_pickplace/model_300.pt
