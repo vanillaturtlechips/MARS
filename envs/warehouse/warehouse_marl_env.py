@@ -339,6 +339,14 @@ class WarehouseMARLEnv(DirectRLEnv):
                 per_robot[:, i] += col
                 per_robot[:, j] += col
 
+        # 동적 장애물 충돌 패널티 — 등장한 장애물에 0.1m 이내 접근 시
+        if self.cfg.enable_dynamic_obstacles:
+            for i, robot in enumerate(self.robots):
+                local_pos = robot.data.root_pos_w[:, :2] - self.scene.env_origins[:, :2]
+                obst_d = self._dynamic_obstacle_dist(local_pos)   # (N,) AABB 거리
+                hit = (obst_d < 0.1).float() * self.cfg.rew_obstacle_collision
+                per_robot[:, i] += hit
+
         # per-robot 정지 패널티 — 목표 미도달 시에만 패널티 (이미 도달한 로봇 제외)
         # 마스킹 없으면: 먼저 도달한 로봇이 다른 로봇 기다리는 동안 -0.3*N step → -87점 가능
         for i, robot in enumerate(self.robots):
