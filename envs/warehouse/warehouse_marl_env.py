@@ -106,6 +106,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     charge_radius: float = 0.6          # 충전 판정 거리
     battery_init_min: float = 0.3
     battery_init_max: float = 1.0
+    battery_low_thresh: float = 0.3     # 이 아래면 충전 우선 (urgency 게이팅)
+    rew_battery_approach: float = 1.0   # 저전력 시 충전소 접근 보상 (urgency×거리)
+    rew_depleted: float = -5.0          # 방전(battery=0) step당 페널티
 
 
 class WarehouseMARLEnv(DirectRLEnv):
@@ -423,6 +426,23 @@ class WarehouseMARLEnv(DirectRLEnv):
                 obst_d = self._dynamic_obstacle_dist(local_pos)   # (N,) AABB 거리
                 hit = (obst_d < 0.1).float() * self.cfg.rew_obstacle_collision
                 per_robot[:, i] += hit
+
+        # 배터리: 저전력(urgency>0)일 때만 충전소 접근 유도, 방전 시 페널티
+        # urgency = (thresh - battery)/thresh, battery≥thresh면 0 → goal 추구 방해 안 함
+        if self.cfg.enable_battery:
+            origins2 = self.scene.env_origins[:, :2]
+            chargers = torch.tensor(
+                CHARGER_POSITIONS[:self.cfg.n_chargers],
+                device=self.device, dtype=torch.float32,
+            )
+            for i, robot in enumerate(self.robots):
+                bat = self._battery[:, i]
+                urgency = ((self.cfg.battery_low_thresh - bat)
+                           / self.cfg.battery_low_thresh).clamp(min=0.0)   # 0~1
+                local = robot.data.root_pos_w[:, :2] - origins2
+                cdist = (local.unsqueeze(1) - chargers.unsqueeze(0)).norm(dim=2).min(dim=1).values
+                per_robot[:, i] += -self.cfg.rew_battery_approach * urgency * cdist
+                per_robot[:, i] += (bat <= 1e-3).float() * self.cfg.rew_depleted
 
         # per-robot 정지 패널티 — 목표 미도달 시에만 패널티 (이미 도달한 로봇 제외)
         # 마스킹 없으면: 먼저 도달한 로봇이 다른 로봇 기다리는 동안 -0.3*N step → -87점 가능
