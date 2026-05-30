@@ -1,4 +1,4 @@
-# 세션 진행 현황 (최종 업데이트: 2026-05-20)
+# 세션 진행 현황 (최종 업데이트: 2026-05-30)
 
 ## 완료된 작업
 
@@ -500,3 +500,127 @@ python training/single_robot/demo_manipulation.py \
 | 1 | Phase 2 데모 녹화 | `python training/single_robot/demo_manipulation.py --ckpt logs/warehouse_manipulation/model_2999.pt --num_envs 4 --livestream 1` |
 | 2 | Phase 3 S5 재eval | `python training/multi_robot/eval_scenarios.py --ckpt logs/warehouse_mappo/model_9999.pt --num_episodes 100 --num_eval_envs 16 --tag 17dim_s5fix --headless` |
 | 3 | Phase 4 LLM 오케스트레이터 | 다른 팀원 담당 |
+
+---
+
+## 2026-05-29~30 세션 — Transport Phase 2 완성 + Pick & Place 설계
+
+### 핵심 성과
+
+| 항목 | 결과 |
+|------|------|
+| Transport Phase 1 (carry-only) | ✅ model_200.pt, 100% reach rate |
+| Transport Phase 2 (carry+release+place) | ✅ model_600.pt, **99% place_rate** (Stage 3, goal=0.50m) |
+| Pick & Place 완성 설계 | ✅ manipulation env 실제 release 추가, train_pickplace.py 생성 |
+
+---
+
+### Transport Phase 1 & 2 훈련 성공 (`warehouse_transport_env.py`)
+
+**구조**: force_grasp(박스 텔레포트) → carry → release → 물리 착지
+
+**Phase 2 진행 중 발생한 버그 3종 및 수정**:
+
+| # | 문제 | 원인 | 수정 | 커밋 |
+|---|------|------|------|------|
+| 1 | stat 이중집계 — place_rate=65% 허위 표시 | `_get_rewards`에서 `_stat_placed`, `_stat_episodes`를 `placed.sum()`으로 동시 증가 → `_get_dones`와 이중 계산 | `_get_rewards`의 두 줄 제거, `_get_dones`에서만 집계 | `6ae8403` |
+| 2 | 조기 release — 무작위 위치(goal 0.40m+)에서 release | `wants_release`에 near_goal 게이팅 없음. grip_mean=+0.10, std=0.27 → P(action<-0.3)=7%/step 상시 발동 | `near_xy < near_release_dist(0.20m)` 조건 추가 | `6ae8403` |
+| 3 | 즉시 release local optimum | bias=-0.8 오버라이드 → 에피소드 시작 즉시 release → carry 없이 허위 place 성공 | bias override 제거 (bootstrap+penalty로만 탐색) | `47f092c` |
+
+**결과**: iter 200 이후 99% place_rate, Stage 3(goal=0.50m) 도달, force_rel=0.0%
+
+**체크포인트**:
+```
+logs/warehouse_transport/model_200.pt        # Phase 1 carry-only
+logs/warehouse_transport_phase2/model_600.pt # Phase 2 transport+place (99%)
+```
+
+---
+
+### Pick & Place 완성 — Teacher 한계 발견 및 수정
+
+**Teacher (model_2999.pt) 한계**:
+```python
+# 기존 (가짜 place) — 박스를 절대 안 놓음
+placed = self._grasped & (dist_box_goal < threshold)
+```
+→ approach+grasp+transport 완료 후 박스를 쥔 채 goal 근처에서 에피소드 종료. 물리적 내려놓기 없음.
+
+**Transport Phase 2 구조 이식** (`warehouse_manipulation_env.py`):
+```python
+# 실제 물리 착지
+settled = self._has_released & (self._steps_after_rel >= settle_steps)
+placed  = ~self._grasped & settled & (dist_box_goal < threshold)
+```
+
+추가된 요소:
+- `near_release_dist=0.20m` XY 게이팅: goal 근처서만 release 허용
+- `bootstrap`: 초기 N iter 강제 release로 place 경험 주입
+- `settle_steps=10`: release 후 box 안착 대기
+- `fell_off` 감지: box z < 0.9m → 종료
+- `rew_release_near=50.0`: goal 근처 release one-time bonus
+- `rew_grip_penalty=1.5`: goal 근처 gripper 닫힘 soft 패널티
+- box release 시 EE 아래 0.08m 배치 (finger collision 방지, Bug 10과 동일)
+
+**전체 파이프라인**:
+```
+approach+grasp (Teacher 기존 skill)
+       ↓
+transport (Teacher 기존 skill)
+       ↓
+near_goal gating → release (신규)
+       ↓
+물리 착지 확인 (신규)
+```
+
+---
+
+### 신규 훈련 스크립트: `train_pickplace.py`
+
+Teacher `model_2999.pt`에서 fine-tuning:
+
+```bash
+# RunPod에서 실행
+python training/single_robot/train_pickplace.py \
+    --headless --num_envs 2048 \
+    --teacher_ckpt logs/warehouse_manipulation_teacher/model_2999.pt
+```
+
+커리큘럼 (place_rate 기반):
+- Stage 1 (box_spawn=0.20m): 10iter 평균 place_rate ≥ 20%
+- Stage 2 (box_spawn=0.30m): 15iter 평균 place_rate ≥ 20%
+- Stage 3 (box_spawn=0.45m): 최종
+
+모니터링 지표:
+- `grasp=X%`: approach+grasp 성공률 (Teacher skill 유지 여부)
+- `place_rate`: 실제 물리 착지율
+- `force=X%(p=Y)`: bootstrap decay (40iter 후 0)
+
+---
+
+### 전체 체크포인트 현황
+
+| 정책 | 파일 | 역할 | place 방식 |
+|------|------|------|-----------|
+| Navigation | `warehouse_nav/model_999.pt` | 이동 로봇 | — |
+| Obstacle Nav | `warehouse_obstacle_nav/model_100.pt` | 장애물 회피 | — |
+| IPPO | `warehouse_ippo/model_400.pt` | 3대 독립 PPO | — |
+| MAPPO | `warehouse_mappo/model_9999.pt` | 3대 협력 최종 | — |
+| Teacher | `warehouse_manipulation_teacher/model_2999.pt` | approach+grasp+carry | 가짜 (미해결) |
+| Transport P1 | `warehouse_transport/model_200.pt` | carry-only | — |
+| Transport P2 | `warehouse_transport_phase2/model_600.pt` | carry+release | **실제 물리 착지** |
+| Pick & Place | `warehouse_pickplace/` (훈련 예정) | 완전한 pick & place | **실제 물리 착지** |
+
+---
+
+### 다음 할 일
+
+| 순서 | 작업 | 명령어 |
+|------|------|--------|
+| 1 | Pick & Place fine-tuning | `python training/single_robot/train_pickplace.py --headless --num_envs 2048 --teacher_ckpt logs/warehouse_manipulation_teacher/model_2999.pt` |
+| 2 | 결과 확인 후 model_pickplace.pt 저장 | iter 600, place_rate ≥ 80% 목표 |
+| 3 | Phase 4 demo 연결 | `demo_phase4.py` — Claude API → Isaac Sim 실제 연결 |
+
+---
+
+*최종 업데이트: 2026-05-30 — Transport Phase 2 완성(99%), manipulation env 실제 release 이식, train_pickplace.py 생성.*
