@@ -39,7 +39,9 @@ parser.add_argument("--rew_spin", type=float, default=0.0,
 parser.add_argument("--strafe_curriculum", action="store_true", default=False,
                     help="레벨1 커리큘럼: max_vy를 1.0→0으로 성공률 게이트 적응 감소(하드컷 절벽 회피). model_10998에서 시작")
 parser.add_argument("--curriculum_thresh", type=float, default=0.8,
-                    help="이 성공률 이상이면 max_vy 한 단계 감소(문헌 표준 0.8)")
+                    help="이 도달률 이상이면 max_vy 한 단계 감소(문헌 표준 0.8). task 천장 낮으면 baseline 약간 아래로")
+parser.add_argument("--curriculum_collapse", type=float, default=0.5,
+                    help="도달률 이 밑으로 붕괴하면 max_vy 한 단계 되돌림(revert)")
 parser.add_argument("--curriculum_step", type=float, default=0.1, help="max_vy 감소 폭")
 parser.add_argument("--curriculum_window", type=int, default=200, help="성공률 측정 윈도우(완료 에피소드 수)")
 parser.add_argument("--rew_heading", type=float, default=0.0,
@@ -109,12 +111,14 @@ def main():
         env_cfg.max_omega = args.max_omega
         print(f"[MAPPO] max_omega 상향: {args.max_omega} (회전 권한↑ — strafe 대체)")
     if args.strafe_curriculum:
-        env_cfg.curriculum_success_thresh = args.curriculum_thresh
-        env_cfg.curriculum_step           = args.curriculum_step
-        env_cfg.curriculum_window         = args.curriculum_window
+        env_cfg.curriculum_success_thresh  = args.curriculum_thresh
+        env_cfg.curriculum_collapse_thresh = args.curriculum_collapse
+        env_cfg.curriculum_step            = args.curriculum_step
+        env_cfg.curriculum_window          = args.curriculum_window
         env_cfg.rew_spin = args.rew_spin    # 전이 중엔 0 권장
-        print(f"[MAPPO] diff-drive 커리큘럼: max_vy 1.0→0 적응감소(thresh {args.curriculum_thresh}, "
-              f"step {args.curriculum_step}, window {args.curriculum_window}), heading {args.rew_heading}, spin {args.rew_spin}")
+        print(f"[MAPPO] diff-drive 커리큘럼: max_vy 1.0→0 적응감소(thresh {args.curriculum_thresh}/"
+              f"collapse {args.curriculum_collapse}, step {args.curriculum_step}, window {args.curriculum_window}), "
+              f"heading {args.rew_heading}, spin {args.rew_spin}")
     elif args.diff_drive:
         env_cfg.rew_spin = args.rew_spin
         print(f"[MAPPO] diff-drive 하드차단(레벨1): vy=0 + omega 페널티 {args.rew_spin}")
