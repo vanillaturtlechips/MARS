@@ -104,7 +104,7 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     n_chargers: int = 2
     battery_drain: float = 0.005        # step당 소모 (↑: 충전 압력 강화, 충전 경험 빈도↑)
     battery_charge: float = 0.02        # 충전소 근처 step당 회복
-    charge_radius: float = 0.6          # 충전 판정 거리
+    charge_radius: float = 1.0          # 충전 판정 거리 (0.6→1.0: 도달·머물기 쉽게)
     battery_init_min: float = 0.15      # 저전력 커리큘럼: 충전 경험 조밀 수집
     battery_init_max: float = 0.5
     battery_low_thresh: float = 0.5     # 조기 경보 (충전소 더 일찍 인지)
@@ -465,12 +465,20 @@ class WarehouseMARLEnv(DirectRLEnv):
                 # ③ 방전 페널티 (완화)
                 per_robot[:, i] += (bat <= 1e-3).float() * self.cfg.rew_depleted
 
-        # per-robot 정지 패널티 — 목표 미도달 시에만 패널티 (이미 도달한 로봇 제외)
-        # 마스킹 없으면: 먼저 도달한 로봇이 다른 로봇 기다리는 동안 -0.3*N step → -87점 가능
+        # per-robot 정지 패널티 — 목표 미도달 시에만 (이미 도달/충전 중인 로봇 제외)
+        # 충전소 위 머물기는 면제: 안 그러면 "충전하려 멈추면 벌받는" 모순 → 충전 학습 방해
+        _chargers = None
+        if self.cfg.enable_battery:
+            _chargers = torch.tensor(CHARGER_POSITIONS[:self.cfg.n_chargers],
+                                     device=self.device, dtype=torch.float32)
         for i, robot in enumerate(self.robots):
             speed = robot.data.root_lin_vel_w[:, :2].norm(dim=1)
             dist_i = (robot.data.root_pos_w[:, :2] - self._goal_pos_w[:, i]).norm(dim=1)
             not_at_goal = (dist_i > self.cfg.goal_radius).float()
+            if self.cfg.enable_battery:
+                local = robot.data.root_pos_w[:, :2] - self.scene.env_origins[:, :2]
+                cdist = (local.unsqueeze(1) - _chargers.unsqueeze(0)).norm(dim=2).min(dim=1).values
+                not_at_goal = not_at_goal * (cdist >= self.cfg.charge_radius).float()  # 충전소 위면 면제
             per_robot[:, i] += (speed < 0.1).float() * not_at_goal * self.cfg.rew_stationary
 
         # 배터리 진단 로그 — 충전 행동이 일어나는지 측정
