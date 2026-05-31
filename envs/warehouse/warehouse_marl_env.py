@@ -89,6 +89,11 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     curriculum_window: int = 200             # 성공률 측정 윈도우(완료 에피소드 수)
     curriculum_step: float = 0.1             # max_vy 감소 폭(0 근처는 더 작게 권장 — 문헌)
     rew_heading: float = 0.0                 # heading→goal 정렬 보상(목표 향해 '돌아서 가기' 학습). 0=무효
+    # diff-drive 컨트롤러(계층/운전기사): 정책 desired-velocity를 [v, omega]로 변환해 물리에 적용.
+    #   재학습 불필요(model_10998 그대로 재생). 옆걸음 의도 → 그쪽으로 돌아서 전진(실제 AMR 커브).
+    #   물리 자체가 nonholonomic → 외형은 실제 pose 추종(어긋남/폭주 없음). 데모/eval 재생용.
+    diff_drive_controller: bool = False
+    diff_drive_turn_gain: float = 3.0        # 방향오차→omega 게인(클수록 빨리 돌아 향함)
 
     goal_radius: float = 0.35
     goal_range: float = 4.0
@@ -350,6 +355,19 @@ class WarehouseMARLEnv(DirectRLEnv):
             vx_b = self._actions[:, i, 0] * self.cfg.max_vx
             vy_b = self._actions[:, i, 1] * eff_max_vy
             omega = self._actions[:, i, 2] * self.cfg.max_omega
+
+            if self.cfg.diff_drive_controller:
+                # ── 계층 컨트롤러: 정책 desired-velocity(vx_b,vy_b)를 diff-drive [v,omega]로 변환 ──
+                #   strafe 상한 무시하고 정책의 full velocity 의도를 '조향신호'로 사용(eff_max_vy 미적용).
+                vx_des = self._actions[:, i, 0] * self.cfg.max_vx
+                vy_des = self._actions[:, i, 1] * self.cfg.max_vy   # 옆걸음 의도 = 그쪽으로 '돌아라'
+                heading_err = torch.atan2(vy_des, vx_des)           # 현재 헤딩 기준 목표 속도 방향
+                desired_speed = torch.sqrt(vx_des * vx_des + vy_des * vy_des)
+                omega = torch.clamp(self.cfg.diff_drive_turn_gain * heading_err,
+                                    -self.cfg.max_omega, self.cfg.max_omega)
+                # 정렬된 만큼만 전진(향하는 중엔 감속, 다 돌면 풀속도) → 옆걸음 0
+                vx_b = desired_speed * torch.relu(torch.cos(heading_err))
+                vy_b = torch.zeros_like(vx_b)
 
             # 방전 시 속도 급감 — battery 낮으면 못 움직임 → 충전이 goal 도달의 전제
             if self.cfg.enable_battery:

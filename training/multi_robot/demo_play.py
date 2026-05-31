@@ -24,8 +24,12 @@ parser.add_argument("--num_envs",   type=int, default=1)
 parser.add_argument("--max_steps",  type=int, default=0, help="0=무한(GUI 데모), N=N step 후 종료(headless 검증)")
 parser.add_argument("--diff_drive", action="store_true", default=False,
                     help="diff-drive 체크포인트 재생: vy 차단(커브로만 방향전환). 학습과 동일 동역학")
+parser.add_argument("--diff_drive_ctrl", action="store_true", default=False,
+                    help="계층 컨트롤러: model_10998 그대로 + diff-drive 변환(재학습 0, 자연스러운 커브)")
+parser.add_argument("--turn_gain", type=float, default=3.0,
+                    help="컨트롤러 방향오차→omega 게인(클수록 빨리 돌아 향함)")
 parser.add_argument("--max_omega", type=float, default=None,
-                    help="학습 때 상향했으면 동일하게(예: 2.6). None=기본 유지")
+                    help="회전 권한(예: 2.6). None=기본 유지")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -270,8 +274,10 @@ def main():
     env_cfg = WarehouseDemoEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env_cfg.disable_strafe = args.diff_drive   # diff-drive 모델은 학습과 동일하게 vy 차단
+    env_cfg.diff_drive_controller = args.diff_drive_ctrl   # 계층 컨트롤러(재학습 0)
+    env_cfg.diff_drive_turn_gain  = args.turn_gain
     if args.max_omega is not None:
-        env_cfg.max_omega = args.max_omega     # 학습 때 상향했으면 동일하게
+        env_cfg.max_omega = args.max_omega
 
     env = WarehouseDemoEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)
