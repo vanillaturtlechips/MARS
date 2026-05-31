@@ -25,6 +25,8 @@ parser.add_argument("--num_eval_envs",  type=int, default=16, help="병렬 eval 
 parser.add_argument("--tag",            type=str, default="model")
 parser.add_argument("--enable_obstacles", action="store_true", default=False,
                     help="동적 장애물 켜고 평가 (fine-tune 모델 회피/도달 측정)")
+parser.add_argument("--enable_battery", action="store_true", default=False,
+                    help="배터리/충전소 켜고 평가 (충전 행동·평균배터리 측정)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 args.headless = getattr(args, "headless", False)
