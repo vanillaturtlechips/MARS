@@ -32,6 +32,10 @@ parser.add_argument("--enable_obstacles", action="store_true", default=False,
                     help="동적 장애물(갑자기 출현) 활성화 — model_9999 fine-tune용")
 parser.add_argument("--enable_battery", action="store_true", default=False,
                     help="배터리/충전소 활성화 — obs 17→20D (model_9999는 ippo_ckpt로 actor partial transfer)")
+parser.add_argument("--diff_drive", action="store_true", default=False,
+                    help="레벨1: vy(옆걸음) 차단 → 커브로만 방향전환(실제 AMR). obs/act 차원 불변 → model_10998 그대로 fine-tune")
+parser.add_argument("--rew_spin", type=float, default=-0.1,
+                    help="diff_drive 시 |omega| 페널티 계수(제자리 휙휙 회전 억제). -0.05~-0.15 권장")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -86,6 +90,10 @@ def main():
     env_cfg.state_space       = obr * N_ROBOTS
     env_cfg.action_space      = ACT_DIM * N_ROBOTS          # 9
     env_cfg.enable_dynamic_obstacles = args.enable_obstacles
+    env_cfg.disable_strafe    = args.diff_drive
+    if args.diff_drive:
+        env_cfg.rew_spin = args.rew_spin
+        print(f"[MAPPO] diff-drive(레벨1): vy 차단 + omega 페널티 {args.rew_spin} — 커브로만 방향전환")
     if args.enable_obstacles:
         print("[MAPPO] 동적 장애물 활성화 — obs 차원 유지(min 거리)")
     if args.enable_battery:
@@ -98,6 +106,8 @@ def main():
 
     # 배터리 정책은 obs 20D 별개 → 기존 17D 모델 덮어쓰기 방지로 경로 분리
     exp_name = "warehouse_mappo_battery" if args.enable_battery else "warehouse_mappo"
+    if args.diff_drive:
+        exp_name = "warehouse_mappo_diffdrive"   # 홀로노믹 체크포인트와 분리(덮어쓰기 방지)
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter, exp_name)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"

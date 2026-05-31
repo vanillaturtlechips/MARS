@@ -77,6 +77,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     max_vx: float = 1.5
     max_vy: float = 1.0
     max_omega: float = 2.0
+    # diff-drive(레벨1): True면 vy(옆걸음) 차단 → 방향 틀려면 돌아야 함(실제 AMR처럼 커브).
+    #   obs/액션 차원 불변 → model_10998 그대로 로드해 fine-tune 가능. 기본 False=기존 동작 보존.
+    disable_strafe: bool = False
 
     goal_radius: float = 0.35
     goal_range: float = 4.0
@@ -92,6 +95,8 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     rew_goal: float       =    6.0  # 목표 도달 보상
     rew_stationary: float =   -0.6  # S6 장애물회피 98% 달성값. -0.45 절충은 S6/S1 박살(에바)로 폐기.
                                      # S3/S4 좁은통로·동일목표 교착은 orchestrator 영역(레이어 분리)
+    rew_spin: float       =    0.0  # |omega| 페널티 계수(diff-drive에서 제자리 휙휙 회전 억제). 기본 0=무효.
+                                     # diff_drive fine-tune 시 -0.05~-0.15 권장(과하면 회피 위해 못 돎)
 
     # 동적 장애물 (갑자기 출현하는 정지 장애물). False면 기존 동작 100% 보존
     enable_dynamic_obstacles: bool = False
@@ -322,6 +327,8 @@ class WarehouseMARLEnv(DirectRLEnv):
             vx_b = self._actions[:, i, 0] * self.cfg.max_vx
             vy_b = self._actions[:, i, 1] * self.cfg.max_vy
             omega = self._actions[:, i, 2] * self.cfg.max_omega
+            if self.cfg.disable_strafe:
+                vy_b = torch.zeros_like(vy_b)   # diff-drive: 옆걸음 차단(커브로만 방향 전환)
 
             # 방전 시 속도 급감 — battery 낮으면 못 움직임 → 충전이 goal 도달의 전제
             if self.cfg.enable_battery:
@@ -485,6 +492,9 @@ class WarehouseMARLEnv(DirectRLEnv):
                 cdist = (local.unsqueeze(1) - _chargers.unsqueeze(0)).norm(dim=2).min(dim=1).values
                 not_at_goal = not_at_goal * (cdist >= self.cfg.charge_radius).float()  # 충전소 위면 면제
             per_robot[:, i] += (speed < 0.1).float() * not_at_goal * self.cfg.rew_stationary
+            # diff-drive: 제자리 휙휙 회전 억제(|omega| 비례 페널티). rew_spin=0이면 무효.
+            if self.cfg.rew_spin != 0.0:
+                per_robot[:, i] += self.cfg.rew_spin * self._actions[:, i, 2].abs()
 
         # 배터리 진단 로그 — 충전 행동이 일어나는지 측정
         # mean_battery 유지/상승 = 충전함(학습됨), 하락+depleted↑ = 충전 안 함(탐색/보상 실패)
