@@ -50,8 +50,9 @@ SPAWN_OFFSETS = [
     ( 0.0,  1.5),
 ]
 
-# 충전소 위치 (env-local) — 맵 코너, 선반(±2,±2.5)과 안 겹침
-CHARGER_POSITIONS = [(-5.0, 5.0), (5.0, -5.0)]
+# 충전소 위치 (env-local) — y=0 중앙 통로(선반 ±2.5와 안 겹침), 로봇 경로 근처
+# 코너(±5)는 random 탐색이 도달 못 해 charging 경험 0 → 학습 불가였음. 접근성 개선.
+CHARGER_POSITIONS = [(-3.0, 0.0), (3.0, 0.0)]
 
 
 @configclass
@@ -106,9 +107,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     charge_radius: float = 0.6          # 충전 판정 거리
     battery_init_min: float = 0.15      # 저전력 커리큘럼: 충전 경험 조밀 수집
     battery_init_max: float = 0.5
-    battery_low_thresh: float = 0.4     # 조기 경보 (충전소 갈 시간 확보)
+    battery_low_thresh: float = 0.5     # 조기 경보 (충전소 더 일찍 인지)
     rew_charging: float = 2.0           # 충전소 위 충전 중 보상 (urgency 가중) — 양의 가치 앵커
-    rew_charger_progress: float = 3.0   # 충전소 접근 progress (potential-based, goal 방해 안 함)
+    rew_charger_progress: float = 5.0   # 충전소 접근 progress (potential-based, goal 방해 안 함) — 강화
     rew_depleted: float = -0.3          # 방전 페널티 완화 (-5→-0.3, 음수 지배 제거)
 
 
