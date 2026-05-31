@@ -111,6 +111,9 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     rew_charging: float = 2.0           # 충전소 위 충전 중 보상 (urgency 가중) — 양의 가치 앵커
     rew_charger_progress: float = 5.0   # 충전소 접근 progress (potential-based, goal 방해 안 함) — 강화
     rew_depleted: float = -0.3          # 방전 페널티 완화 (-5→-0.3, 음수 지배 제거)
+    # 방전 시 속도 급감 — 충전을 생존 필수로 만듦 (방전되면 goal 못 감 → 충전 학습 강제)
+    battery_speed_thresh: float = 0.2   # 이 이상이면 풀속도
+    min_speed_scale: float = 0.15       # 방전(battery=0) 시 최소 속도 배율
 
 
 class WarehouseMARLEnv(DirectRLEnv):
@@ -314,6 +317,14 @@ class WarehouseMARLEnv(DirectRLEnv):
             vx_b = self._actions[:, i, 0] * self.cfg.max_vx
             vy_b = self._actions[:, i, 1] * self.cfg.max_vy
             omega = self._actions[:, i, 2] * self.cfg.max_omega
+
+            # 방전 시 속도 급감 — battery 낮으면 못 움직임 → 충전이 goal 도달의 전제
+            if self.cfg.enable_battery:
+                scale = (self._battery[:, i] / self.cfg.battery_speed_thresh).clamp(
+                    self.cfg.min_speed_scale, 1.0)
+                vx_b  = vx_b * scale
+                vy_b  = vy_b * scale
+                omega = omega * scale
 
             vel_cmd = torch.zeros(self.num_envs, 6, device=self.device)
             vel_cmd[:, 0] = cos_yaw * vx_b - sin_yaw * vy_b
