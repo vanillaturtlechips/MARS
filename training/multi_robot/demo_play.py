@@ -24,6 +24,8 @@ parser.add_argument("--num_envs",   type=int, default=1)
 parser.add_argument("--max_steps",  type=int, default=0, help="0=무한(GUI 데모), N=N step 후 종료(headless 검증)")
 parser.add_argument("--diff_drive", action="store_true", default=False,
                     help="diff-drive 체크포인트 재생: vy 차단(커브로만 방향전환). 학습과 동일 동역학")
+parser.add_argument("--max_omega", type=float, default=None,
+                    help="학습 때 상향했으면 동일하게(예: 2.6). None=기본 유지")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -268,6 +270,8 @@ def main():
     env_cfg = WarehouseDemoEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env_cfg.disable_strafe = args.diff_drive   # diff-drive 모델은 학습과 동일하게 vy 차단
+    if args.max_omega is not None:
+        env_cfg.max_omega = args.max_omega     # 학습 때 상향했으면 동일하게
 
     env = WarehouseDemoEnv(env_cfg)
     env = RslRlVecEnvWrapper(env)

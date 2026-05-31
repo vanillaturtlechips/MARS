@@ -33,9 +33,19 @@ parser.add_argument("--enable_obstacles", action="store_true", default=False,
 parser.add_argument("--enable_battery", action="store_true", default=False,
                     help="배터리/충전소 활성화 — obs 17→20D (model_9999는 ippo_ckpt로 actor partial transfer)")
 parser.add_argument("--diff_drive", action="store_true", default=False,
-                    help="레벨1: vy(옆걸음) 차단 → 커브로만 방향전환(실제 AMR). obs/act 차원 불변 → model_10998 그대로 fine-tune")
-parser.add_argument("--rew_spin", type=float, default=-0.1,
-                    help="diff_drive 시 |omega| 페널티 계수(제자리 휙휙 회전 억제). -0.05~-0.15 권장")
+                    help="레벨1: vy(옆걸음) 하드 차단 → 커브로만 방향전환. (절벽 — 단발은 실패 확인됨)")
+parser.add_argument("--rew_spin", type=float, default=0.0,
+                    help="|omega| 페널티 계수(제자리 휙휙 회전 억제). 전이 중엔 0 권장(회전 억누르면 학습 방해)")
+parser.add_argument("--strafe_curriculum", action="store_true", default=False,
+                    help="레벨1 커리큘럼: max_vy를 1.0→0으로 성공률 게이트 적응 감소(하드컷 절벽 회피). model_10998에서 시작")
+parser.add_argument("--curriculum_thresh", type=float, default=0.8,
+                    help="이 성공률 이상이면 max_vy 한 단계 감소(문헌 표준 0.8)")
+parser.add_argument("--curriculum_step", type=float, default=0.1, help="max_vy 감소 폭")
+parser.add_argument("--curriculum_window", type=int, default=200, help="성공률 측정 윈도우(완료 에피소드 수)")
+parser.add_argument("--rew_heading", type=float, default=0.0,
+                    help="heading→goal 속도투영 보상(돌아서 굴러가기 학습). 0.3~0.5 권장(전이 가속)")
+parser.add_argument("--max_omega", type=float, default=None,
+                    help="회전 권한 상향(strafe 대체). None=기본 2.0 유지, 권장 2.6(≈1.3×)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -91,9 +101,21 @@ def main():
     env_cfg.action_space      = ACT_DIM * N_ROBOTS          # 9
     env_cfg.enable_dynamic_obstacles = args.enable_obstacles
     env_cfg.disable_strafe    = args.diff_drive
-    if args.diff_drive:
+    env_cfg.strafe_curriculum = args.strafe_curriculum
+    env_cfg.rew_heading       = args.rew_heading
+    if args.max_omega is not None:
+        env_cfg.max_omega = args.max_omega
+        print(f"[MAPPO] max_omega 상향: {args.max_omega} (회전 권한↑ — strafe 대체)")
+    if args.strafe_curriculum:
+        env_cfg.curriculum_success_thresh = args.curriculum_thresh
+        env_cfg.curriculum_step           = args.curriculum_step
+        env_cfg.curriculum_window         = args.curriculum_window
+        env_cfg.rew_spin = args.rew_spin    # 전이 중엔 0 권장
+        print(f"[MAPPO] diff-drive 커리큘럼: max_vy 1.0→0 적응감소(thresh {args.curriculum_thresh}, "
+              f"step {args.curriculum_step}, window {args.curriculum_window}), heading {args.rew_heading}, spin {args.rew_spin}")
+    elif args.diff_drive:
         env_cfg.rew_spin = args.rew_spin
-        print(f"[MAPPO] diff-drive(레벨1): vy 차단 + omega 페널티 {args.rew_spin} — 커브로만 방향전환")
+        print(f"[MAPPO] diff-drive 하드차단(레벨1): vy=0 + omega 페널티 {args.rew_spin}")
     if args.enable_obstacles:
         print("[MAPPO] 동적 장애물 활성화 — obs 차원 유지(min 거리)")
     if args.enable_battery:
@@ -108,6 +130,8 @@ def main():
     exp_name = "warehouse_mappo_battery" if args.enable_battery else "warehouse_mappo"
     if args.diff_drive:
         exp_name = "warehouse_mappo_diffdrive"   # 홀로노믹 체크포인트와 분리(덮어쓰기 방지)
+    if args.strafe_curriculum:
+        exp_name = "warehouse_mappo_diffdrive_curr"   # 커리큘럼 전용(하드컷과도 분리)
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter, exp_name)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"

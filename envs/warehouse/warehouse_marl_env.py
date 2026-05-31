@@ -80,6 +80,15 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     # diff-drive(레벨1): True면 vy(옆걸음) 차단 → 방향 틀려면 돌아야 함(실제 AMR처럼 커브).
     #   obs/액션 차원 불변 → model_10998 그대로 로드해 fine-tune 가능. 기본 False=기존 동작 보존.
     disable_strafe: bool = False
+    # diff-drive 커리큘럼: max_vy를 1.0→0으로 '성공률 게이트' 적응형 감소(하드컷 절벽 회피).
+    #   strafe_curriculum=True면 _cur_max_vy가 cfg.max_vy에서 시작해, 최근 윈도우 성공률이
+    #   thresh 이상이면 step만큼 내림. 붕괴(collapse_thresh 미만) 시 한 단계 되돌림(revert).
+    strafe_curriculum: bool = False
+    curriculum_success_thresh: float = 0.8   # ≥이면 max_vy 한 단계 내림(locomotion 커리큘럼 표준 0.8~0.9)
+    curriculum_collapse_thresh: float = 0.5  # <이면 한 단계 되돌림(revert) — value loss 폭발 보험
+    curriculum_window: int = 200             # 성공률 측정 윈도우(완료 에피소드 수)
+    curriculum_step: float = 0.1             # max_vy 감소 폭(0 근처는 더 작게 권장 — 문헌)
+    rew_heading: float = 0.0                 # heading→goal 정렬 보상(목표 향해 '돌아서 가기' 학습). 0=무효
 
     goal_radius: float = 0.35
     goal_range: float = 4.0
@@ -134,6 +143,11 @@ class WarehouseMARLEnv(DirectRLEnv):
         self._goal_pos_w = torch.zeros(self.num_envs, N_ROBOTS, 2, device=self.device)
         self._actions = torch.zeros(self.num_envs, N_ROBOTS, 3, device=self.device)
         self._prev_positions: torch.Tensor | None = None   # delta repulsion 버퍼
+
+        # diff-drive 커리큘럼 상태 — env가 스스로 성공률 측정해 max_vy 적응 감소
+        self._cur_max_vy = float(self.cfg.max_vy)   # 현재 유효 strafe 상한(1.0에서 시작)
+        self._curr_ep_count = 0                     # 윈도우 내 완료 에피소드 수
+        self._curr_success_count = 0                # 윈도우 내 all_reached 성공 수
 
         # 동적 장애물 상태 버퍼
         if self.cfg.enable_dynamic_obstacles:
@@ -324,11 +338,16 @@ class WarehouseMARLEnv(DirectRLEnv):
             cos_yaw = torch.cos(yaw)
             sin_yaw = torch.sin(yaw)
 
+            # 유효 strafe 상한: 커리큘럼(적응형) > 하드차단 > 기본. 셋 다 obs/act 차원 불변.
+            if self.cfg.strafe_curriculum:
+                eff_max_vy = self._cur_max_vy        # 성공률 게이트로 1.0→0 점진 감소
+            elif self.cfg.disable_strafe:
+                eff_max_vy = 0.0                     # 하드 차단(절벽 — 실패 확인됨)
+            else:
+                eff_max_vy = self.cfg.max_vy         # 기존 홀로노믹
             vx_b = self._actions[:, i, 0] * self.cfg.max_vx
-            vy_b = self._actions[:, i, 1] * self.cfg.max_vy
+            vy_b = self._actions[:, i, 1] * eff_max_vy
             omega = self._actions[:, i, 2] * self.cfg.max_omega
-            if self.cfg.disable_strafe:
-                vy_b = torch.zeros_like(vy_b)   # diff-drive: 옆걸음 차단(커브로만 방향 전환)
 
             # 방전 시 속도 급감 — battery 낮으면 못 움직임 → 충전이 goal 도달의 전제
             if self.cfg.enable_battery:
@@ -495,6 +514,18 @@ class WarehouseMARLEnv(DirectRLEnv):
             # diff-drive: 제자리 휙휙 회전 억제(|omega| 비례 페널티). rew_spin=0이면 무효.
             if self.cfg.rew_spin != 0.0:
                 per_robot[:, i] += self.cfg.rew_spin * self._actions[:, i, 2].abs()
+            # diff-drive: heading→goal 보상 — '속도투영형'(순수 cos는 멈춤 리워드해킹 함정).
+            #   r = v_forward × cos(bearing): 목표 보고 '굴러갈 때만' +. 멈춤/스핀/strafe=0 → 해킹 방지.
+            #   목표 미도달 시에만(도착 후 미세정렬 방해 안 함). rew_heading=0이면 무효.
+            if self.cfg.rew_heading != 0.0:
+                _, _, yaw_i = euler_xyz_from_quat(robot.data.root_quat_w)
+                hx, hy = torch.cos(yaw_i), torch.sin(yaw_i)              # heading 단위벡터
+                gvec = self._goal_pos_w[:, i] - robot.data.root_pos_w[:, :2]
+                gnorm = gvec.norm(dim=1).clamp(min=1e-6)
+                cos_bearing = (hx * gvec[:, 0] + hy * gvec[:, 1]) / gnorm   # heading·목표방향
+                v = robot.data.root_lin_vel_w[:, :2]
+                v_forward = v[:, 0] * hx + v[:, 1] * hy                  # 전진 속도(헤딩 성분)
+                per_robot[:, i] += self.cfg.rew_heading * v_forward * cos_bearing * not_at_goal
 
         # 배터리 진단 로그 — 충전 행동이 일어나는지 측정
         # mean_battery 유지/상승 = 충전함(학습됨), 하락+depleted↑ = 충전 안 함(탐색/보상 실패)
@@ -534,6 +565,28 @@ class WarehouseMARLEnv(DirectRLEnv):
 
         terminated = all_reached | any_oob | collision
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
+
+        # ── diff-drive 커리큘럼: env가 스스로 성공률 측정 → max_vy 적응 감소 ──
+        #   하드컷(절벽) 대신, 정책이 현재 strafe 상한에서 '잘 하고 있을 때만' 한 단계 더 조임.
+        if self.cfg.strafe_curriculum:
+            done = terminated | timed_out
+            self._curr_ep_count     += int(done.sum().item())
+            self._curr_success_count += int(all_reached.sum().item())   # all_reached ⊂ terminated
+            if self._curr_ep_count >= self.cfg.curriculum_window:
+                rate = self._curr_success_count / max(self._curr_ep_count, 1)
+                cmax = float(self.cfg.max_vy)
+                if rate >= self.cfg.curriculum_success_thresh and self._cur_max_vy > 0.0:
+                    self._cur_max_vy = max(0.0, self._cur_max_vy - self.cfg.curriculum_step)
+                    print(f"[Curriculum] 성공률 {rate:.2f} ≥ {self.cfg.curriculum_success_thresh} "
+                          f"→ max_vy ↓ {self._cur_max_vy:.2f}")
+                elif (rate < self.cfg.curriculum_collapse_thresh and self._cur_max_vy < cmax):
+                    self._cur_max_vy = min(cmax, self._cur_max_vy + self.cfg.curriculum_step)
+                    print(f"[Curriculum] 성공률 {rate:.2f} 붕괴 → max_vy ↑ {self._cur_max_vy:.2f} (revert)")
+                self._curr_ep_count = 0
+                self._curr_success_count = 0
+            log = self.extras.setdefault("log", {})
+            log["curriculum_max_vy"] = self._cur_max_vy
+
         return terminated, timed_out
 
     # ------------------------------------------------------------------
