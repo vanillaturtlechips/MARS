@@ -80,6 +80,7 @@ VIS_YAW_OFFSET_DEG = 0.0                # iw.hub 메시 정면축 보정(도) �
 VIS_SMOOTH_YAW     = 0.20               # 회전 보간(0=안돎, 1=즉시) — 코너링 부드럽게
 VIS_SMOOTH_POS     = 0.85               # 위치 보간(1=큐브에 딱 붙음) — 낮추면 덜덜 줄지만 지연↑
 VIS_MOVE_THRESH    = 0.15               # 이 속도 미만이면 직전 방향 유지(정지 시 빙빙 방지)
+VIS_Z_OFFSET       = -0.15              # 외형 z 보정(m) — 큐브중심(0.15)에 얹혀 떠보이는 것 보정(바퀴 바닥에 붙임)
 # ════════════════════════════════════════════════════════════════════════
 
 
@@ -130,7 +131,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             h = 0.5 * yaw
             quat = torch.stack([torch.cos(h), torch.zeros_like(h),
                                 torch.zeros_like(h), torch.sin(h)], dim=1)  # wxyz, 수평 yaw만
-            self._robot_visuals[i].set_world_poses(positions=sm_pos, orientations=quat)
+            out_pos = sm_pos.clone()
+            out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET   # 바퀴를 바닥에 붙임(떠보임 보정)
+            self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=quat)
 
     def _setup_scene(self):
         # ── 로봇: 물리는 큐브(model_9999 동역학 100% 보존), 외형만 iw.hub ──
