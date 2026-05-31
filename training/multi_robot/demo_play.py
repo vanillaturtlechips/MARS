@@ -67,7 +67,7 @@ WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_wareho
 WAREHOUSE_TRANSLATE = (0.0, 0.0, 0.0)   # 창고 USD 위치 (열린 통로가 원점에 오도록 이동)
 WAREHOUSE_ROT_DEG   = 0.0               # z축 회전(도) — 창고 통로 방향 맞추기
 WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
-SHOW_BOX_SHELVES    = True              # 충돌용 박스 선반 표시(=정합 확인). 정렬되면 False로 숨기고 USD 선반만
+SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표시. False면 외형 숨기고 아래 '오픈 랙'만 보임(충돌은 유지)
 CAMERA_EYE    = (9.0, -9.0, 7.0)        # 카메라 위치 (활동구역을 비스듬히 내려다봄)
 CAMERA_TARGET = (0.0,  0.0, 0.5)        # 카메라가 보는 지점 (원점 약간 위)
 # ════════════════════════════════════════════════════════════════════════
@@ -181,6 +181,22 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                 print("[Demo] 박스 선반 외형 숨김 (충돌만 유지)")
             except Exception as _e:
                 print(f"[Demo] 선반 숨김 실패(무시): {_e}")
+
+            # ── 오픈 랙 외형 (기둥 4 + 선반판 3단). 충돌 박스 자리에 정확히 일치 ──
+            #    footprint 3.0(x) × 0.5(y), 높이 1.5. 로봇이 피하는 박스와 동일 위치.
+            rack_mat = sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.20, 0.24, 0.32), metallic=0.85, roughness=0.3)
+            shelf_mat = sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.62, 0.45, 0.24), metallic=0.0, roughness=0.7)  # 나무 선반판
+            post = sim_utils.CuboidCfg(size=(0.10, 0.10, 1.5), visual_material=rack_mat)
+            plank = sim_utils.CuboidCfg(size=(3.0, 0.5, 0.06), visual_material=shelf_mat)
+            for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
+                base = f"/World/envs/env_0/Rack_{s_i}"
+                for p_i, (dx, dy) in enumerate([(-1.45, -0.2), (1.45, -0.2), (-1.45, 0.2), (1.45, 0.2)]):
+                    post.func(f"{base}/post_{p_i}", post, translation=(cx + dx, cy + dy, 0.75))
+                for l_i, lz in enumerate([0.05, 0.75, 1.45]):
+                    plank.func(f"{base}/plank_{l_i}", plank, translation=(cx, cy, lz))
+            print("[Demo] 오픈 랙 외형 생성 (기둥+3단 선반판)")
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
