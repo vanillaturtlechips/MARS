@@ -106,9 +106,10 @@ git fetch --tags --quiet || true
 git checkout "$ISAACLAB_TAG"
 # --no-deps: isaaclab가 torch를 재해결해 깨지 않도록 (torch는 4단계서 고정 완료)
 pip install --no-deps -e source/isaaclab -e source/isaaclab_assets -e source/isaaclab_rl
-# isaaclab가 필요로 하는 부수 패키지만 명시 설치 (torch/torchvision 제외)
-pip install tensordict warp-lang trimesh toml hidapi gymnasium pyglet "protobuf<5" tensorboard onnx 2>/dev/null || \
-    pip install tensordict warp-lang trimesh toml gymnasium tensorboard onnx
+# isaaclab + rsl_rl가 필요로 하는 부수 패키지만 명시 설치 (torch/torchvision 제외)
+# gitpython: rsl_rl가 git state 로깅에 사용 (--no-deps라 따로 깔아야 함)
+pip install tensordict gitpython warp-lang trimesh toml hidapi gymnasium pyglet "protobuf<5" tensorboard onnx 2>/dev/null || \
+    pip install tensordict gitpython warp-lang trimesh toml gymnasium tensorboard onnx
 python -c "import isaaclab; from isaaclab.app import AppLauncher; print('  ✅ isaaclab import OK')"
 
 # ── 6. rsl_rl 3.0.1 (--no-deps 로 torch 보존) ─────────────────────────
