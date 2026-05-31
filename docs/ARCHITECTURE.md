@@ -92,13 +92,21 @@ min 거리**로 계산된다. 실로봇에서는 **라이다 `/scan`의 최근�
 | 3+ | + 동적 장애물 회피 (fine-tune) | `warehouse_mappo/model_10998.pt` | **S6 97%** |
 | 4 | Orchestrator (LLM) | `agents/` (stub) | 설계 단계 |
 
-### 향후 과제
+### 배터리/충전 — Orchestrator 영역 (RL 통합 폐기)
 
-- **배터리/충전소** — env(obs 20D·충전소·충전/방전 보상)는 구현 완료(`enable_battery`),
-  학습은 향후 과제. obs 차원 확장(17→20D)으로 actor 입력층·critic이 새로 초기화되어
-  fine-tune이 scratch 수준이 되는 게 난점. 본 프로젝트 fine-tune 성공 사례(동적 장애물)는
-  모두 입력층 보존(obs 차원 유지)이 전제였음. 해결엔 충분한 scratch 재학습 또는
-  critic transfer 구조가 필요.
+충전 의사결정("언제/어느 충전소로")은 **전역 상태 기반 고수준 결정**이라 ① Orchestrator
+영역이다 — 충전소(2개) < 로봇(3개) 공유자원 경합, fleet 배터리·충전소 점유가 필요하며,
+이는 S3(좁은통로 우선순위)·S4(동일목표)가 orchestrator 영역인 것과 **구조적으로 동일**하다.
+
+RL에 충전을 통합 시도했으나(obs 20D + 충전 보상), 충전은 학습됐지만(평균배터리 0.7+)
+navigation/회피가 붕괴(S1/S2/S4 충돌 100%)하고 std가 발산했다. 원인은 **로컬 obs인 RL에
+전역 의사결정을 떠넘긴 것** — reward 함수가 충전 vs 회피 충돌을 막는 땜질 코드로 뒤덮였다.
+
+**올바른 설계:** RL(②)은 navigation+회피만 한다(`model_10998`, S6 97%, obs 17D — 검증됨).
+Orchestrator(①)가 배터리(`/robot_i/status`)를 보고 충전소를 `/robot_i/goal_pose`로 발행하면,
+RL은 충전소인지도 모른 채 그냥 navigation한다. env의 충전 메커니즘(충전소 도달 시 회복)은
+유지하되 RL 학습엔 넣지 않는다(`enable_battery=False`). 이로써 멀티task·obs 확장 문제가
+원천 소멸하고, "RL이 못 하는 전역 결정을 LLM이 한다"는 레이어 분리 원칙이 일관되게 적용된다.
 
 배포: `deploy/jetson/` (actor_phase15/phase2_final/phase3_marl.pt) + `ros2_bridge.py`
 
