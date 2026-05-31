@@ -68,7 +68,10 @@ WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_wareho
 WAREHOUSE_TRANSLATE = (0.0, 0.0, 0.0)   # 창고 USD 위치 (열린 통로가 원점에 오도록 이동)
 WAREHOUSE_ROT_DEG   = 0.0               # z축 회전(도) — 창고 통로 방향 맞추기
 WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
-SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표시. False면 외형 숨기고 아래 '오픈 랙'만 보임(충돌은 유지)
+SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표시. False면 외형 숨기고 아래 랙만 보임(충돌은 유지)
+USE_SHELF_USD       = True               # True면 실제 Isaac 창고 랙 USD 시도(빈 로드면 자동으로 절차적 폴백)
+SHELF_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_A1.usd"
+RACK_HEIGHT         = 2.5               # 랙 높이(m) — 로봇 대비 충분히 크게(선반이 작다는 피드백 반영)
 CAMERA_EYE    = (9.0, -9.0, 7.0)        # 카메라 위치 (활동구역을 비스듬히 내려다봄)
 CAMERA_TARGET = (0.0,  0.0, 0.5)        # 카메라가 보는 지점 (원점 약간 위)
 #  로봇 외형(iw.hub) — 큐브 yaw 대신 '진행 방향'으로 향하게 + 수평 yaw만(기울기/덜덜 제거)
@@ -204,21 +207,46 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             except Exception as _e:
                 print(f"[Demo] 선반 숨김 실패(무시): {_e}")
 
-            # ── 오픈 랙 외형 (기둥 4 + 선반판 3단). 충돌 박스 자리에 정확히 일치 ──
-            #    footprint 3.0(x) × 0.5(y), 높이 1.5. 로봇이 피하는 박스와 동일 위치.
-            rack_mat = sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.20, 0.24, 0.32), metallic=0.85, roughness=0.3)
-            shelf_mat = sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.62, 0.45, 0.24), metallic=0.0, roughness=0.7)  # 나무 선반판
-            post = sim_utils.CuboidCfg(size=(0.10, 0.10, 1.5), visual_material=rack_mat)
-            plank = sim_utils.CuboidCfg(size=(3.0, 0.5, 0.06), visual_material=shelf_mat)
-            for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
-                base = f"/World/envs/env_0/Rack_{s_i}"
-                for p_i, (dx, dy) in enumerate([(-1.45, -0.2), (1.45, -0.2), (-1.45, 0.2), (1.45, 0.2)]):
-                    post.func(f"{base}/post_{p_i}", post, translation=(cx + dx, cy + dy, 0.75))
-                for l_i, lz in enumerate([0.05, 0.75, 1.45]):
-                    plank.func(f"{base}/plank_{l_i}", plank, translation=(cx, cy, lz))
-            print("[Demo] 오픈 랙 외형 생성 (기둥+3단 선반판)")
+            # ── 랙 외형: 실제 Isaac 창고 랙 USD 우선, 빈 로드면 절차적 톨 랙 ──
+            #    footprint 3.0(x) × 0.5(y)는 충돌 박스와 일치(로봇이 피하는 위치).
+            use_usd_ok = False
+            if USE_SHELF_USD:
+                try:
+                    import omni.usd
+                    from pxr import UsdGeom, Usd
+                    _st = omni.usd.get_context().get_stage()
+                    rack_usd = sim_utils.UsdFileCfg(usd_path=SHELF_USD)
+                    ok = True
+                    for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
+                        _rp = f"/World/envs/env_0/Rack_{s_i}"
+                        rack_usd.func(_rp, rack_usd, translation=(cx, cy, 0.0),
+                                      orientation=(1.0, 0.0, 0.0, 0.0))
+                        _pr = _st.GetPrimAtPath(_rp)
+                        if not (_pr.IsValid() and any(d.IsA(UsdGeom.Mesh) for d in Usd.PrimRange(_pr))):
+                            ok = False
+                    use_usd_ok = ok
+                    print(f"[Demo] 창고 랙 USD {'성공' if ok else '비어있음→절차적 폴백'}")
+                except Exception as _e:
+                    print(f"[Demo] 랙 USD 예외→절차적: {_e}")
+
+            if not use_usd_ok:
+                # 절차적 톨 랙: 기둥4 + 가로빔 + 선반판 다단 (height=RACK_HEIGHT)
+                metal = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.22, 0.26, 0.34), metallic=0.85, roughness=0.3)
+                wood  = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.62, 0.45, 0.24), metallic=0.0, roughness=0.75)
+                H = RACK_HEIGHT
+                post  = sim_utils.CuboidCfg(size=(0.12, 0.12, H), visual_material=metal)
+                plank = sim_utils.CuboidCfg(size=(2.95, 0.5, 0.07), visual_material=wood)
+                endbar = sim_utils.CuboidCfg(size=(0.08, 0.5, 0.08), visual_material=metal)   # 양끝 가로빔
+                levels = [0.08, H * 0.38, H * 0.68, H - 0.1]
+                for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
+                    base = f"/World/envs/env_0/Rack_{s_i}"
+                    for p_i, (dx, dy) in enumerate([(-1.45, -0.2), (1.45, -0.2), (-1.45, 0.2), (1.45, 0.2)]):
+                        post.func(f"{base}/post_{p_i}", post, translation=(cx + dx, cy + dy, H / 2))
+                    for l_i, lz in enumerate(levels):
+                        plank.func(f"{base}/plank_{l_i}", plank, translation=(cx, cy, lz))
+                    for e_i, ex in enumerate((-1.45, 1.45)):       # 양끝 상단 가로빔
+                        endbar.func(f"{base}/end_{e_i}", endbar, translation=(cx + ex, cy, H - 0.1))
+                print(f"[Demo] 절차적 톨 랙 생성 (height={H}m, 4단 선반)")
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
