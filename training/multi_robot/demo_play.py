@@ -71,7 +71,7 @@ WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
 SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표시. False면 외형 숨기고 아래 랙만 보임(충돌은 유지)
 USE_SHELF_USD       = True               # True면 실제 Isaac 창고 랙 USD 시도(빈 로드면 자동으로 절차적 폴백)
 SHELF_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_A1.usd"
-RACK_HEIGHT         = 2.5               # 랙 높이(m) — 로봇 대비 충분히 크게(선반이 작다는 피드백 반영)
+RACK_HEIGHT         = 3.5               # 랙 높이(m) — 로봇 대비 확실히 크게(선반이 작다는 피드백 반영)
 CAMERA_EYE    = (9.0, -9.0, 7.0)        # 카메라 위치 (활동구역을 비스듬히 내려다봄)
 CAMERA_TARGET = (0.0,  0.0, 0.5)        # 카메라가 보는 지점 (원점 약간 위)
 #  로봇 외형(iw.hub) — 큐브 yaw 대신 '진행 방향'으로 향하게 + 수평 yaw만(기울기/덜덜 제거)
@@ -106,13 +106,22 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
     def _apply_action(self):
         super()._apply_action()
         # iw.hub 외형: 큐브 yaw가 아니라 '진행 방향'을 향하게 + 수평 yaw만 (기울기·덜덜 제거)
+        goal_w = getattr(self, "_goal_pos_w", None)      # (E,n_robots,2) 월드 — 있으면 '목표 방향'으로
         for i, robot in enumerate(self.robots):
             pos = robot.data.root_pos_w                  # (E,3)
-            vel = robot.data.root_lin_vel_w[:, :2]       # (E,2)
-            speed = torch.linalg.norm(vel, dim=1)        # (E,)
             prev = self._vis_yaw[i]
-            tgt = torch.atan2(vel[:, 1], vel[:, 0]) + self._yaw_off
-            tgt = torch.where(speed > VIS_MOVE_THRESH, tgt, prev)   # 정지 시 직전 방향 유지
+            if goal_w is not None:
+                # ── 메시 정면 = '목표 방향' (회피 옆걸음에도 안 빙빙 도는 핵심) ──
+                to_goal = goal_w[:, i, :2] - pos[:, :2]  # (E,2)
+                dist = torch.linalg.norm(to_goal, dim=1)
+                tgt = torch.atan2(to_goal[:, 1], to_goal[:, 0]) + self._yaw_off
+                tgt = torch.where(dist > 0.30, tgt, prev)   # 목표 근처선 직전 방향 유지(도착 시 빙빙 방지)
+            else:
+                # 폴백: 목표 정보 없으면 기존 속도 방향
+                vel = robot.data.root_lin_vel_w[:, :2]
+                speed = torch.linalg.norm(vel, dim=1)
+                tgt = torch.atan2(vel[:, 1], vel[:, 0]) + self._yaw_off
+                tgt = torch.where(speed > VIS_MOVE_THRESH, tgt, prev)
             d = torch.atan2(torch.sin(tgt - prev), torch.cos(tgt - prev))  # 최단각 차이
             yaw = prev + VIS_SMOOTH_YAW * d
             self._vis_yaw[i] = yaw
@@ -234,10 +243,10 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                 metal = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.22, 0.26, 0.34), metallic=0.85, roughness=0.3)
                 wood  = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.62, 0.45, 0.24), metallic=0.0, roughness=0.75)
                 H = RACK_HEIGHT
-                post  = sim_utils.CuboidCfg(size=(0.12, 0.12, H), visual_material=metal)
-                plank = sim_utils.CuboidCfg(size=(2.95, 0.5, 0.07), visual_material=wood)
-                endbar = sim_utils.CuboidCfg(size=(0.08, 0.5, 0.08), visual_material=metal)   # 양끝 가로빔
-                levels = [0.08, H * 0.38, H * 0.68, H - 0.1]
+                post  = sim_utils.CuboidCfg(size=(0.16, 0.16, H), visual_material=metal)   # 두꺼운 기둥
+                plank = sim_utils.CuboidCfg(size=(2.95, 0.5, 0.10), visual_material=wood)   # 두꺼운 선반판
+                endbar = sim_utils.CuboidCfg(size=(0.10, 0.5, 0.10), visual_material=metal) # 양끝 가로빔
+                levels = [0.08, H * 0.30, H * 0.55, H * 0.80, H - 0.1]   # 5단
                 for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
                     base = f"/World/envs/env_0/Rack_{s_i}"
                     for p_i, (dx, dy) in enumerate([(-1.45, -0.2), (1.45, -0.2), (-1.45, 0.2), (1.45, 0.2)]):
@@ -246,7 +255,7 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                         plank.func(f"{base}/plank_{l_i}", plank, translation=(cx, cy, lz))
                     for e_i, ex in enumerate((-1.45, 1.45)):       # 양끝 상단 가로빔
                         endbar.func(f"{base}/end_{e_i}", endbar, translation=(cx + ex, cy, H - 0.1))
-                print(f"[Demo] 절차적 톨 랙 생성 (height={H}m, 4단 선반)")
+                print(f"[Demo] 절차적 톨 랙 생성 (height={H}m, 5단 선반)")
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
