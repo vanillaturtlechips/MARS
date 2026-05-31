@@ -205,13 +205,14 @@ def run_scenario(
         collision = torch.zeros(N_ENVS, dtype=torch.bool, device=device)
         reached   = torch.zeros(N_ENVS, dtype=torch.bool, device=device)
 
+        obr = obs_per_robot(env.cfg.enable_battery)   # 17 or 20 (battery 시)
         while not recorded[:this_batch].all():
             obs_dict    = env._get_observations()
             obs         = obs_dict["policy"]
 
             actions = []
             for i in range(N_ROBOTS):
-                o_i = obs[:, i * OBS_PER_ROBOT:(i + 1) * OBS_PER_ROBOT]
+                o_i = obs[:, i * obr:(i + 1) * obr]
                 actions.append(actor(o_i))
             action_flat = torch.cat(actions, dim=1)
             action_flat[recorded] = 0.0   # 완료 env는 정지
