@@ -27,6 +27,8 @@ parser.add_argument("--enable_obstacles", action="store_true", default=False,
                     help="동적 장애물 켜고 평가 (fine-tune 모델 회피/도달 측정)")
 parser.add_argument("--enable_battery", action="store_true", default=False,
                     help="배터리/충전소 켜고 평가 (충전 행동·평균배터리 측정)")
+parser.add_argument("--diff_drive", action="store_true", default=False,
+                    help="diff-drive 모델 평가: vy 차단(학습과 동일 동역학)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 args.headless = getattr(args, "headless", False)
@@ -294,6 +296,7 @@ def main():
     env_cfg.scene.num_envs = args.num_eval_envs
     env_cfg.enable_dynamic_obstacles = args.enable_obstacles
     env_cfg.enable_battery = args.enable_battery
+    env_cfg.disable_strafe = args.diff_drive   # diff-drive 모델은 학습과 동일하게 vy 차단
     if args.enable_obstacles:
         print("[Eval] 동적 장애물 활성화 — 회피/도달 측정")
     if args.enable_battery:
