@@ -46,6 +46,8 @@ parser.add_argument("--rew_heading", type=float, default=0.0,
                     help="heading→goal 속도투영 보상(돌아서 굴러가기 학습). 0.3~0.5 권장(전이 가속)")
 parser.add_argument("--max_omega", type=float, default=None,
                     help="회전 권한 상향(strafe 대체). None=기본 2.0 유지, 권장 2.6(≈1.3×)")
+parser.add_argument("--entropy_coef", type=float, default=None,
+                    help="PPO 엔트로피 계수. None=기본(0.001). 커리큘럼 노이즈 폭발 억제엔 0.0 권장")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -137,7 +139,10 @@ def main():
     cfg_dict["algorithm"]["class_name"] = "PPO"
     # 배터리: entropy_coef 0.01은 std 폭발(6.6), 0.005+clamp는 iter루프 부작용(episode 급감).
     # → 통짜 learn 유지 + entropy_coef 0.002(0.001보다 약간 높여 충전 탐색, 발산은 약함)
-    cfg_dict["algorithm"]["entropy_coef"] = 0.002 if args.enable_battery else 0.001
+    _ent = 0.002 if args.enable_battery else 0.001
+    if args.entropy_coef is not None:
+        _ent = args.entropy_coef   # 커리큘럼: 0으로 노이즈 폭발(0.5→1.42) 억제, 도달률 회복
+    cfg_dict["algorithm"]["entropy_coef"] = _ent
     # rsl_rl 3.x obs_groups (구버전 isaaclab_rl은 누락 → setdefault로 양쪽 안전)
     cfg_dict.setdefault("obs_groups", {"policy": ["policy"], "critic": ["critic"]})
     runner = OnPolicyRunner(env, cfg_dict, log_dir=f"logs/{exp_name}", device=env.device)
