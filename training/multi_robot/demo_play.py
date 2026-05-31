@@ -113,42 +113,19 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
 
     def _apply_action(self):
         super()._apply_action()
-        # iw.hub 외형: 큐브를 쫓는 유니사이클(차량형) 그림자 — strafe/빙빙 시각 제거
+        # iw.hub 외형: 물리 큐브에 그대로 붙임 + 큐브의 진짜 yaw(policy가 omega로 만든 방향).
+        #   쫓아가기/스무딩/유니사이클 전부 제거 — '큐브가 하는 그대로'만 정직하게 표시(발산 없음).
         for i, robot in enumerate(self.robots):
-            pos = robot.data.root_pos_w                  # (E,3) 큐브(물리) 위치=목표
-            prev = self._vis_yaw[i]
-            cur_xy = self._vis_pos[i][:, :2]             # 외형 현재 위치
-            to_t = pos[:, :2] - cur_xy                   # 외형→큐브 벡터
-            dist = torch.linalg.norm(to_t, dim=1)
-
-            if VIS_UNICYCLE:
-                # ── 1) 목표방향으로 회전율 제한 조향 (옆으로 새도 메시는 곡선 추종) ──
-                desired = torch.atan2(to_t[:, 1], to_t[:, 0]) + self._yaw_off
-                dyaw = torch.atan2(torch.sin(desired - prev), torch.cos(desired - prev))
-                dyaw = torch.where(dist > VIS_MOVE_THRESH, dyaw, torch.zeros_like(dyaw))  # 붙으면 회전 멈춤
-                step_turn = torch.clamp(VIS_TURN_GAIN * dyaw, -VIS_TURN_MAX, VIS_TURN_MAX)
-                yaw = prev + step_turn
-                # ── 2) '자기 향한 방향으로만' 전진 (strafe 시각 제거의 핵심) ──
-                speed = torch.clamp(VIS_DRIVE_GAIN * dist, max=VIS_SPEED_MAX)
-                new_xy = cur_xy + speed.unsqueeze(1) * torch.stack(
-                    [torch.cos(yaw), torch.sin(yaw)], dim=1)
-                new_pos = torch.stack([new_xy[:, 0], new_xy[:, 1], pos[:, 2]], dim=1)
-            else:
-                # 폴백: 큐브에 딱 붙음(기존 동작)
-                tgt = torch.atan2(to_t[:, 1], to_t[:, 0]) + self._yaw_off
-                tgt = torch.where(dist > VIS_MOVE_THRESH, tgt, prev)
-                d = torch.atan2(torch.sin(tgt - prev), torch.cos(tgt - prev))
-                yaw = prev + VIS_SMOOTH_YAW * d
-                new_pos = pos.clone()
-
-            self._vis_yaw[i] = yaw
-            self._vis_pos[i] = new_pos
+            pos = robot.data.root_pos_w                  # (E,3) 큐브 위치
+            quat = robot.data.root_quat_w                # (E,4) 큐브 실제 방향
+            _, _, yaw = euler_xyz_from_quat(quat)        # 수평 yaw만 추출(기울기 제거)
+            yaw = yaw + self._yaw_off
             h = 0.5 * yaw
-            quat = torch.stack([torch.cos(h), torch.zeros_like(h),
-                                torch.zeros_like(h), torch.sin(h)], dim=1)  # wxyz, 수평 yaw만
-            out_pos = new_pos.clone()
+            flat_quat = torch.stack([torch.cos(h), torch.zeros_like(h),
+                                     torch.zeros_like(h), torch.sin(h)], dim=1)  # wxyz
+            out_pos = pos.clone()
             out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET   # 바퀴를 바닥에 붙임
-            self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=quat)
+            self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=flat_quat)
 
     def _setup_scene(self):
         # ── 로봇: 물리는 큐브(model_9999 동역학 100% 보존), 외형만 iw.hub ──
