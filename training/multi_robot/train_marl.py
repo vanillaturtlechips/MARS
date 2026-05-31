@@ -101,7 +101,8 @@ def main():
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter, exp_name)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
-    cfg_dict["algorithm"]["entropy_coef"] = 0.001  # per-robot 보상으로 신호 깨끗해져 낮은 값 충분
+    # 배터리는 충전 행동 탐색이 필요 → entropy_coef 상향(0.001→0.01)으로 조기 수렴 방지
+    cfg_dict["algorithm"]["entropy_coef"] = 0.01 if args.enable_battery else 0.001
     runner = OnPolicyRunner(env, cfg_dict, log_dir=f"logs/{exp_name}", device=env.device)
 
     if args.mappo_ckpt and not args.from_scratch:
