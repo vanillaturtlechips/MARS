@@ -102,9 +102,8 @@ git checkout "$ISAACLAB_TAG"
 pip install -e source/isaaclab
 pip install -e source/isaaclab_assets
 pip install -e source/isaaclab_rl
-# 검증 게이트
+# 검증 게이트 — isaaclab_rl 래퍼는 rsl_rl 의존이라 5단계 이후에 검증(아래)
 python -c "import isaaclab; from isaaclab.app import AppLauncher; print('  ✅ isaaclab import OK')"
-python -c "from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlVecEnvWrapper; print('  ✅ isaaclab_rl import OK')"
 
 # ── 5. rsl_rl (코드가 /workspace/rsl_rl 소스 경로를 sys.path에 주입) ───
 echo ""
@@ -118,6 +117,8 @@ git fetch --tags --quiet || true
 git checkout "$RSL_RL_TAG" 2>/dev/null || echo "  (태그 $RSL_RL_TAG 없음 — 기본 브랜치 사용)"
 pip install -e .
 python -c "from rsl_rl.runners import OnPolicyRunner; print('  ✅ rsl_rl import OK')"
+# isaaclab_rl 래퍼 검증 (rsl_rl 의존 → 여기서)
+python -c "from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlVecEnvWrapper; print('  ✅ isaaclab_rl import OK')"
 
 # ── 6. MARS 의존성 + git 권한 ─────────────────────────────────────────
 echo ""
