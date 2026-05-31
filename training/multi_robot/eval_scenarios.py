@@ -41,7 +41,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_marl_env import (
-    WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT, ROBOT_COLLISION_DIST
+    WarehouseMARLEnv, WarehouseMARLEnvCfg, N_ROBOTS, OBS_PER_ROBOT, ROBOT_COLLISION_DIST,
+    obs_per_robot,
 )
 
 SCENARIOS: dict[str, dict] = {
@@ -94,11 +95,14 @@ def load_policy(ckpt_path: str, device: str):
     norm_mean = raw.get("actor_normalizer.running_mean", None)
     norm_var  = raw.get("actor_normalizer.running_var",  None)
 
+    # obs 차원 체크포인트에서 자동 감지 (17 or battery 20)
+    ckpt_obs_dim = raw["actor.0.weight"].shape[1]
+
     class ActorMLP(nn.Module):
         def __init__(self):
             super().__init__()
             layers: list[nn.Module] = []
-            in_dim = OBS_PER_ROBOT
+            in_dim = ckpt_obs_dim
             for h in [256, 128, 64]:
                 layers += [nn.Linear(in_dim, h), nn.ELU()]
                 in_dim = h
@@ -158,6 +162,7 @@ def run_scenario(
         "n_episodes": num_episodes,
         "collision": 0, "deadlock": 0, "all_reached": 0, "ep_len_sum": 0.0,
     }
+    batt_sum, batt_n = 0.0, 0   # 배터리 통계 (충전 행동 검증)
 
     episodes_collected = 0
 
@@ -219,6 +224,10 @@ def run_scenario(
             env.episode_length_buf[~recorded] += 1
             ep_lens[~recorded] += 1
 
+            if env.cfg.enable_battery:
+                batt_sum += env._battery[:this_batch].mean().item()
+                batt_n += 1
+
             terminated, timed_out = env._get_dones()
             just_done = (terminated | timed_out) & ~recorded
 
@@ -266,6 +275,8 @@ def run_scenario(
     stats["deadlock_rate"]    = stats["deadlock"]     / n
     stats["all_reached_rate"] = stats["all_reached"]  / n
     stats["avg_ep_len"]       = stats["ep_len_sum"]   / n
+    if batt_n > 0:
+        stats["mean_battery"] = batt_sum / batt_n
     return stats
 
 
@@ -279,8 +290,14 @@ def main():
     env_cfg = WarehouseMARLEnvCfg()
     env_cfg.scene.num_envs = args.num_eval_envs
     env_cfg.enable_dynamic_obstacles = args.enable_obstacles
+    env_cfg.enable_battery = args.enable_battery
     if args.enable_obstacles:
-        print("[Eval] 동적 장애물 활성화 — 회피/도달 측정\n")
+        print("[Eval] 동적 장애물 활성화 — 회피/도달 측정")
+    if args.enable_battery:
+        obr = obs_per_robot(True)
+        env_cfg.observation_space = obr * N_ROBOTS
+        env_cfg.state_space       = obr * N_ROBOTS
+        print("[Eval] 배터리/충전소 활성화 — 충전 행동 측정 (mean_battery, depleted)\n")
     env = WarehouseMARLEnv(env_cfg)
 
     results = []
@@ -288,10 +305,11 @@ def main():
         print(f"── {name}: {scenario['desc']}")
         stats = run_scenario(name, scenario, actor, args.num_episodes, device, env)
         results.append(stats)
+        batt_str = f"  평균배터리: {stats['mean_battery']:.3f}" if "mean_battery" in stats else ""
         print(f"   충돌률: {stats['collision_rate']:.1%}  "
               f"교착률: {stats['deadlock_rate']:.1%}  "
               f"전원도달: {stats['all_reached_rate']:.1%}  "
-              f"평균스텝: {stats['avg_ep_len']:.1f}\n")
+              f"평균스텝: {stats['avg_ep_len']:.1f}{batt_str}\n")
 
     print("=" * 60)
     print(f"  태그: {args.tag}  |  체크포인트: {Path(args.ckpt).name}")
