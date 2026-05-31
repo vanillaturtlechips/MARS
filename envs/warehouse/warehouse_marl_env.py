@@ -102,18 +102,18 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     # 배터리 + 충전소 (enable_battery=False면 기존 동작·obs 차원 100% 보존)
     enable_battery: bool = False
     n_chargers: int = 2
-    battery_drain: float = 0.005        # step당 소모 (↑: 충전 압력 강화, 충전 경험 빈도↑)
+    battery_drain: float = 0.003        # step당 소모 (0.005는 학습 전 전부 방전→악순환)
     battery_charge: float = 0.02        # 충전소 근처 step당 회복
     charge_radius: float = 1.0          # 충전 판정 거리 (0.6→1.0: 도달·머물기 쉽게)
-    battery_init_min: float = 0.15      # 저전력 커리큘럼: 충전 경험 조밀 수집
-    battery_init_max: float = 0.5
+    battery_init_min: float = 0.4       # 초기 여유 (충전 학습 시간 확보, 학습 전 즉시방전 방지)
+    battery_init_max: float = 1.0
     battery_low_thresh: float = 0.5     # 조기 경보 (충전소 더 일찍 인지)
     rew_charging: float = 2.0           # 충전소 위 충전 중 보상 (urgency 가중) — 양의 가치 앵커
     rew_charger_progress: float = 5.0   # 충전소 접근 progress (potential-based, goal 방해 안 함) — 강화
     rew_depleted: float = -0.3          # 방전 페널티 완화 (-5→-0.3, 음수 지배 제거)
     # 방전 시 속도 급감 — 충전을 생존 필수로 만듦 (방전되면 goal 못 감 → 충전 학습 강제)
     battery_speed_thresh: float = 0.2   # 이 이상이면 풀속도
-    min_speed_scale: float = 0.0        # 방전(battery=0) 시 완전 정지 → 충전이 goal 도달의 절대 전제
+    min_speed_scale: float = 0.3        # 방전 시 0.3배(느리지만 충전소 도달 가능) — 0.0은 영구정지 악순환
 
 
 class WarehouseMARLEnv(DirectRLEnv):
