@@ -60,6 +60,18 @@ _ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/
 IW_HUB_USD = f"{_ISAAC_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub_static.usd"
 WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
 
+# ════════════════════════════════════════════════════════════════════════
+#  데모 씬 튜닝 노브 — 스크린샷 보며 이 값만 바꾸면 됨 (재훈련/로직 영향 없음)
+# ════════════════════════════════════════════════════════════════════════
+#  활동 구역: 로봇 스폰 ±1.5m, 선반 (±2, ±2.5). 창고 USD를 이 구역에 맞춰 정렬.
+WAREHOUSE_TRANSLATE = (0.0, 0.0, 0.0)   # 창고 USD 위치 (열린 통로가 원점에 오도록 이동)
+WAREHOUSE_ROT_DEG   = 0.0               # z축 회전(도) — 창고 통로 방향 맞추기
+WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
+SHOW_BOX_SHELVES    = True              # 충돌용 박스 선반 표시(=정합 확인). 정렬되면 False로 숨기고 USD 선반만
+CAMERA_EYE    = (9.0, -9.0, 7.0)        # 카메라 위치 (활동구역을 비스듬히 내려다봄)
+CAMERA_TARGET = (0.0,  0.0, 0.5)        # 카메라가 보는 지점 (원점 약간 위)
+# ════════════════════════════════════════════════════════════════════════
+
 
 class WarehouseDemoEnvCfg(WarehouseMARLEnvCfg):
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
@@ -120,25 +132,33 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             )
         print("[Demo] iw.hub visual-only 로드 (물리: 큐브 유지)")
 
-        # ── 바닥: 창고 USD 시도, 실패 시 GroundPlane ─────────────────
+        # ── 바닥: 창고 USD (정렬 노브 적용), 실패 시 GroundPlane ───────
+        import math as _math
+        _yaw = _math.radians(WAREHOUSE_ROT_DEG)
+        _wq = (_math.cos(_yaw / 2), 0.0, 0.0, _math.sin(_yaw / 2))   # z축 yaw 쿼터니언
         try:
-            warehouse_cfg = sim_utils.UsdFileCfg(usd_path=WAREHOUSE_USD)
+            warehouse_cfg = sim_utils.UsdFileCfg(
+                usd_path=WAREHOUSE_USD,
+                scale=(WAREHOUSE_SCALE, WAREHOUSE_SCALE, WAREHOUSE_SCALE),
+            )
             warehouse_cfg.func("/World/Warehouse", warehouse_cfg,
-                               translation=(0.0, 0.0, 0.0),
-                               orientation=(1.0, 0.0, 0.0, 0.0))
-            print("[Demo] 창고 USD 로드 성공")
+                               translation=WAREHOUSE_TRANSLATE,
+                               orientation=_wq)
+            print(f"[Demo] 창고 USD 로드 성공 (translate={WAREHOUSE_TRANSLATE}, rot={WAREHOUSE_ROT_DEG}°, scale={WAREHOUSE_SCALE})")
         except Exception:
             spawn_ground_plane("/World/ground", GroundPlaneCfg())
             print("[Demo] 창고 USD 없음, GroundPlane fallback")
 
-        # ── 선반: cuboid (물리 충돌 유지) ────────────────────────────
+        # ── 선반: cuboid (물리 충돌 항상 유지 — 로봇이 피하는 실제 장애물) ──
+        #    외형은 산업용 금속 랙 느낌. 정렬 끝나면 SHOW_BOX_SHELVES=False로
+        #    외형만 숨겨 USD 창고 선반만 보이게(충돌은 그대로) 할 수 있음.
         shelf_cfg_base = sim_utils.CuboidCfg(
             size=(3.0, 0.5, 1.5),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             mass_props=sim_utils.MassPropertiesCfg(mass=500.0),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.55, 0.38, 0.18), metallic=0.0
+                diffuse_color=(0.30, 0.34, 0.40), metallic=0.7, roughness=0.35
             ),
         )
         for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
@@ -148,6 +168,19 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                 translation=(cx, cy, cz),
                 orientation=(1.0, 0.0, 0.0, 0.0),
             )
+        if not SHOW_BOX_SHELVES:
+            # 충돌은 유지, 외형만 숨김 (clone 전이라 env_0에 적용→복제본도 숨김)
+            try:
+                import omni.usd
+                from pxr import UsdGeom
+                _stage = omni.usd.get_context().get_stage()
+                for s_i in range(len(SHELF_CENTERS)):
+                    _p = _stage.GetPrimAtPath(f"/World/envs/env_0/Shelf_{s_i}")
+                    if _p.IsValid():
+                        UsdGeom.Imageable(_p).MakeInvisible()
+                print("[Demo] 박스 선반 외형 숨김 (충돌만 유지)")
+            except Exception as _e:
+                print(f"[Demo] 선반 숨김 실패(무시): {_e}")
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
@@ -190,6 +223,13 @@ def main():
 
     print(f"\n[Demo] 체크포인트 로드: {args.checkpoint}")
     print(f"[Demo] 로봇 {N_ROBOTS}대 — inference 루프 (학습 안 함, 결정론적)\n")
+
+    # 카메라 고정 — 활동 구역을 비스듬히 프레이밍 (넓어 보이는 문제 해결)
+    try:
+        env.unwrapped.sim.set_camera_view(eye=CAMERA_EYE, target=CAMERA_TARGET)
+        print(f"[Demo] 카메라 고정: eye={CAMERA_EYE} target={CAMERA_TARGET}")
+    except Exception as _e:
+        print(f"[Demo] 카메라 설정 실패(무시): {_e}")
 
     # 데모: 정책 고정 inference (act_inference = actor mean, std 미사용 → std 음수 에러 회피)
     policy = runner.alg.policy
