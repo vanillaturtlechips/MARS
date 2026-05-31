@@ -126,7 +126,7 @@ echo ""
 echo "[6/7] MARS 의존성..."
 git config --global --add safe.directory "$MARS_DIR" || true
 cd "$MARS_DIR"
-pip install torch numpy
+pip install torch numpy tensordict   # tensordict: ippo_wrapper의 obs TensorDict 묶음용
 
 # ── 7. 최종 검증 ──────────────────────────────────────────────────────
 echo ""
