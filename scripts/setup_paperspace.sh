@@ -117,8 +117,9 @@ git fetch --tags --quiet || true
 git checkout "$RSL_RL_TAG" 2>/dev/null || echo "  (태그 $RSL_RL_TAG 없음 — 기본 브랜치 사용)"
 pip install -e .
 python -c "from rsl_rl.runners import OnPolicyRunner; print('  ✅ rsl_rl import OK')"
-# isaaclab_rl 래퍼 검증 (rsl_rl 의존 → 여기서)
-python -c "from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlVecEnvWrapper; print('  ✅ isaaclab_rl import OK')"
+# 주의: isaaclab_rl 래퍼/isaaclab.envs 는 omni.kit 의존이라 AppLauncher 없이 import 불가.
+#       따라서 런타임 import 대신 pip 설치 여부만 확인 (실제 검증은 데모 실행으로).
+pip show isaaclab_rl >/dev/null 2>&1 && echo "  ✅ isaaclab_rl 설치됨 (런타임 검증은 데모 실행 시)"
 
 # ── 6. MARS 의존성 + git 권한 ─────────────────────────────────────────
 echo ""
