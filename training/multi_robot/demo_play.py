@@ -181,6 +181,9 @@ def main():
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
     cfg_dict["algorithm"]["entropy_coef"] = 0.0
+    # rsl_rl 3.x는 obs_groups 필수. isaaclab_rl 신버전(RunPod)은 to_dict()에 포함하지만
+    # 구버전(Paperspace v2.0.0)은 누락 → setdefault로 양쪽 안전하게 주입.
+    cfg_dict.setdefault("obs_groups", {"policy": ["policy"], "critic": ["critic"]})
 
     runner = OnPolicyRunner(env, cfg_dict, log_dir="/tmp/demo", device=env.device)
     runner.load(args.checkpoint)

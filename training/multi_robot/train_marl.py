@@ -104,6 +104,8 @@ def main():
     # 배터리: entropy_coef 0.01은 std 폭발(6.6), 0.005+clamp는 iter루프 부작용(episode 급감).
     # → 통짜 learn 유지 + entropy_coef 0.002(0.001보다 약간 높여 충전 탐색, 발산은 약함)
     cfg_dict["algorithm"]["entropy_coef"] = 0.002 if args.enable_battery else 0.001
+    # rsl_rl 3.x obs_groups (구버전 isaaclab_rl은 누락 → setdefault로 양쪽 안전)
+    cfg_dict.setdefault("obs_groups", {"policy": ["policy"], "critic": ["critic"]})
     runner = OnPolicyRunner(env, cfg_dict, log_dir=f"logs/{exp_name}", device=env.device)
 
     if args.mappo_ckpt and not args.from_scratch:
