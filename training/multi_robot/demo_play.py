@@ -36,7 +36,12 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab.utils.math import euler_xyz_from_quat, quat_apply_inverse, sample_uniform
+from isaaclab.utils.math import euler_xyz_from_quat, sample_uniform
+# quat_apply_inverse는 신규 Isaac Lab(RunPod) 이름. 구버전(Paperspace v2.0.0)은 quat_rotate_inverse(동일 기능)로 폴백
+try:
+    from isaaclab.utils.math import quat_apply_inverse
+except ImportError:
+    from isaaclab.utils.math import quat_rotate_inverse as quat_apply_inverse
 from rsl_rl.runners import OnPolicyRunner
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
