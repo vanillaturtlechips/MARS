@@ -101,9 +101,9 @@ def main():
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter, exp_name)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
-    # 배터리는 충전 탐색 필요 → entropy_coef 약간 상향(0.005) + std clamp로 발산 방지
-    # (0.01은 std 폭발(6.6)시킴 → 0.005 + clamp 조합)
-    cfg_dict["algorithm"]["entropy_coef"] = 0.005 if args.enable_battery else 0.001
+    # 배터리: entropy_coef 0.01은 std 폭발(6.6), 0.005+clamp는 iter루프 부작용(episode 급감).
+    # → 통짜 learn 유지 + entropy_coef 0.002(0.001보다 약간 높여 충전 탐색, 발산은 약함)
+    cfg_dict["algorithm"]["entropy_coef"] = 0.002 if args.enable_battery else 0.001
     runner = OnPolicyRunner(env, cfg_dict, log_dir=f"logs/{exp_name}", device=env.device)
 
     if args.mappo_ckpt and not args.from_scratch:
@@ -141,14 +141,7 @@ def main():
     print(f"  Reward    : per-robot (credit assignment)")
     print(f"  {args.num_envs} envs × {N_ROBOTS} robots = {args.num_envs * N_ROBOTS} virtual envs\n")
 
-    # 배터리(entropy_coef↑)는 std 발산 위험 → 매 iter std clamp로 상한 고정
-    if args.enable_battery:
-        for it in range(args.max_iter):
-            runner.learn(num_learning_iterations=1, init_at_random_ep_len=(it == 0))
-            with torch.no_grad():
-                runner.alg.policy.std.data.clamp_(0.05, 1.0)
-    else:
-        runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
+    runner.learn(num_learning_iterations=args.max_iter, init_at_random_ep_len=True)
     env.close()
 
 
