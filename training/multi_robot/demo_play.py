@@ -12,6 +12,7 @@ iw_hub 로봇 + 창고 배경으로 시각만 교체.
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -70,6 +71,12 @@ WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
 SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표시. False면 외형 숨기고 아래 '오픈 랙'만 보임(충돌은 유지)
 CAMERA_EYE    = (9.0, -9.0, 7.0)        # 카메라 위치 (활동구역을 비스듬히 내려다봄)
 CAMERA_TARGET = (0.0,  0.0, 0.5)        # 카메라가 보는 지점 (원점 약간 위)
+#  로봇 외형(iw.hub) — 큐브 yaw 대신 '진행 방향'으로 향하게 + 수평 yaw만(기울기/덜덜 제거)
+ROBOT_VISUAL_SCALE = 1.0                # iw.hub 외형 크기 (선반 대비 안 맞으면 조정)
+VIS_YAW_OFFSET_DEG = 0.0                # iw.hub 메시 정면축 보정(도) — 옆을 보면 90/180 등으로
+VIS_SMOOTH_YAW     = 0.20               # 회전 보간(0=안돎, 1=즉시) — 코너링 부드럽게
+VIS_SMOOTH_POS     = 0.85               # 위치 보간(1=큐브에 딱 붙음) — 낮추면 덜덜 줄지만 지연↑
+VIS_MOVE_THRESH    = 0.15               # 이 속도 미만이면 직전 방향 유지(정지 시 빙빙 방지)
 # ════════════════════════════════════════════════════════════════════════
 
 
@@ -88,15 +95,30 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         self._robot_visuals = [
             XFormPrim(f"/World/envs/env_.*/RobotVisual_{i}") for i in range(N_ROBOTS)
         ]
+        # 외형 스무딩 버퍼 (위치/방향) — 큐브 진동·홀로노믹 회전을 시각적으로 정리
+        self._vis_pos = [r.data.root_pos_w.clone() for r in self.robots]
+        self._vis_yaw = [torch.zeros(self.num_envs, device=self.device) for _ in self.robots]
+        self._yaw_off = math.radians(VIS_YAW_OFFSET_DEG)
 
     def _apply_action(self):
         super()._apply_action()
-        # iw.hub 외형을 큐브 root pose에 매 스텝 맞춤
+        # iw.hub 외형: 큐브 yaw가 아니라 '진행 방향'을 향하게 + 수평 yaw만 (기울기·덜덜 제거)
         for i, robot in enumerate(self.robots):
-            self._robot_visuals[i].set_world_poses(
-                positions=robot.data.root_pos_w,
-                orientations=robot.data.root_quat_w,
-            )
+            pos = robot.data.root_pos_w                  # (E,3)
+            vel = robot.data.root_lin_vel_w[:, :2]       # (E,2)
+            speed = torch.linalg.norm(vel, dim=1)        # (E,)
+            prev = self._vis_yaw[i]
+            tgt = torch.atan2(vel[:, 1], vel[:, 0]) + self._yaw_off
+            tgt = torch.where(speed > VIS_MOVE_THRESH, tgt, prev)   # 정지 시 직전 방향 유지
+            d = torch.atan2(torch.sin(tgt - prev), torch.cos(tgt - prev))  # 최단각 차이
+            yaw = prev + VIS_SMOOTH_YAW * d
+            self._vis_yaw[i] = yaw
+            sm_pos = self._vis_pos[i] + VIS_SMOOTH_POS * (pos - self._vis_pos[i])
+            self._vis_pos[i] = sm_pos
+            h = 0.5 * yaw
+            quat = torch.stack([torch.cos(h), torch.zeros_like(h),
+                                torch.zeros_like(h), torch.sin(h)], dim=1)  # wxyz, 수평 yaw만
+            self._robot_visuals[i].set_world_poses(positions=sm_pos, orientations=quat)
 
     def _setup_scene(self):
         # ── 로봇: 물리는 큐브(model_9999 동역학 100% 보존), 외형만 iw.hub ──
@@ -122,7 +144,7 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             self.robots.append(RigidObject(robot_cfg))
 
         # iw.hub 외형 (visual-only static 메시 — env_0에 두면 clone이 env_.* 복제)
-        _s = self.cfg.robot_visual_scale if hasattr(self.cfg, "robot_visual_scale") else 1.0
+        _s = ROBOT_VISUAL_SCALE
         iw_visual = UsdFileCfg(usd_path=IW_HUB_USD, scale=(_s, _s, _s))
         for i in range(N_ROBOTS):
             iw_visual.func(
