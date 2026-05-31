@@ -147,7 +147,9 @@ class WarehouseMARLEnv(DirectRLEnv):
         # diff-drive 커리큘럼 상태 — env가 스스로 성공률 측정해 max_vy 적응 감소
         self._cur_max_vy = float(self.cfg.max_vy)   # 현재 유효 strafe 상한(1.0에서 시작)
         self._curr_ep_count = 0                     # 윈도우 내 완료 에피소드 수
-        self._curr_success_count = 0                # 윈도우 내 all_reached 성공 수
+        self._curr_success_count = 0.0              # 윈도우 내 로봇별 도달비율 누적(분수)
+        # 에피소드 중 각 로봇이 목표 도달했는지(도달률 게이트용). reset마다 초기화.
+        self._reached_ever = torch.zeros(self.num_envs, N_ROBOTS, dtype=torch.bool, device=self.device)
 
         # 동적 장애물 상태 버퍼
         if self.cfg.enable_dynamic_obstacles:
@@ -553,7 +555,9 @@ class WarehouseMARLEnv(DirectRLEnv):
             pos_w = robot.data.root_pos_w[:, :2]
             positions.append(pos_w)
             dist = (pos_w - self._goal_pos_w[:, i]).norm(dim=1)
-            all_reached &= (dist < self.cfg.goal_radius)
+            reached_i = dist < self.cfg.goal_radius
+            all_reached &= reached_i
+            self._reached_ever[:, i] |= reached_i   # 에피소드 중 한 번이라도 도달하면 True
             local = pos_w - self.scene.env_origins[:, :2]
             any_oob |= local.abs().max(dim=1).values > 8.0
 
@@ -570,8 +574,11 @@ class WarehouseMARLEnv(DirectRLEnv):
         #   하드컷(절벽) 대신, 정책이 현재 strafe 상한에서 '잘 하고 있을 때만' 한 단계 더 조임.
         if self.cfg.strafe_curriculum:
             done = terminated | timed_out
-            self._curr_ep_count     += int(done.sum().item())
-            self._curr_success_count += int(all_reached.sum().item())   # all_reached ⊂ terminated
+            if done.any():
+                # 성공 = 로봇별 도달률(에피소드 중 목표 도달한 로봇 비율) — '3대 동시'보다 견고, "98% 도달"과 동일 의미
+                frac = self._reached_ever[done].float().mean(dim=1)     # 완료 에피소드별 도달비율
+                self._curr_success_count += float(frac.sum().item())
+                self._curr_ep_count     += int(done.sum().item())
             if self._curr_ep_count >= self.cfg.curriculum_window:
                 rate = self._curr_success_count / max(self._curr_ep_count, 1)
                 cmax = float(self.cfg.max_vy)
@@ -583,7 +590,9 @@ class WarehouseMARLEnv(DirectRLEnv):
                     self._cur_max_vy = min(cmax, self._cur_max_vy + self.cfg.curriculum_step)
                     print(f"[Curriculum] 성공률 {rate:.2f} 붕괴 → max_vy ↑ {self._cur_max_vy:.2f} (revert)")
                 self._curr_ep_count = 0
-                self._curr_success_count = 0
+                self._curr_success_count = 0.0
+                log = self.extras.setdefault("log", {})
+                log["curriculum_reach_rate"] = rate    # 직전 윈도우 로봇별 도달률
             log = self.extras.setdefault("log", {})
             log["curriculum_max_vy"] = self._cur_max_vy
 
@@ -602,6 +611,10 @@ class WarehouseMARLEnv(DirectRLEnv):
         else:
             env_ids_t = env_ids.long()
         n = env_ids_t.shape[0]
+
+        # 커리큘럼 도달 플래그 초기화(새 에피소드 시작)
+        if self.cfg.strafe_curriculum:
+            self._reached_ever[env_ids_t] = False
 
         for i, robot in enumerate(self.robots):
             default_state = robot.data.default_root_state[env_ids_t].clone()
