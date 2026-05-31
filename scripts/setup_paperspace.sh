@@ -50,15 +50,19 @@ if [ "${AVAIL_GB:-0}" -lt 40 ]; then
     echo "⚠️  여유 공간 ${AVAIL_GB}GB < 40GB 권장. Isaac Sim 설치 중 디스크 부족 가능."
 fi
 
-# ── 1. Python 3.10 ────────────────────────────────────────────────────
+# ── 1. Python 3.10 (+ venv 모듈) ──────────────────────────────────────
 echo ""
-echo "[1/7] Python 3.10..."
+echo "[1/7] Python 3.10 + venv..."
+# python3.10 명령이 있어도 venv 모듈(ensurepip)이 없을 수 있음 → 모듈 작동 여부로 판단
 if ! command -v python3.10 &>/dev/null; then
     sudo add-apt-repository ppa:deadsnakes/ppa -y
     sudo apt-get update -q
+fi
+if ! python3.10 -c "import ensurepip" &>/dev/null; then
     sudo apt-get install -y python3.10 python3.10-venv python3.10-dev python3.10-distutils
 fi
 python3.10 --version
+python3.10 -c "import ensurepip; print('  ✅ venv 모듈 OK')"
 
 # ── 2. venv ───────────────────────────────────────────────────────────
 echo ""
