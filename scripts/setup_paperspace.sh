@@ -104,12 +104,13 @@ fi
 cd "$ISAACLAB_DIR"
 git fetch --tags --quiet || true
 git checkout "$ISAACLAB_TAG"
-# --no-deps: isaaclab가 torch를 재해결해 깨지 않도록 (torch는 4단계서 고정 완료)
-pip install --no-deps -e source/isaaclab -e source/isaaclab_assets -e source/isaaclab_rl
-# isaaclab + rsl_rl가 필요로 하는 부수 패키지만 명시 설치 (torch/torchvision 제외)
-# gitpython: rsl_rl가 git state 로깅에 사용 (--no-deps라 따로 깔아야 함)
-pip install tensordict gitpython warp-lang trimesh toml hidapi gymnasium pyglet "protobuf<5" tensorboard onnx 2>/dev/null || \
-    pip install tensordict gitpython warp-lang trimesh toml gymnasium tensorboard onnx
+# isaaclab은 deps와 함께 설치 — torch==2.5.1을 '요구'하므로 torch를 안 바꾸고,
+# 오히려 prettytable·pkg_resources 등 필요한 패키지를 알아서 끌어옴.
+# (torch를 깨는 범인은 rsl_rl뿐 → --no-deps는 6단계 rsl_rl에만 적용)
+pip install -e source/isaaclab -e source/isaaclab_assets -e source/isaaclab_rl
+pip install tensordict gitpython          # rsl_rl(--no-deps)가 쓰는 부수 패키지
+# isaaclab 설치가 torch를 안 건드렸는지 재확인
+python -c "import torch; assert torch.__version__.startswith('$TORCH_VER'), f'torch 오염: {torch.__version__}'; print(f'  ✅ torch {torch.__version__} 유지')"
 python -c "import isaaclab; from isaaclab.app import AppLauncher; print('  ✅ isaaclab import OK')"
 
 # ── 6. rsl_rl 3.0.1 (--no-deps 로 torch 보존) ─────────────────────────
