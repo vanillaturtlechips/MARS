@@ -81,6 +81,13 @@ VIS_SMOOTH_YAW     = 0.20               # 회전 보간(0=안돎, 1=즉시) — 
 VIS_SMOOTH_POS     = 0.85               # 위치 보간(1=큐브에 딱 붙음) — 낮추면 덜덜 줄지만 지연↑
 VIS_MOVE_THRESH    = 0.15               # 이 속도 미만이면 직전 방향 유지(정지 시 빙빙 방지)
 VIS_Z_OFFSET       = -0.15              # 외형 z 보정(m) — 큐브중심(0.15)에 얹혀 떠보이는 것 보정(바퀴 바닥에 붙임)
+# ── 유니사이클(차량형) 외형: 큐브를 '쫓아가는' 그림자. strafe를 시각적으로 제거 ──
+#    외형은 자기 향한 방향으로만 전진 + 회전율 제한 → 옆걸음/빙빙 없이 진짜 바퀴 로봇처럼 보임
+VIS_UNICYCLE       = True               # True면 유니사이클 추종(스케이트 제거). False면 큐브에 딱 붙음
+VIS_TURN_GAIN      = 0.25               # 목표방향으로 조향 게인(0~1)
+VIS_TURN_MAX       = 0.06               # 스텝당 최대 회전(rad) — 낮을수록 부드럽게 돎(코너 반경↑)
+VIS_DRIVE_GAIN     = 1.0                # 거리 대비 전진 비율(1=매 스텝 따라잡기 시도)
+VIS_SPEED_MAX      = 0.30               # 스텝당 최대 전진(m) — 목표 리스폰 순간 순간이동 방지
 # ════════════════════════════════════════════════════════════════════════
 
 
@@ -106,33 +113,41 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
 
     def _apply_action(self):
         super()._apply_action()
-        # iw.hub 외형: 큐브 yaw가 아니라 '진행 방향'을 향하게 + 수평 yaw만 (기울기·덜덜 제거)
-        goal_w = getattr(self, "_goal_pos_w", None)      # (E,n_robots,2) 월드 — 있으면 '목표 방향'으로
+        # iw.hub 외형: 큐브를 쫓는 유니사이클(차량형) 그림자 — strafe/빙빙 시각 제거
         for i, robot in enumerate(self.robots):
-            pos = robot.data.root_pos_w                  # (E,3)
+            pos = robot.data.root_pos_w                  # (E,3) 큐브(물리) 위치=목표
             prev = self._vis_yaw[i]
-            if goal_w is not None:
-                # ── 메시 정면 = '목표 방향' (회피 옆걸음에도 안 빙빙 도는 핵심) ──
-                to_goal = goal_w[:, i, :2] - pos[:, :2]  # (E,2)
-                dist = torch.linalg.norm(to_goal, dim=1)
-                tgt = torch.atan2(to_goal[:, 1], to_goal[:, 0]) + self._yaw_off
-                tgt = torch.where(dist > 0.30, tgt, prev)   # 목표 근처선 직전 방향 유지(도착 시 빙빙 방지)
+            cur_xy = self._vis_pos[i][:, :2]             # 외형 현재 위치
+            to_t = pos[:, :2] - cur_xy                   # 외형→큐브 벡터
+            dist = torch.linalg.norm(to_t, dim=1)
+
+            if VIS_UNICYCLE:
+                # ── 1) 목표방향으로 회전율 제한 조향 (옆으로 새도 메시는 곡선 추종) ──
+                desired = torch.atan2(to_t[:, 1], to_t[:, 0]) + self._yaw_off
+                dyaw = torch.atan2(torch.sin(desired - prev), torch.cos(desired - prev))
+                dyaw = torch.where(dist > VIS_MOVE_THRESH, dyaw, torch.zeros_like(dyaw))  # 붙으면 회전 멈춤
+                step_turn = torch.clamp(VIS_TURN_GAIN * dyaw, -VIS_TURN_MAX, VIS_TURN_MAX)
+                yaw = prev + step_turn
+                # ── 2) '자기 향한 방향으로만' 전진 (strafe 시각 제거의 핵심) ──
+                speed = torch.clamp(VIS_DRIVE_GAIN * dist, max=VIS_SPEED_MAX)
+                new_xy = cur_xy + speed.unsqueeze(1) * torch.stack(
+                    [torch.cos(yaw), torch.sin(yaw)], dim=1)
+                new_pos = torch.stack([new_xy[:, 0], new_xy[:, 1], pos[:, 2]], dim=1)
             else:
-                # 폴백: 목표 정보 없으면 기존 속도 방향
-                vel = robot.data.root_lin_vel_w[:, :2]
-                speed = torch.linalg.norm(vel, dim=1)
-                tgt = torch.atan2(vel[:, 1], vel[:, 0]) + self._yaw_off
-                tgt = torch.where(speed > VIS_MOVE_THRESH, tgt, prev)
-            d = torch.atan2(torch.sin(tgt - prev), torch.cos(tgt - prev))  # 최단각 차이
-            yaw = prev + VIS_SMOOTH_YAW * d
+                # 폴백: 큐브에 딱 붙음(기존 동작)
+                tgt = torch.atan2(to_t[:, 1], to_t[:, 0]) + self._yaw_off
+                tgt = torch.where(dist > VIS_MOVE_THRESH, tgt, prev)
+                d = torch.atan2(torch.sin(tgt - prev), torch.cos(tgt - prev))
+                yaw = prev + VIS_SMOOTH_YAW * d
+                new_pos = pos.clone()
+
             self._vis_yaw[i] = yaw
-            sm_pos = self._vis_pos[i] + VIS_SMOOTH_POS * (pos - self._vis_pos[i])
-            self._vis_pos[i] = sm_pos
+            self._vis_pos[i] = new_pos
             h = 0.5 * yaw
             quat = torch.stack([torch.cos(h), torch.zeros_like(h),
                                 torch.zeros_like(h), torch.sin(h)], dim=1)  # wxyz, 수평 yaw만
-            out_pos = sm_pos.clone()
-            out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET   # 바퀴를 바닥에 붙임(떠보임 보정)
+            out_pos = new_pos.clone()
+            out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET   # 바퀴를 바닥에 붙임
             self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=quat)
 
     def _setup_scene(self):
