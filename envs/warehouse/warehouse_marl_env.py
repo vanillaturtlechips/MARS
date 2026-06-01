@@ -40,10 +40,13 @@ from .warehouse_obstacle_env import SHELF_CENTERS, SHELF_HALF, _shelf_aabb_dist,
 N_ROBOTS = 3
 OBS_PER_ROBOT = 7 + 5 * (N_ROBOTS - 1)   # 17
 OBS_PER_ROBOT_BATTERY = OBS_PER_ROBOT + 3  # 20: + battery_level(1) + 충전소 상대위치(2)
+OBS_PER_ROBOT_EXT_OBS = OBS_PER_ROBOT + 2 # 19: + 가장 가까운 장애물 body-frame xy(2) — 회피 방향 학습용
 
 
-def obs_per_robot(enable_battery: bool) -> int:
-    return OBS_PER_ROBOT_BATTERY if enable_battery else OBS_PER_ROBOT
+def obs_per_robot(enable_battery: bool, extended_obstacle_obs: bool = False) -> int:
+    if enable_battery:
+        return OBS_PER_ROBOT_BATTERY + (2 if extended_obstacle_obs else 0)
+    return OBS_PER_ROBOT_EXT_OBS if extended_obstacle_obs else OBS_PER_ROBOT
 
 # 로봇 간 충돌 판정 거리
 ROBOT_COLLISION_DIST = 0.55   # m (로봇 폭 0.5m + 여유)
@@ -94,6 +97,17 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     #   물리 자체가 nonholonomic → 외형은 실제 pose 추종(어긋남/폭주 없음). 데모/eval 재생용.
     diff_drive_controller: bool = False
     diff_drive_turn_gain: float = 3.0        # 방향오차→omega 게인(클수록 빨리 돌아 향함)
+
+    # 확장 obs: 가장 가까운 장애물 body-frame xy(2D) 추가 — diff-drive 회피 학습용.
+    #   17D(기본)에서 19D로 확장. 정책이 "왼쪽 장애물 → 오른쪽 turn" 식의 spatial 판단 가능해짐.
+    #   model_10998(17D) 호환 깨짐 → from-scratch 재학습 필요. (False=기존 호환 보존)
+    extended_obstacle_obs: bool = False
+    # 확장 보상: diff-drive에서 strafe 없이 omega로 회피 학습시키는 명시 신호.
+    #   기본 0 = 비활성. extended_obstacle_obs=True일 때만 작동(필요한 obs 채널 보장).
+    rew_evasive_turn: float = 0.0            # 가까운 장애물 반대방향 omega에 +
+                                              # 권장 0.1 (충돌 -200 대비 회피 시도 sparse 신호 보강)
+    rew_clearance: float    = 0.0            # 정면 콘에 장애물 없을 때 +/step
+                                              # 권장 0.05 (회피 성공 결과에 매 step 양의 신호)
 
     goal_radius: float = 0.35
     goal_range: float = 4.0
@@ -317,6 +331,46 @@ class WarehouseMARLEnv(DirectRLEnv):
             state[:, 7:]  = 0.0
             obst.write_root_state_to_sim(state)
 
+    def _nearest_obstacle_body(self, pos_w: torch.Tensor, quat: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """가장 가까운 장애물(선반 중심 + 동적장애물)의 body-frame xy + 거리.
+        반환: (body_xy (N, 2), dist (N,))
+        선반은 중심점, 동적장애물은 등장한 것만. 비활성 시 매우 멀리(1e6) 처리.
+        """
+        n = pos_w.shape[0]
+        env_origins_xy = self.scene.env_origins[:, :2]  # (N, 2)
+
+        # 선반 중심들 → 월드 좌표
+        shelf_xy = torch.tensor(
+            [[c[0], c[1]] for c in SHELF_CENTERS],
+            device=self.device, dtype=torch.float32,
+        )  # (S, 2)
+        shelf_world = env_origins_xy.unsqueeze(1) + shelf_xy.unsqueeze(0)  # (N, S, 2)
+        rel_shelf = shelf_world - pos_w.unsqueeze(1)                       # (N, S, 2)
+        dist_shelf = rel_shelf.norm(dim=2)                                 # (N, S)
+
+        # 동적 장애물 (등장한 것만)
+        if self.cfg.enable_dynamic_obstacles:
+            obst_world = env_origins_xy.unsqueeze(1) + self._obst_pos_local  # (N, O, 2)
+            rel_obst = obst_world - pos_w.unsqueeze(1)                       # (N, O, 2)
+            dist_obst = rel_obst.norm(dim=2)                                 # (N, O)
+            dist_obst = torch.where(self._obst_active, dist_obst,
+                                    torch.full_like(dist_obst, 1e6))
+            all_rel = torch.cat([rel_shelf, rel_obst], dim=1)
+            all_dist = torch.cat([dist_shelf, dist_obst], dim=1)
+        else:
+            all_rel = rel_shelf
+            all_dist = dist_shelf
+
+        nearest_idx = all_dist.argmin(dim=1)                                  # (N,)
+        batch_idx = torch.arange(n, device=self.device)
+        nearest_rel_w = all_rel[batch_idx, nearest_idx]                       # (N, 2)
+        nearest_dist  = all_dist[batch_idx, nearest_idx]                      # (N,)
+
+        # body frame 회전
+        rel_3d = torch.cat([nearest_rel_w, torch.zeros(n, 1, device=self.device)], dim=1)
+        body_xy = quat_apply_inverse(quat, rel_3d)[:, :2]                     # (N, 2)
+        return body_xy, nearest_dist
+
     def _dynamic_obstacle_dist(self, local_pos: torch.Tensor) -> torch.Tensor:
         """로봇 local 위치 → 가장 가까운 '등장한' 동적 장애물까지 AABB 거리 (N,).
         비활성(지하)·비활성화 시 무한대 → min 연산에 영향 없음 (obs 분포 보존)."""
@@ -445,6 +499,12 @@ class WarehouseMARLEnv(DirectRLEnv):
                 charger_body = quat_apply_inverse(quat, cvec_3d)[:, :2]
                 obs_i = torch.cat([obs_i, self._battery[:, i:i+1], charger_body], dim=1)
 
+            # 확장 obs: 가장 가까운 장애물 body-frame xy (회피 방향 학습 신호)
+            #   왼쪽(y>0) ⇒ 오른쪽으로 turn, 오른쪽(y<0) ⇒ 왼쪽으로 turn — spatial 판단 가능
+            if self.cfg.extended_obstacle_obs:
+                obs_body_xy, _ = self._nearest_obstacle_body(pos_w, quat)
+                obs_i = torch.cat([obs_i, obs_body_xy.clamp(-5.0, 5.0)], dim=1)
+
             obs_list.append(obs_i)
 
         obs = torch.cat(obs_list, dim=1)   # (N, N_ROBOTS * OBS_PER_ROBOT) = (N, 51)
@@ -546,6 +606,30 @@ class WarehouseMARLEnv(DirectRLEnv):
                 v = robot.data.root_lin_vel_w[:, :2]
                 v_forward = v[:, 0] * hx + v[:, 1] * hy                  # 전진 속도(헤딩 성분)
                 per_robot[:, i] += self.cfg.rew_heading * v_forward * cos_bearing * not_at_goal
+
+            # 확장 회피 보상 — extended_obstacle_obs True이고 가중치 > 0일 때만 작동.
+            #   ① rew_evasive_turn: 가까운(< 1.5m) 장애물 있을 때, 그 반대 방향으로 omega하면 +
+            #     장애물이 body y>0(왼쪽)이면 omega<0(오른쪽 회전)에 +, y<0이면 omega>0에 +.
+            #     수식: signal = -omega * sign(obs_y) * proximity. PPO sparse 충돌(-200) 보강.
+            #   ② rew_clearance: 정면 45° 콘에 가까운 장애물 없을 때 +/step (회피 결과 양의 신호)
+            if self.cfg.extended_obstacle_obs and (
+                self.cfg.rew_evasive_turn != 0.0 or self.cfg.rew_clearance != 0.0
+            ):
+                obs_body_xy, obs_dist = self._nearest_obstacle_body(
+                    robot.data.root_pos_w[:, :2], robot.data.root_quat_w
+                )
+                if self.cfg.rew_evasive_turn != 0.0:
+                    proximity = ((1.5 - obs_dist) / 1.5).clamp(min=0.0, max=1.0)   # 0 멀리~1 매우가깝
+                    omega_i = self._actions[:, i, 2] * self.cfg.max_omega
+                    # bearing y 부호: >0 왼쪽 / <0 오른쪽. 반대로 돌면 +
+                    evasive = -omega_i * obs_body_xy[:, 1].sign() * proximity
+                    per_robot[:, i] += self.cfg.rew_evasive_turn * evasive
+                if self.cfg.rew_clearance != 0.0:
+                    # 정면 45° 콘(|y| < x AND x > 0) 안에 1.5m 이내 장애물 있으면 막힘
+                    in_front_cone = (obs_body_xy[:, 0] > 0) & (obs_body_xy[:, 1].abs() < obs_body_xy[:, 0])
+                    blocked = in_front_cone & (obs_dist < 1.5)
+                    clear = (~blocked).float()
+                    per_robot[:, i] += self.cfg.rew_clearance * clear * not_at_goal
 
         # 배터리 진단 로그 — 충전 행동이 일어나는지 측정
         # mean_battery 유지/상승 = 충전함(학습됨), 하락+depleted↑ = 충전 안 함(탐색/보상 실패)

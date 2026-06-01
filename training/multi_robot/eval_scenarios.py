@@ -39,6 +39,8 @@ parser.add_argument("--max_vy", type=float, default=None,
                          "예: 커리큘럼이 max_vy=0.3에서 끝났으면 --max_vy 0.3. "
                          "--diff_drive(vy=0 강제)와 달리 학습 종료값을 정확히 재현 가능. "
                          "None=cfg 기본(1.0). --diff_drive와 동시 사용 비권장(strafe_curriculum=False라 disable_strafe가 우선).")
+parser.add_argument("--extended_obs", action="store_true", default=False,
+                    help="obs 19D 정책 평가 (학습 시 --extended_obs로 훈련된 모델). 17D 모델엔 사용 금지.")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 args.headless = getattr(args, "headless", False)
@@ -217,7 +219,7 @@ def run_scenario(
         collision = torch.zeros(N_ENVS, dtype=torch.bool, device=device)
         reached   = torch.zeros(N_ENVS, dtype=torch.bool, device=device)
 
-        obr = obs_per_robot(env.cfg.enable_battery)   # 17 or 20 (battery 시)
+        obr = obs_per_robot(env.cfg.enable_battery, env.cfg.extended_obstacle_obs)   # 17/19/20/22
         while not recorded[:this_batch].all():
             obs_dict    = env._get_observations()
             obs         = obs_dict["policy"]
@@ -320,6 +322,12 @@ def main():
             print(f"[Eval] 경고: --diff_drive(vy=0)와 --max_vy {args.max_vy} 동시 — disable_strafe가 우선합니다. --diff_drive를 빼세요.")
         else:
             print(f"[Eval] max_vy 오버라이드: {args.max_vy} (학습 종료 상태와 정합)")
+    if args.extended_obs:
+        env_cfg.extended_obstacle_obs = True
+        obr = obs_per_robot(args.enable_battery, True)
+        env_cfg.observation_space = obr * N_ROBOTS
+        env_cfg.state_space       = obr * N_ROBOTS
+        print(f"[Eval] 확장 obs 활성화 ({obr}D per robot)")
     if args.enable_obstacles:
         print("[Eval] 동적 장애물 활성화 — 회피/도달 측정")
     if args.enable_battery:

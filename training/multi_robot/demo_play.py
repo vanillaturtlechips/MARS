@@ -34,6 +34,8 @@ parser.add_argument("--max_vy", type=float, default=None,
                     help="옆걸음 상한(데모 동역학을 학습 종료 상태와 정합). "
                          "예: 커리큘럼이 max_vy=0.3에서 끝났으면 --max_vy 0.3 (--diff_drive 빼고). "
                          "--diff_drive(vy=0 강제)와 달리 학습 종료값 정확 재현.")
+parser.add_argument("--extended_obs", action="store_true", default=False,
+                    help="obs 19D 정책 재생 (학습 시 --extended_obs로 훈련된 모델).")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -76,6 +78,7 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 from envs.warehouse.warehouse_marl_env import (
     WarehouseMARLEnv, WarehouseMARLEnvCfg,
     N_ROBOTS, OBS_PER_ROBOT, SPAWN_OFFSETS, ROBOT_COLLISION_DIST,
+    obs_per_robot,
 )
 from envs.warehouse.warehouse_obstacle_env import SHELF_CENTERS, SHELF_HALF, _shelf_aabb_dist, _goal_in_shelf
 from envs.warehouse.ippo_wrapper import IPPOReshapeWrapper
@@ -351,6 +354,14 @@ def main():
             print(f"[Demo] 경고: --diff_drive(vy=0)와 --max_vy {args.max_vy} 동시 — disable_strafe가 우선해 vy=0 됨. --diff_drive 빼세요.")
         else:
             print(f"[Demo] max_vy 오버라이드: {args.max_vy} (학습 종료 상태와 정합)")
+    # 확장 obs 정책(19D) 재생
+    obr_demo = OBS_PER_ROBOT
+    if args.extended_obs:
+        env_cfg.extended_obstacle_obs = True
+        obr_demo = obs_per_robot(False, True)
+        env_cfg.observation_space = obr_demo * N_ROBOTS
+        env_cfg.state_space       = obr_demo * N_ROBOTS
+        print(f"[Demo] 확장 obs 활성화 ({obr_demo}D per robot)")
 
     env = WarehouseDemoEnv(env_cfg, render_mode="rgb_array" if args.video else None)
 
@@ -369,7 +380,7 @@ def main():
         )
 
     env = RslRlVecEnvWrapper(env)
-    env = IPPOReshapeWrapper(env, N_ROBOTS, OBS_PER_ROBOT)
+    env = IPPOReshapeWrapper(env, N_ROBOTS, obr_demo)
 
     runner_cfg = RslRlOnPolicyRunnerCfg()
     runner_cfg.num_steps_per_env = 24

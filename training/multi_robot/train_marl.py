@@ -54,6 +54,13 @@ parser.add_argument("--freeze_std", action="store_true", default=False,
                     help="액션 노이즈 std를 학습 불가로 동결 — PPO surrogate gradient에 의한 std 폭발 차단. "
                          "entropy_coef=0이어도 std는 학습되어 자동 증가하는 문제 해결. "
                          "커리큘럼 훈련에 강력 권장. --reset_noise_std와 함께 사용하면 시작 std도 통제 가능.")
+parser.add_argument("--extended_obs", action="store_true", default=False,
+                    help="obs 17→19D 확장 (가장 가까운 장애물 body-frame xy 추가). "
+                         "diff-drive에서 omega 기반 회피 학습용 정보. model_10998(17D) 호환 깨짐 → from_scratch 권장.")
+parser.add_argument("--rew_evasive_turn", type=float, default=0.0,
+                    help="확장보상: 가까운 장애물 반대방향 omega에 +. 권장 0.1. extended_obs=True 필요.")
+parser.add_argument("--rew_clearance", type=float, default=0.0,
+                    help="확장보상: 정면 콘에 가까운 장애물 없을 때 +/step. 권장 0.05. extended_obs=True 필요.")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -100,10 +107,13 @@ def make_mappo_runner_cfg(num_envs: int, max_iter: int, exp_name: str = "warehou
 
 
 def main():
-    obr = obs_per_robot(args.enable_battery)   # 17 또는 20
+    obr = obs_per_robot(args.enable_battery, args.extended_obs)   # 17/19/20/22
     env_cfg = WarehouseMARLEnvCfg()
     env_cfg.scene.num_envs    = args.num_envs
     env_cfg.enable_battery    = args.enable_battery
+    env_cfg.extended_obstacle_obs = args.extended_obs
+    env_cfg.rew_evasive_turn  = args.rew_evasive_turn
+    env_cfg.rew_clearance     = args.rew_clearance
     env_cfg.observation_space = obr * N_ROBOTS
     env_cfg.state_space       = obr * N_ROBOTS
     env_cfg.action_space      = ACT_DIM * N_ROBOTS          # 9
@@ -111,6 +121,8 @@ def main():
     env_cfg.disable_strafe    = args.diff_drive
     env_cfg.strafe_curriculum = args.strafe_curriculum
     env_cfg.rew_heading       = args.rew_heading
+    if args.extended_obs:
+        print(f"[MAPPO] 확장 obs({obr}D) + 회피보상(evasive_turn {args.rew_evasive_turn}, clearance {args.rew_clearance})")
     if args.max_omega is not None:
         env_cfg.max_omega = args.max_omega
         print(f"[MAPPO] max_omega 상향: {args.max_omega} (회전 권한↑ — strafe 대체)")
@@ -142,6 +154,8 @@ def main():
         exp_name = "warehouse_mappo_diffdrive"   # 홀로노믹 체크포인트와 분리(덮어쓰기 방지)
     if args.strafe_curriculum:
         exp_name = "warehouse_mappo_diffdrive_curr"   # 커리큘럼 전용(하드컷과도 분리)
+    if args.extended_obs:
+        exp_name = "warehouse_mappo_extobs"   # 확장 obs(19D) — 기존 17D와 호환 깨짐, 경로 분리
     runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter, exp_name)
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"

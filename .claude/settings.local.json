@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(git log *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(GIT_AUTHOR_NAME=vanillaturtlechips GIT_AUTHOR_EMAIL=2220110150@office.kopo.ac.kr GIT_COMMITTER_NAME=vanillaturtlechips GIT_COMMITTER_EMAIL=2220110150@office.kopo.ac.kr git commit -am ' *)",
+      "Bash(git push *)",
+      "Bash(git check-attr *)",
+      "Bash(GIT_AUTHOR_NAME=vanillaturtlechips GIT_AUTHOR_EMAIL=2220110150@office.kopo.ac.kr GIT_COMMITTER_NAME=vanillaturtlechips GIT_COMMITTER_EMAIL=2220110150@office.kopo.ac.kr git commit -m ' *)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "curriculum-rag"
+  ]
+}
