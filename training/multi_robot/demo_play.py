@@ -147,7 +147,8 @@ GOAL_MARKER_Z      = 0.12               # 바닥에 살짝 띄운 구 높이
 # ── 운반 사이클(--task) 연출: 선반 통로면 픽업 패드 ↔ 통로 양끝 도크 ──
 #    SHELF_CENTERS = (±2, ±2.5). 픽업 패드는 각 선반의 통로(중앙)쪽 면 앞에.
 PICK_POINTS = [(-2.0, 1.6), (2.0, 1.6), (-2.0, -1.6), (2.0, -1.6)]   # env-local
-DOCK_POINTS = [(-3.6, 0.0), (3.6, 0.0)]                              # 통로 양끝 패킹 도크
+DOCK_POINTS = [(-2.6, 0.0), (2.6, 0.0)]                              # 통로 패킹 도크(벽 안쪽)
+STUCK_STEPS = 180                        # 이 스텝(≈12s) 동안 골 못 닿으면 막힘→목적지 재배정
 PICK_PAD_COLOR  = (0.15, 0.85, 0.35)    # 픽업존 폴백 색(초록 원반)
 DOCK_PAD_COLOR  = (0.20, 0.55, 1.0)     # 하차존 폴백 색(파란 도크 패드)
 BOX_COLOR       = (0.60, 0.42, 0.22)    # 운반 박스 폴백 색(갈색)
@@ -329,6 +330,7 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         self._carrying   = torch.zeros(E, N_ROBOTS, dtype=torch.bool, device=device)
         self._task_shelf = torch.zeros(E, N_ROBOTS, dtype=torch.long, device=device)
         self._task_dock  = torch.zeros(E, N_ROBOTS, dtype=torch.long, device=device)
+        self._task_age   = torch.zeros(E, N_ROBOTS, dtype=torch.long, device=device)  # 현재 골 추적 경과(막힘 감지)
         # 전체 env 초기 배정(서로 다른 선반으로 분산)
         all_ids = torch.arange(E, device=device)
         self._init_task(all_ids)
@@ -343,18 +345,28 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             self._task_shelf[env_ids, i] = shelf
             self._task_state[env_ids, i] = 0
             self._carrying[env_ids, i]   = False
+            self._task_age[env_ids, i]   = 0
             self._goal_pos_w[env_ids, i] = self._pick_w[shelf] + origins
 
     def _advance_task(self):
-        """도달한 로봇의 상태 전이: 픽업↔하차 + 박스 토글 + 다음 목적지 배정."""
+        """도달 시 픽업↔하차 전이(박스 토글). 막힘(STUCK_STEPS 미도달) 시 목적지 재배정."""
         eps = self.cfg.goal_radius + REACH_EPS
         origins = self.scene.env_origins[:, :2]
         n_pick, n_dock = len(PICK_POINTS), len(DOCK_POINTS)
+        self._task_age += 1
         for i in range(N_ROBOTS):
             pos = self.robots[i].data.root_pos_w[:, :2]
             reached = (pos - self._goal_pos_w[:, i]).norm(dim=1) < eps
-            for e in reached.nonzero(as_tuple=True)[0].tolist():
-                if self._task_state[e, i].item() == 0:        # 픽업 도달 → 박스 들고 하차로
+            stuck   = self._task_age[:, i] > STUCK_STEPS
+            for e in (reached | stuck).nonzero(as_tuple=True)[0].tolist():
+                self._task_age[e, i] = 0
+                if not bool(reached[e]):
+                    # 막힘(미도달 타임아웃) → 현재 단계의 다른 목적지로 재배정(벽붙음/원형회전 탈출)
+                    if self._task_state[e, i].item() == 0:
+                        self._goal_pos_w[e, i] = self._pick_w[torch.randint(0, n_pick, (1,)).item()] + origins[e]
+                    else:
+                        self._goal_pos_w[e, i] = self._dock_w[torch.randint(0, n_dock, (1,)).item()] + origins[e]
+                elif self._task_state[e, i].item() == 0:      # 픽업 도달 → 박스 들고 하차로
                     self._carrying[e, i] = True
                     dock = int(torch.randint(0, n_dock, (1,)).item())
                     self._task_dock[e, i] = dock

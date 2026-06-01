@@ -31,7 +31,8 @@
       "Bash(python3 -m py_compile training/multi_robot/demo_play.py envs/warehouse/warehouse_marl_env.py)",
       "Bash(git commit -q -m 'feat: 데모 운반 사이클 — 선반↔도크 왕복 + 운반 박스 + 바닥 패드 마커 *)",
       "Bash(git commit -q -m 'feat: 데모 외부 에셋 — 골판지 박스/팔레트/크레이트 USD \\(실패 시 도형 폴백\\) *)",
-      "Bash(git commit -q -m 'feat: 선반 적재물 — 빈 랙에 박스 올려 '\\\\''재고 있는 창고'\\\\'' 연출\\(순수 비주얼\\) *)"
+      "Bash(git commit -q -m 'feat: 선반 적재물 — 빈 랙에 박스 올려 '\\\\''재고 있는 창고'\\\\'' 연출\\(순수 비주얼\\) *)",
+      "Bash(git commit -q -m 'fix: 원형 회전/벽붙음 — 도크 안쪽 이동 + 막힘 탈출\\(anti-stuck\\) *)"
     ]
   },
   "enableAllProjectMcpServers": true,
