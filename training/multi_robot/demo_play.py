@@ -120,7 +120,9 @@ ROBOT_VISUAL_SCALE = 1.0                # iw.hub 외형 크기 (선반 대비 �
 VIS_YAW_OFFSET_DEG = 0.0                # iw.hub 메시 정면축 보정(도) — 옆을 보면 90/180 등으로
 VIS_SMOOTH_YAW     = 0.20               # 회전 보간(0=안돎, 1=즉시) — 코너링 부드럽게
 VIS_SMOOTH_POS     = 0.85               # 위치 보간(1=큐브에 딱 붙음) — 낮추면 덜덜 줄지만 지연↑
-VIS_MOVE_THRESH    = 0.15               # 이 속도 미만이면 직전 방향 유지(정지 시 빙빙 방지)
+VIS_MOVE_THRESH    = 0.30               # 평활속도 이 미만이면 헤딩 고정(저속 빙빙/떨림 방지)
+VIS_VEL_EMA        = 0.06               # 외형 yaw 산출용 속도 EMA(작을수록 평활, tau≈substep_dt/EMA≈0.28s)
+VIS_YAW_RATE_MAX   = 0.04               # 스텝당 외형 회전 상한(rad) — 타깃 급변에도 메시 못 튐
 VIS_Z_OFFSET       = -0.15              # 외형 z 보정(m) — 큐브중심(0.15)에 얹혀 떠보이는 것 보정(바퀴 바닥에 붙임)
 # ── 유니사이클(차량형) 외형: 큐브를 '쫓아가는' 그림자. strafe를 시각적으로 제거 ──
 #    외형은 자기 향한 방향으로만 전진 + 회전율 제한 → 옆걸음/빙빙 없이 진짜 바퀴 로봇처럼 보임
@@ -149,6 +151,8 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         ]
         # 외형 yaw 스무딩 버퍼만 (위치는 큐브에 직붙임 — 위치 LERP는 lag artifact 만듦)
         self._vis_yaw = [torch.zeros(self.num_envs, device=self.device) for _ in self.robots]
+        # 외형 yaw 산출용 속도 EMA — 순간 속도방향 노이즈(저속/옆걸음)로 인한 좌우 떨림 차단
+        self._vis_vel = [torch.zeros(self.num_envs, 2, device=self.device) for _ in self.robots]
         self._yaw_off = math.radians(VIS_YAW_OFFSET_DEG)
         # action 이동평균 버퍼 — 정책 출력 노이즈로 인한 cube velocity 매-step 점프 차단.
         # 이게 진짜 떨림 원인. 시각 LERP는 증상 가림용이고 이게 root cause fix.
@@ -176,10 +180,14 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             pos = robot.data.root_pos_w
 
             if self.cfg.visual_yaw_align:
-                v_w = robot.data.root_lin_vel_w[:, :2]
-                v_mag = v_w.norm(dim=1)
-                moving = v_mag > VIS_MOVE_THRESH
-                target_yaw = torch.atan2(v_w[:, 1], v_w[:, 0]) + self._yaw_off
+                # 떨림 root cause: 외형 yaw를 '순간' 속도방향(atan2)에 붙이면 저속/옆걸음 시
+                # 방향이 노이즈로 좌우 폭주 → 메시가 격렬히 떪. 해법: ① 속도를 시간 EMA로
+                # 평활해 그 방향으로만, ② 평활속도 낮으면 헤딩 고정, ③ 회전율 하드 캡.
+                v_now = robot.data.root_lin_vel_w[:, :2]
+                self._vis_vel[i] = (1 - VIS_VEL_EMA) * self._vis_vel[i] + VIS_VEL_EMA * v_now
+                v_s = self._vis_vel[i]
+                moving = v_s.norm(dim=1) > VIS_MOVE_THRESH
+                target_yaw = torch.atan2(v_s[:, 1], v_s[:, 0]) + self._yaw_off
             else:
                 quat = robot.data.root_quat_w
                 _, _, yaw = euler_xyz_from_quat(quat)
@@ -188,7 +196,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
 
             cur = self._vis_yaw[i]
             err = torch.atan2(torch.sin(target_yaw - cur), torch.cos(target_yaw - cur))
-            new_yaw = cur + torch.where(moving, err * SMOOTH_YAW, torch.zeros_like(err))
+            # 회전율 하드 캡 — 타깃이 튀어도 메시는 서서히만 돌아 절대 안 튐
+            step_yaw = torch.clamp(err * SMOOTH_YAW, -VIS_YAW_RATE_MAX, VIS_YAW_RATE_MAX)
+            new_yaw = cur + torch.where(moving, step_yaw, torch.zeros_like(err))
             self._vis_yaw[i] = new_yaw
 
             h = 0.5 * new_yaw
