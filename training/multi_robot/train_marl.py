@@ -50,6 +50,10 @@ parser.add_argument("--max_omega", type=float, default=None,
                     help="회전 권한 상향(strafe 대체). None=기본 2.0 유지, 권장 2.6(≈1.3×)")
 parser.add_argument("--entropy_coef", type=float, default=None,
                     help="PPO 엔트로피 계수. None=기본(0.001). 커리큘럼 노이즈 폭발 억제엔 0.0 권장")
+parser.add_argument("--freeze_std", action="store_true", default=False,
+                    help="액션 노이즈 std를 학습 불가로 동결 — PPO surrogate gradient에 의한 std 폭발 차단. "
+                         "entropy_coef=0이어도 std는 학습되어 자동 증가하는 문제 해결. "
+                         "커리큘럼 훈련에 강력 권장. --reset_noise_std와 함께 사용하면 시작 std도 통제 가능.")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -172,13 +176,26 @@ def main():
         if args.reset_noise_std is not None:
             runner.alg.policy.std.data.fill_(args.reset_noise_std)
             print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
-        if args.reset_noise_std is not None:
-            runner.alg.policy.std.data.fill_(args.reset_noise_std)
-            print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
     elif args.from_scratch:
         print("[MAPPO] 처음부터 훈련")
     else:
         print("[경고] --mappo_ckpt 또는 --ippo_ckpt 지정 권장")
+
+    # ── std 동결 (PPO surrogate가 std를 키우는 부작용 차단) ────────────────
+    # 원인: rsl_rl의 policy.std는 nn.Parameter라 entropy_coef=0이어도 surrogate
+    # gradient가 std를 키울 수 있음(advantage 음수 다발 시 "탐색 늘려"로 해석).
+    # 커리큘럼 동역학 변경 시 std가 0.3→0.84로 폭발해 정책이 랜덤 노이즈가 됨.
+    # 해결: std 관련 모든 파라미터의 requires_grad=False — 학습에서 제외.
+    if args.freeze_std:
+        frozen = []
+        for name, param in runner.alg.policy.named_parameters():
+            if "std" in name.lower():
+                param.requires_grad = False
+                frozen.append((name, float(param.data.flatten()[0].item())))
+        if frozen:
+            print(f"[MAPPO] std 동결: {frozen} (PPO surrogate의 std 폭발 차단)")
+        else:
+            print("[MAPPO] 경고: 'std' 이름 파라미터 못 찾음 — freeze_std 효과 없음")
 
     print(f"\n[True CTDE MAPPO]")
     print(f"  Actor obs : {obr}-dim per-robot (goal+vel+shelf+relative_robots{'+battery+charger' if args.enable_battery else ''})")
