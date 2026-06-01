@@ -147,35 +147,40 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         self._robot_visuals = [
             XFormPrim(f"/World/envs/env_.*/RobotVisual_{i}") for i in range(N_ROBOTS)
         ]
-        # 외형 스무딩 버퍼 (위치/방향) — 큐브 진동·홀로노믹 회전을 시각적으로 정리
-        self._vis_pos = [r.data.root_pos_w.clone() for r in self.robots]
+        # 외형 yaw 스무딩 버퍼만 (위치는 큐브에 직붙임 — 위치 LERP는 lag artifact 만듦)
         self._vis_yaw = [torch.zeros(self.num_envs, device=self.device) for _ in self.robots]
         self._yaw_off = math.radians(VIS_YAW_OFFSET_DEG)
+        # action 이동평균 버퍼 — 정책 출력 노이즈로 인한 cube velocity 매-step 점프 차단.
+        # 이게 진짜 떨림 원인. 시각 LERP는 증상 가림용이고 이게 root cause fix.
+        self._prev_actions = None
 
     def _apply_action(self):
+        # ── ROOT CAUSE FIX: action 이동평균 (3-step) ──
+        # PPO는 매 0.067s마다 새 action 출력 → cube velocity 매 step 점프 → damping이 누름 → 다음 점프...
+        # = cube physics 자체가 떨림. 시각은 그걸 그대로 보여줘서 "발광"하는 듯 보임.
+        # 해법: action을 3-step 이동평균으로 부드럽게 → velocity 점프 줄어듬 → 물리 떨림 자체 ↓
+        if self._prev_actions is None:
+            self._prev_actions = [self._actions.clone(), self._actions.clone()]
+        smoothed = (self._actions + self._prev_actions[0] + self._prev_actions[1]) / 3.0
+        self._prev_actions[1] = self._prev_actions[0].clone()
+        self._prev_actions[0] = self._actions.clone()
+        # 원본 보존하고 평균값으로 physics step
+        orig_actions = self._actions
+        self._actions = smoothed
         super()._apply_action()
-        # iw.hub 외형: 큐브에 follow하되 강한 LERP smoothing — 큐브 자체가 떨어도 외형은 매끄럽게.
-        #   ㆍ위치 LERP: 시각 위치를 큐브 위치로 천천히 따라감 (감쇠된 spring)
-        #   ㆍyaw: visual_yaw_align면 속도방향 / 아니면 큐브 yaw (스무딩 적용)
-        #   ㆍ물리/정책은 0 영향 → 회피 능력 100% 보존
-        # 약 0.10~0.15 smoothing 계수 → 5~10 step lag지만 떨림 사라짐
-        SMOOTH_POS = 0.15
-        SMOOTH_YAW = 0.10
+        self._actions = orig_actions   # 원래 action 복원 (다음 step 정상 처리)
+
+        # 시각 메시: 위치는 큐브 그대로(LERP 빼서 lag artifact 제거), yaw만 스무딩
+        SMOOTH_YAW = 0.15
         for i, robot in enumerate(self.robots):
-            pos = robot.data.root_pos_w                  # (E,3) 큐브 위치
-            # 위치 LERP — 큐브 진동 시각화 방지
-            cur_pos = self._vis_pos[i]
-            new_pos = cur_pos + (pos - cur_pos) * SMOOTH_POS
-            self._vis_pos[i] = new_pos
+            pos = robot.data.root_pos_w
 
             if self.cfg.visual_yaw_align:
-                # 속도 방향에 부드럽게 정렬 (시각만)
                 v_w = robot.data.root_lin_vel_w[:, :2]
                 v_mag = v_w.norm(dim=1)
                 moving = v_mag > VIS_MOVE_THRESH
                 target_yaw = torch.atan2(v_w[:, 1], v_w[:, 0]) + self._yaw_off
             else:
-                # 큐브 yaw도 스무딩 (큐브가 회전 진동해도 외형은 부드럽게)
                 quat = robot.data.root_quat_w
                 _, _, yaw = euler_xyz_from_quat(quat)
                 target_yaw = yaw + self._yaw_off
@@ -188,9 +193,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
 
             h = 0.5 * new_yaw
             flat_quat = torch.stack([torch.cos(h), torch.zeros_like(h),
-                                     torch.zeros_like(h), torch.sin(h)], dim=1)  # wxyz
-            out_pos = new_pos.clone()
-            out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET   # 바퀴를 바닥에 붙임
+                                     torch.zeros_like(h), torch.sin(h)], dim=1)
+            out_pos = pos.clone()
+            out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET
             self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=flat_quat)
 
     def _setup_scene(self):
