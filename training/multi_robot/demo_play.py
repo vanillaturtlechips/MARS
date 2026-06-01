@@ -91,7 +91,15 @@ WAREHOUSE_ROT_DEG   = 0.0               # z축 회전(도) — 창고 통로 방
 WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
 SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표시. False면 외형 숨기고 아래 랙만 보임(충돌은 유지)
 USE_SHELF_USD       = True               # True면 실제 Isaac 창고 랙 USD 시도(빈 로드면 자동으로 절차적 폴백)
-SHELF_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_A1.usd"
+# 선반 USD 후보 — 위에서부터 시도, 첫 성공(메시 존재)을 채택. 모두 실패시 절차적 폴백.
+SHELF_USD_CANDIDATES = [
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_A1.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_B1.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_C1.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_A1.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_A4.usd",
+]
+SHELF_USD = SHELF_USD_CANDIDATES[0]   # 하위호환: 단일 변수도 유지
 RACK_HEIGHT         = 3.5               # 랙 높이(m) — 로봇 대비 확실히 크게(선반이 작다는 피드백 반영)
 CAMERA_EYE    = (3.88, -9.80, 5.43)     # 창고 외벽 바깥에서 내부 비스듬히 (사용자 viewport 캡처)
 CAMERA_TARGET = (1.45, -6.15, 3.03)     # 창고 내부 상단 영역 — 로봇 활동 구역 위쪽
@@ -218,6 +226,20 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                 translation=(cx, cy, cz),
                 orientation=(1.0, 0.0, 0.0, 0.0),
             )
+        # 로봇 큐브 외형 숨김 — 충돌 큐브가 iw.hub 위로 비어져 "물건 얹은 듯" 보이던 것 제거.
+        # 충돌은 유지(MakeInvisible은 visual만 꺼짐). clone 전이라 env_0에 적용→복제본도 숨김.
+        try:
+            import omni.usd
+            from pxr import UsdGeom
+            _stage = omni.usd.get_context().get_stage()
+            for r_i in range(N_ROBOTS):
+                _rp = _stage.GetPrimAtPath(f"/World/envs/env_0/Robot_{r_i}")
+                if _rp.IsValid():
+                    UsdGeom.Imageable(_rp).MakeInvisible()
+            print("[Demo] 로봇 큐브 외형 숨김 (충돌·물리 유지, iw.hub만 보임)")
+        except Exception as _e:
+            print(f"[Demo] 로봇 큐브 숨김 실패(무시): {_e}")
+
         if not SHOW_BOX_SHELVES:
             # 충돌은 유지, 외형만 숨김 (clone 전이라 env_0에 적용→복제본도 숨김)
             try:
@@ -232,27 +254,48 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             except Exception as _e:
                 print(f"[Demo] 선반 숨김 실패(무시): {_e}")
 
-            # ── 랙 외형: 실제 Isaac 창고 랙 USD 우선, 빈 로드면 절차적 톨 랙 ──
+            # ── 랙 외형: 실제 Isaac 창고 랙 USD 후보 체인 우선, 모두 실패시 절차적 톨 랙 ──
             #    footprint 3.0(x) × 0.5(y)는 충돌 박스와 일치(로봇이 피하는 위치).
+            #    후보를 순서대로 시도, 첫 메시 존재 USD를 채택.
             use_usd_ok = False
+            chosen_usd = None
             if USE_SHELF_USD:
-                try:
-                    import omni.usd
-                    from pxr import UsdGeom, Usd
-                    _st = omni.usd.get_context().get_stage()
-                    rack_usd = sim_utils.UsdFileCfg(usd_path=SHELF_USD)
-                    ok = True
-                    for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
-                        _rp = f"/World/envs/env_0/Rack_{s_i}"
-                        rack_usd.func(_rp, rack_usd, translation=(cx, cy, 0.0),
-                                      orientation=(1.0, 0.0, 0.0, 0.0))
-                        _pr = _st.GetPrimAtPath(_rp)
-                        if not (_pr.IsValid() and any(d.IsA(UsdGeom.Mesh) for d in Usd.PrimRange(_pr))):
-                            ok = False
-                    use_usd_ok = ok
-                    print(f"[Demo] 창고 랙 USD {'성공' if ok else '비어있음→절차적 폴백'}")
-                except Exception as _e:
-                    print(f"[Demo] 랙 USD 예외→절차적: {_e}")
+                import omni.usd
+                from pxr import UsdGeom, Usd
+                _st = omni.usd.get_context().get_stage()
+                for _cand in SHELF_USD_CANDIDATES:
+                    # 시도 전 기존 Rack_* 정리(이전 후보가 빈 prim 남겼을 수 있음)
+                    for s_i in range(len(SHELF_CENTERS)):
+                        _existing = _st.GetPrimAtPath(f"/World/envs/env_0/Rack_{s_i}")
+                        if _existing.IsValid():
+                            _st.RemovePrim(_existing.GetPath())
+                    try:
+                        rack_usd = sim_utils.UsdFileCfg(usd_path=_cand)
+                        ok = True
+                        for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
+                            _rp = f"/World/envs/env_0/Rack_{s_i}"
+                            rack_usd.func(_rp, rack_usd, translation=(cx, cy, 0.0),
+                                          orientation=(1.0, 0.0, 0.0, 0.0))
+                            _pr = _st.GetPrimAtPath(_rp)
+                            if not (_pr.IsValid() and any(d.IsA(UsdGeom.Mesh) for d in Usd.PrimRange(_pr))):
+                                ok = False
+                                break
+                        if ok:
+                            use_usd_ok = True
+                            chosen_usd = _cand
+                            print(f"[Demo] 창고 랙 USD 채택: {_cand.rsplit('/', 1)[-1]}")
+                            break
+                        else:
+                            print(f"[Demo] 랙 USD 비어있음, 다음 후보 시도: {_cand.rsplit('/', 1)[-1]}")
+                    except Exception as _e:
+                        print(f"[Demo] 랙 USD 예외({_cand.rsplit('/', 1)[-1]}), 다음 후보: {_e}")
+                if not use_usd_ok:
+                    # 모든 USD 실패 — 남은 빈 prim 정리 후 절차적 폴백으로
+                    for s_i in range(len(SHELF_CENTERS)):
+                        _existing = _st.GetPrimAtPath(f"/World/envs/env_0/Rack_{s_i}")
+                        if _existing.IsValid():
+                            _st.RemovePrim(_existing.GetPath())
+                    print("[Demo] 모든 USD 후보 실패 → 절차적 폴백")
 
             if not use_usd_ok:
                 # 절차적 톨 랙: 기둥4 + 가로빔 + 선반판 다단 (height=RACK_HEIGHT)
