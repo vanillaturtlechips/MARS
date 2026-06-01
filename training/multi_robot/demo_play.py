@@ -154,14 +154,32 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
 
     def _apply_action(self):
         super()._apply_action()
-        # iw.hub 외형: 물리 큐브에 그대로 붙임 + 큐브의 진짜 yaw(policy가 omega로 만든 방향).
-        #   쫓아가기/스무딩/유니사이클 전부 제거 — '큐브가 하는 그대로'만 정직하게 표시(발산 없음).
+        # iw.hub 외형: 위치는 큐브 그대로. yaw는 모드에 따라:
+        #   visual_yaw_align=True: '속도 방향' (스무딩) → 외형 diff-drive
+        #   visual_yaw_align=False: 큐브 실제 yaw → 정직한 표시 (기본)
+        # 어느 모드든 물리/정책은 안 건드림 → 회피 능력 100% 보존.
         for i, robot in enumerate(self.robots):
             pos = robot.data.root_pos_w                  # (E,3) 큐브 위치
-            quat = robot.data.root_quat_w                # (E,4) 큐브 실제 방향
-            _, _, yaw = euler_xyz_from_quat(quat)        # 수평 yaw만 추출(기울기 제거)
-            yaw = yaw + self._yaw_off
-            h = 0.5 * yaw
+
+            if self.cfg.visual_yaw_align:
+                # 속도 방향에 부드럽게 정렬 (시각만)
+                v_w = robot.data.root_lin_vel_w[:, :2]
+                v_mag = v_w.norm(dim=1)
+                moving = v_mag > VIS_MOVE_THRESH
+                target_yaw = torch.atan2(v_w[:, 1], v_w[:, 0]) + self._yaw_off
+                cur = self._vis_yaw[i]
+                # 각도 wrap 처리한 LERP
+                err = torch.atan2(torch.sin(target_yaw - cur), torch.cos(target_yaw - cur))
+                new_yaw = cur + torch.where(moving, err * VIS_SMOOTH_YAW, torch.zeros_like(err))
+                self._vis_yaw[i] = new_yaw
+                yaw_use = new_yaw
+            else:
+                # 큐브 yaw 그대로 (기존 동작)
+                quat = robot.data.root_quat_w
+                _, _, yaw = euler_xyz_from_quat(quat)
+                yaw_use = yaw + self._yaw_off
+
+            h = 0.5 * yaw_use
             flat_quat = torch.stack([torch.cos(h), torch.zeros_like(h),
                                      torch.zeros_like(h), torch.sin(h)], dim=1)  # wxyz
             out_pos = pos.clone()

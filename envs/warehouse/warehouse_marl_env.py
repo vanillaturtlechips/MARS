@@ -431,24 +431,9 @@ class WarehouseMARLEnv(DirectRLEnv):
                 vx_b = desired_speed * torch.relu(torch.cos(heading_err))
                 vy_b = torch.zeros_like(vx_b)
 
-            if self.cfg.visual_yaw_align:
-                # ── 시각만 diff-drive: vx/vy 유지(strafe 보존) + omega만 진행방향 정렬 ──
-                #   물리는 holonomic 그대로(S5/S6 회피 100% 보존)
-                #   몸 yaw는 가는 방향 향함 → 외형 = diff-drive
-                #   정책 omega 무시(자동 정렬로 대체)
-                v_world_x = cos_yaw * vx_b - sin_yaw * vy_b   # 현재 적용될 world 속도
-                v_world_y = sin_yaw * vx_b + cos_yaw * vy_b
-                v_mag = torch.sqrt(v_world_x * v_world_x + v_world_y * v_world_y)
-                desired_yaw = torch.atan2(v_world_y, v_world_x)
-                yaw_err = desired_yaw - yaw
-                # wrap to [-pi, pi]
-                yaw_err = torch.atan2(torch.sin(yaw_err), torch.cos(yaw_err))
-                # 충분히 움직일 때만 yaw 정렬 (정지 시 빙빙 방지)
-                moving = (v_mag > self.cfg.yaw_align_min_speed).float()
-                omega = moving * torch.clamp(
-                    self.cfg.yaw_align_gain * yaw_err,
-                    -self.cfg.max_omega, self.cfg.max_omega,
-                )
+            # NOTE: visual_yaw_align cfg는 demo_play.py의 _apply_action override에서 처리.
+            # env 레벨에서 omega를 건드리면 body frame이 바뀌어 정책 action 해석이 흔들리는
+            # control feedback loop가 발생 — 떨림 발생. 시각만 손대고 물리는 건드리지 않음.
 
             # 방전 시 속도 급감 — battery 낮으면 못 움직임 → 충전이 goal 도달의 전제
             if self.cfg.enable_battery:
