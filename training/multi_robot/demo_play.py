@@ -30,8 +30,21 @@ parser.add_argument("--turn_gain", type=float, default=3.0,
                     help="컨트롤러 방향오차→omega 게인(클수록 빨리 돌아 향함)")
 parser.add_argument("--max_omega", type=float, default=None,
                     help="회전 권한(예: 2.6). None=기본 유지")
+parser.add_argument("--video", action="store_true",
+                    help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
+parser.add_argument("--video_length", type=int, default=1500,
+                    help="녹화할 step 수 (60Hz·decimation=4 기준 ≈25초)")
+parser.add_argument("--video_folder", type=str, default="logs/demo_videos")
+parser.add_argument("--cam_eye", type=str, default="",
+                    help="카메라 위치 x,y,z (예: 5,-5,4). 비디오 모드는 마우스 못 쓰니 여기서 지정")
+parser.add_argument("--cam_target", type=str, default="",
+                    help="카메라 타겟 x,y,z (예: 0,0,0.3)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
+if args.video:
+    args.enable_cameras = True   # AppLauncher가 카메라 백엔드 켜야 render(rgb_array) 가능
+    if args.max_steps == 0:
+        args.max_steps = args.video_length
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
@@ -80,8 +93,8 @@ SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표
 USE_SHELF_USD       = True               # True면 실제 Isaac 창고 랙 USD 시도(빈 로드면 자동으로 절차적 폴백)
 SHELF_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_A1.usd"
 RACK_HEIGHT         = 3.5               # 랙 높이(m) — 로봇 대비 확실히 크게(선반이 작다는 피드백 반영)
-CAMERA_EYE    = (9.0, -9.0, 7.0)        # 카메라 위치 (활동구역을 비스듬히 내려다봄)
-CAMERA_TARGET = (0.0,  0.0, 0.5)        # 카메라가 보는 지점 (원점 약간 위)
+CAMERA_EYE    = (3.88, -9.80, 5.43)     # 창고 외벽 바깥에서 내부 비스듬히 (사용자 viewport 캡처)
+CAMERA_TARGET = (1.45, -6.15, 3.03)     # 창고 내부 상단 영역 — 로봇 활동 구역 위쪽
 #  로봇 외형(iw.hub) — 큐브 yaw 대신 '진행 방향'으로 향하게 + 수평 yaw만(기울기/덜덜 제거)
 ROBOT_VISUAL_SCALE = 1.0                # iw.hub 외형 크기 (선반 대비 안 맞으면 조정)
 VIS_YAW_OFFSET_DEG = 0.0                # iw.hub 메시 정면축 보정(도) — 옆을 보면 90/180 등으로
@@ -270,6 +283,12 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         light_cfg.func("/World/Light", light_cfg)
 
 
+def _parse_xyz(s: str, default):
+    if not s:
+        return default
+    return tuple(float(x.strip()) for x in s.split(","))
+
+
 def main():
     env_cfg = WarehouseDemoEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
@@ -279,7 +298,22 @@ def main():
     if args.max_omega is not None:
         env_cfg.max_omega = args.max_omega
 
-    env = WarehouseDemoEnv(env_cfg)
+    env = WarehouseDemoEnv(env_cfg, render_mode="rgb_array" if args.video else None)
+
+    if args.video:
+        import gymnasium as gym
+        import os
+        os.makedirs(args.video_folder, exist_ok=True)
+        print(f"[Demo] 녹화 ON: {args.video_folder}/demo-step-0.mp4 ({args.video_length} steps)")
+        env = gym.wrappers.RecordVideo(
+            env,
+            video_folder=args.video_folder,
+            step_trigger=lambda s: s == 0,
+            video_length=args.video_length,
+            disable_logger=True,
+            name_prefix="demo",
+        )
+
     env = RslRlVecEnvWrapper(env)
     env = IPPOReshapeWrapper(env, N_ROBOTS, OBS_PER_ROBOT)
 
@@ -308,9 +342,12 @@ def main():
     print(f"[Demo] 로봇 {N_ROBOTS}대 — inference 루프 (학습 안 함, 결정론적)\n")
 
     # 카메라 고정 — 활동 구역을 비스듬히 프레이밍 (넓어 보이는 문제 해결)
+    #   비디오 모드에선 마우스 못 쓰니 --cam_eye/--cam_target로 CLI 지정
+    _eye    = _parse_xyz(args.cam_eye,    CAMERA_EYE)
+    _target = _parse_xyz(args.cam_target, CAMERA_TARGET)
     try:
-        env.unwrapped.sim.set_camera_view(eye=CAMERA_EYE, target=CAMERA_TARGET)
-        print(f"[Demo] 카메라 고정: eye={CAMERA_EYE} target={CAMERA_TARGET}")
+        env.unwrapped.sim.set_camera_view(eye=_eye, target=_target)
+        print(f"[Demo] 카메라 고정: eye={_eye} target={_target}")
     except Exception as _e:
         print(f"[Demo] 카메라 설정 실패(무시): {_e}")
 
