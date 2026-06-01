@@ -9,7 +9,8 @@
       "Bash(GIT_AUTHOR_NAME=vanillaturtlechips GIT_AUTHOR_EMAIL=2220110150@office.kopo.ac.kr GIT_COMMITTER_NAME=vanillaturtlechips GIT_COMMITTER_EMAIL=2220110150@office.kopo.ac.kr git commit -am ' *)",
       "Bash(git push *)",
       "Bash(git check-attr *)",
-      "Bash(GIT_AUTHOR_NAME=vanillaturtlechips GIT_AUTHOR_EMAIL=2220110150@office.kopo.ac.kr GIT_COMMITTER_NAME=vanillaturtlechips GIT_COMMITTER_EMAIL=2220110150@office.kopo.ac.kr git commit -m ' *)"
+      "Bash(GIT_AUTHOR_NAME=vanillaturtlechips GIT_AUTHOR_EMAIL=2220110150@office.kopo.ac.kr GIT_COMMITTER_NAME=vanillaturtlechips GIT_COMMITTER_EMAIL=2220110150@office.kopo.ac.kr git commit -m ' *)",
+      "Bash(GIT_AUTHOR_NAME=vanillaturtlechips GIT_AUTHOR_EMAIL=2220110150@office.kopo.ac.kr GIT_COMMITTER_NAME=vanillaturtlechips GIT_COMMITTER_EMAIL=2220110150@office.kopo.ac.kr git commit -m 'fix: 시각 메시 위치 LERP smoothing 추가 — 큐브 물리 진동 시각화 차단 *)"
     ]
   },
   "enableAllProjectMcpServers": true,

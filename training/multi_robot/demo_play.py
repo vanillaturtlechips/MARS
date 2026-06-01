@@ -154,12 +154,19 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
 
     def _apply_action(self):
         super()._apply_action()
-        # iw.hub 외형: 위치는 큐브 그대로. yaw는 모드에 따라:
-        #   visual_yaw_align=True: '속도 방향' (스무딩) → 외형 diff-drive
-        #   visual_yaw_align=False: 큐브 실제 yaw → 정직한 표시 (기본)
-        # 어느 모드든 물리/정책은 안 건드림 → 회피 능력 100% 보존.
+        # iw.hub 외형: 큐브에 follow하되 강한 LERP smoothing — 큐브 자체가 떨어도 외형은 매끄럽게.
+        #   ㆍ위치 LERP: 시각 위치를 큐브 위치로 천천히 따라감 (감쇠된 spring)
+        #   ㆍyaw: visual_yaw_align면 속도방향 / 아니면 큐브 yaw (스무딩 적용)
+        #   ㆍ물리/정책은 0 영향 → 회피 능력 100% 보존
+        # 약 0.10~0.15 smoothing 계수 → 5~10 step lag지만 떨림 사라짐
+        SMOOTH_POS = 0.15
+        SMOOTH_YAW = 0.10
         for i, robot in enumerate(self.robots):
             pos = robot.data.root_pos_w                  # (E,3) 큐브 위치
+            # 위치 LERP — 큐브 진동 시각화 방지
+            cur_pos = self._vis_pos[i]
+            new_pos = cur_pos + (pos - cur_pos) * SMOOTH_POS
+            self._vis_pos[i] = new_pos
 
             if self.cfg.visual_yaw_align:
                 # 속도 방향에 부드럽게 정렬 (시각만)
@@ -167,22 +174,22 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                 v_mag = v_w.norm(dim=1)
                 moving = v_mag > VIS_MOVE_THRESH
                 target_yaw = torch.atan2(v_w[:, 1], v_w[:, 0]) + self._yaw_off
-                cur = self._vis_yaw[i]
-                # 각도 wrap 처리한 LERP
-                err = torch.atan2(torch.sin(target_yaw - cur), torch.cos(target_yaw - cur))
-                new_yaw = cur + torch.where(moving, err * VIS_SMOOTH_YAW, torch.zeros_like(err))
-                self._vis_yaw[i] = new_yaw
-                yaw_use = new_yaw
             else:
-                # 큐브 yaw 그대로 (기존 동작)
+                # 큐브 yaw도 스무딩 (큐브가 회전 진동해도 외형은 부드럽게)
                 quat = robot.data.root_quat_w
                 _, _, yaw = euler_xyz_from_quat(quat)
-                yaw_use = yaw + self._yaw_off
+                target_yaw = yaw + self._yaw_off
+                moving = torch.ones_like(target_yaw, dtype=torch.bool)
 
-            h = 0.5 * yaw_use
+            cur = self._vis_yaw[i]
+            err = torch.atan2(torch.sin(target_yaw - cur), torch.cos(target_yaw - cur))
+            new_yaw = cur + torch.where(moving, err * SMOOTH_YAW, torch.zeros_like(err))
+            self._vis_yaw[i] = new_yaw
+
+            h = 0.5 * new_yaw
             flat_quat = torch.stack([torch.cos(h), torch.zeros_like(h),
                                      torch.zeros_like(h), torch.sin(h)], dim=1)  # wxyz
-            out_pos = pos.clone()
+            out_pos = new_pos.clone()
             out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET   # 바퀴를 바닥에 붙임
             self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=flat_quat)
 
