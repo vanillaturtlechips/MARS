@@ -45,6 +45,10 @@ parser.add_argument("--continuous_goals", dest="continuous_goals", action="store
                     help="골 도달 즉시 새 골 부여 — 끊임없이 일하는 창고 연출(기본 ON)")
 parser.add_argument("--oneshot_goals", dest="continuous_goals", action="store_false",
                     help="연속 골 끄기(한 번 가고 정지 — 학습과 동일 동작)")
+parser.add_argument("--task", dest="task_cycle", action="store_true", default=True,
+                    help="선반↔스테이션 운반 사이클 연출(픽업→하차 왕복+박스, 기본 ON)")
+parser.add_argument("--no_task", dest="task_cycle", action="store_false",
+                    help="운반 사이클 끄고 랜덤 골(연속 골)로")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -136,10 +140,21 @@ VIS_TURN_GAIN      = 0.25               # 목표방향으로 조향 게인(0~1)
 VIS_TURN_MAX       = 0.06               # 스텝당 최대 회전(rad) — 낮을수록 부드럽게 돎(코너 반경↑)
 VIS_DRIVE_GAIN     = 1.0                # 거리 대비 전진 비율(1=매 스텝 따라잡기 시도)
 VIS_SPEED_MAX      = 0.30               # 스텝당 최대 전진(m) — 목표 리스폰 순간 순간이동 방지
-# 골 마커 색(로봇별) — 어디로 가는지 보여서 '일하는' 느낌. 로봇 컬러와 매칭 권장.
+# 골 마커 색(로봇별) — 랜덤골(--no_task) 모드에서만 사용.
 GOAL_COLORS        = [(0.10, 0.90, 0.30), (0.95, 0.25, 0.20), (0.25, 0.50, 1.0)]
 GOAL_MARKER_RADIUS = 0.15
-GOAL_MARKER_Z      = 0.12               # 바닥에 살짝 띄운 디스크/구 높이
+GOAL_MARKER_Z      = 0.12               # 바닥에 살짝 띄운 구 높이
+# ── 운반 사이클(--task) 연출: 선반 통로면 픽업 패드 ↔ 통로 양끝 도크 ──
+#    SHELF_CENTERS = (±2, ±2.5). 픽업 패드는 각 선반의 통로(중앙)쪽 면 앞에.
+PICK_POINTS = [(-2.0, 1.6), (2.0, 1.6), (-2.0, -1.6), (2.0, -1.6)]   # env-local
+DOCK_POINTS = [(-3.6, 0.0), (3.6, 0.0)]                              # 통로 양끝 패킹 도크
+PICK_PAD_COLOR  = (0.15, 0.85, 0.35)    # 픽업존(초록 원반)
+DOCK_PAD_COLOR  = (0.20, 0.55, 1.0)     # 하차존(파란 도크 패드)
+BOX_COLOR       = (0.60, 0.42, 0.22)    # 운반 박스(갈색)
+PAD_Z           = 0.02                   # 바닥 패드 높이
+BOX_Z_ON_ROBOT  = 0.45                  # 운반 시 박스가 로봇 위에 얹히는 높이
+BOX_Z_HIDDEN    = -10.0                  # 비운반 시 박스 숨김(바닥 아래)
+REACH_EPS       = 0.10                   # 웨이포인트 도달 판정 여유(goal_radius에 가산)
 # ════════════════════════════════════════════════════════════════════════
 
 
@@ -169,20 +184,152 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         # action 이동평균 버퍼 — 정책 출력 노이즈로 인한 cube velocity 매-step 점프 차단.
         # 이게 진짜 떨림 원인. 시각 LERP는 증상 가림용이고 이게 root cause fix.
         self._prev_actions = None
-        # 골 마커 — 로봇이 향하는 목적지를 색 구로 표시(목적 가시화 → '일하는' 연출)
-        marker_cfg = VisualizationMarkersCfg(
-            prim_path="/Visuals/goal_markers",
+
+        self._task_cycle = bool(getattr(self.cfg, "task_cycle", False))
+        if self._task_cycle:
+            self._setup_task_markers()
+            self._setup_task_state()
+        else:
+            # 랜덤 골 모드: 로봇별 목적지 색 구
+            marker_cfg = VisualizationMarkersCfg(
+                prim_path="/Visuals/goal_markers",
+                markers={
+                    f"g{i}": sim_utils.SphereCfg(
+                        radius=GOAL_MARKER_RADIUS,
+                        visual_material=sim_utils.PreviewSurfaceCfg(
+                            diffuse_color=GOAL_COLORS[i % len(GOAL_COLORS)],
+                            emissive_color=GOAL_COLORS[i % len(GOAL_COLORS)],
+                        ),
+                    ) for i in range(N_ROBOTS)
+                },
+            )
+            self._goal_markers = VisualizationMarkers(marker_cfg)
+
+    # ── 운반 사이클 연출 ───────────────────────────────────────────────
+    def _setup_task_markers(self):
+        """바닥 픽업 패드(초록 원반)·하차 도크(파란 패드)·운반 박스 마커."""
+        device = self.device
+        self._pick_w = torch.tensor(PICK_POINTS, dtype=torch.float32, device=device)  # (P,2)
+        self._dock_w = torch.tensor(DOCK_POINTS, dtype=torch.float32, device=device)  # (D,2)
+        # 정적 스테이션 패드 (픽업존 + 하차존) — 한 마커 세트에 두 타입
+        station_cfg = VisualizationMarkersCfg(
+            prim_path="/Visuals/stations",
             markers={
-                f"g{i}": sim_utils.SphereCfg(
-                    radius=GOAL_MARKER_RADIUS,
+                "pick": sim_utils.CylinderCfg(
+                    radius=0.45, height=0.04,
                     visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=GOAL_COLORS[i % len(GOAL_COLORS)],
-                        emissive_color=GOAL_COLORS[i % len(GOAL_COLORS)],
-                    ),
-                ) for i in range(N_ROBOTS)
+                        diffuse_color=PICK_PAD_COLOR, emissive_color=PICK_PAD_COLOR),
+                ),
+                "dock": sim_utils.CuboidCfg(
+                    size=(0.95, 0.95, 0.05),
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=DOCK_PAD_COLOR, emissive_color=DOCK_PAD_COLOR),
+                ),
             },
         )
-        self._goal_markers = VisualizationMarkers(marker_cfg)
+        self._station_markers = VisualizationMarkers(station_cfg)
+        # 운반 박스 (로봇당 1개, 비운반 시 바닥 아래로 숨김)
+        box_cfg = VisualizationMarkersCfg(
+            prim_path="/Visuals/carry_boxes",
+            markers={
+                "box": sim_utils.CuboidCfg(
+                    size=(0.34, 0.34, 0.30),
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=BOX_COLOR),
+                ),
+            },
+        )
+        self._box_markers = VisualizationMarkers(box_cfg)
+
+    def _setup_task_state(self):
+        E, device = self.num_envs, self.device
+        # state: 0=픽업하러 감, 1=하차하러 감
+        self._task_state = torch.zeros(E, N_ROBOTS, dtype=torch.long, device=device)
+        self._carrying   = torch.zeros(E, N_ROBOTS, dtype=torch.bool, device=device)
+        self._task_shelf = torch.zeros(E, N_ROBOTS, dtype=torch.long, device=device)
+        self._task_dock  = torch.zeros(E, N_ROBOTS, dtype=torch.long, device=device)
+        # 전체 env 초기 배정(서로 다른 선반으로 분산)
+        all_ids = torch.arange(E, device=device)
+        self._init_task(all_ids)
+
+    def _init_task(self, env_ids: torch.Tensor):
+        """리셋된 env들: 각 로봇에 시작 선반 배정 + 골=픽업 패드, 비운반 상태로."""
+        n = env_ids.shape[0]
+        origins = self.scene.env_origins[env_ids, :2]
+        n_pick = len(PICK_POINTS)
+        for i in range(N_ROBOTS):
+            shelf = torch.randint(0, n_pick, (n,), device=self.device)
+            self._task_shelf[env_ids, i] = shelf
+            self._task_state[env_ids, i] = 0
+            self._carrying[env_ids, i]   = False
+            self._goal_pos_w[env_ids, i] = self._pick_w[shelf] + origins
+
+    def _advance_task(self):
+        """도달한 로봇의 상태 전이: 픽업↔하차 + 박스 토글 + 다음 목적지 배정."""
+        eps = self.cfg.goal_radius + REACH_EPS
+        origins = self.scene.env_origins[:, :2]
+        n_pick, n_dock = len(PICK_POINTS), len(DOCK_POINTS)
+        for i in range(N_ROBOTS):
+            pos = self.robots[i].data.root_pos_w[:, :2]
+            reached = (pos - self._goal_pos_w[:, i]).norm(dim=1) < eps
+            for e in reached.nonzero(as_tuple=True)[0].tolist():
+                if self._task_state[e, i].item() == 0:        # 픽업 도달 → 박스 들고 하차로
+                    self._carrying[e, i] = True
+                    dock = int(torch.randint(0, n_dock, (1,)).item())
+                    self._task_dock[e, i] = dock
+                    self._task_state[e, i] = 1
+                    self._goal_pos_w[e, i] = self._dock_w[dock] + origins[e]
+                else:                                          # 하차 도달 → 박스 내리고 새 선반으로
+                    self._carrying[e, i] = False
+                    shelf = int(torch.randint(0, n_pick, (1,)).item())
+                    self._task_shelf[e, i] = shelf
+                    self._task_state[e, i] = 0
+                    self._goal_pos_w[e, i] = self._pick_w[shelf] + origins[e]
+
+    def _update_task_markers(self):
+        device = self.device
+        origins = self.scene.env_origins[:, :2]                      # (E,2)
+        # 정적 스테이션 패드 (env마다 origin 더해 배치)
+        picks = (self._pick_w[None] + origins[:, None]).reshape(-1, 2)   # (E*P,2)
+        docks = (self._dock_w[None] + origins[:, None]).reshape(-1, 2)   # (E*D,2)
+        st_xy = torch.cat([picks, docks], dim=0)
+        st_z  = torch.full((st_xy.shape[0], 1), PAD_Z, device=device)
+        st_idx = torch.cat([
+            torch.zeros(picks.shape[0], dtype=torch.long, device=device),   # "pick"
+            torch.ones(docks.shape[0],  dtype=torch.long, device=device),   # "dock"
+        ])
+        self._station_markers.visualize(translations=torch.cat([st_xy, st_z], dim=1),
+                                        marker_indices=st_idx)
+        # 운반 박스: 운반 중이면 로봇 위, 아니면 바닥 아래로 숨김
+        box_xy, box_z = [], []
+        for i in range(N_ROBOTS):
+            p = self.robots[i].data.root_pos_w[:, :2]
+            carrying = self._carrying[:, i]
+            box_xy.append(p)
+            box_z.append(torch.where(carrying,
+                                     torch.full_like(carrying, BOX_Z_ON_ROBOT, dtype=torch.float32),
+                                     torch.full_like(carrying, BOX_Z_HIDDEN,   dtype=torch.float32)))
+        bxy = torch.stack(box_xy, dim=1).reshape(-1, 2)             # (E*N,2)
+        bz  = torch.stack(box_z, dim=1).reshape(-1, 1)
+        self._box_markers.visualize(translations=torch.cat([bxy, bz], dim=1),
+                                    marker_indices=torch.zeros(bxy.shape[0], dtype=torch.long, device=device))
+
+    def _get_dones(self):
+        terminated, time_out = super()._get_dones()
+        if self._task_cycle:
+            self._advance_task()
+        return terminated, time_out
+
+    def _reset_idx(self, env_ids):
+        super()._reset_idx(env_ids)
+        # super().__init__ 중 첫 리셋에선 task 버퍼가 아직 없음 → 가드
+        if getattr(self, "_task_cycle", False) and hasattr(self, "_task_state"):
+            if env_ids is None:
+                ids = torch.arange(self.num_envs, device=self.device)
+            elif isinstance(env_ids, torch.Tensor):
+                ids = env_ids.long()
+            else:
+                ids = torch.tensor(list(env_ids), device=self.device, dtype=torch.long)
+            self._init_task(ids)
 
     def _apply_action(self):
         # ── ROOT CAUSE FIX: action 이동평균 (3-step) ──
@@ -234,12 +381,16 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET
             self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=flat_quat)
 
-        # 골 마커 갱신 — 각 로봇의 현재 목표 위치(연속 골이면 매번 바뀜)에 색 구 표시
-        g = self._goal_pos_w.reshape(-1, 2)                                   # (num_envs*N, 2) world
-        z = torch.full((g.shape[0], 1), GOAL_MARKER_Z, device=self.device)
-        trans = torch.cat([g, z], dim=1)
-        midx = torch.arange(N_ROBOTS, device=self.device).repeat(self.num_envs)
-        self._goal_markers.visualize(translations=trans, marker_indices=midx)
+        # 마커 갱신
+        if self._task_cycle:
+            self._update_task_markers()
+        else:
+            # 랜덤 골: 로봇별 목적지 색 구
+            g = self._goal_pos_w.reshape(-1, 2)
+            z = torch.full((g.shape[0], 1), GOAL_MARKER_Z, device=self.device)
+            trans = torch.cat([g, z], dim=1)
+            midx = torch.arange(N_ROBOTS, device=self.device).repeat(self.num_envs)
+            self._goal_markers.visualize(translations=trans, marker_indices=midx)
 
     def _setup_scene(self):
         # ── 로봇: 물리는 큐브(model_9999 동역학 100% 보존), 외형만 iw.hub ──
@@ -425,7 +576,9 @@ def main():
     env_cfg.diff_drive_turn_gain  = args.turn_gain
     env_cfg.visual_yaw_align      = args.visual_yaw_align   # 시각만 diff-drive (회피 100% 보존)
     env_cfg.yaw_align_gain        = args.yaw_align_gain
-    env_cfg.continuous_goals      = args.continuous_goals   # 도달 즉시 새 골 — 끊임없이 일함
+    env_cfg.task_cycle            = args.task_cycle          # 선반↔스테이션 운반 사이클
+    # 운반 사이클이 골을 직접 구동하므로 랜덤 연속골은 끔(이중 구동 방지)
+    env_cfg.continuous_goals      = args.continuous_goals and not args.task_cycle
     if args.max_omega is not None:
         env_cfg.max_omega = args.max_omega
     # 커리큘럼 모델 데모: 학습 종료 max_vy(예: 0.3)와 동일 동역학으로 재생

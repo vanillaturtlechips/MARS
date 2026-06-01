@@ -122,6 +122,8 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     goal_min_dist: float = 1.0
     # 데모 연출: 도달 즉시 새 골 부여(끊임없이 일하게) + all_reached 종료 안 함. 학습은 False 유지.
     continuous_goals: bool = False
+    # 데모 연출: 선반↔스테이션 운반 사이클(데모 env가 _goal_pos_w를 상태기계로 구동). 학습은 False.
+    task_cycle: bool = False
 
     # MPG 가중치 (SAFE_DIST 마스킹과 조합)
     # alpha↑: goal tracking 강화 / beta: SAFE_DIST 내 반발력만 작동
@@ -683,14 +685,17 @@ class WarehouseMARLEnv(DirectRLEnv):
                 d = (positions[i] - positions[j]).norm(dim=1)
                 collision |= (d < ROBOT_COLLISION_DIST)
 
-        # ── 데모 연속 골: 도달한 로봇에 즉시 새 골 부여 → 끊임없이 일함. all_reached 종료 억제 ──
+        # ── 데모 연속 골: 도달한 로봇에 즉시 새(랜덤) 골 부여 → 끊임없이 일함 ──
         if self.cfg.continuous_goals:
             for i in range(N_ROBOTS):
                 reached_i = (positions[i] - self._goal_pos_w[:, i]).norm(dim=1) < self.cfg.goal_radius
                 idx = reached_i.nonzero(as_tuple=True)[0]
                 if idx.numel() > 0:
                     self._goal_pos_w[idx, i] = self._sample_goal(idx)
-            all_reached = torch.zeros_like(all_reached)   # 도달로는 에피소드 안 끝냄(충돌/이탈만)
+        # 연속 골/운반 사이클 모두 도달로는 에피소드 안 끝냄(충돌/이탈만 리셋).
+        # 운반 사이클의 골 갱신은 데모 env._get_dones 오버라이드(_advance_task)가 담당.
+        if self.cfg.continuous_goals or self.cfg.task_cycle:
+            all_reached = torch.zeros_like(all_reached)
 
         terminated = all_reached | any_oob | collision
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
