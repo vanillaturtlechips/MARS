@@ -36,6 +36,11 @@ parser.add_argument("--max_vy", type=float, default=None,
                          "--diff_drive(vy=0 강제)와 달리 학습 종료값 정확 재현.")
 parser.add_argument("--extended_obs", action="store_true", default=False,
                     help="obs 19D 정책 재생 (학습 시 --extended_obs로 훈련된 모델).")
+parser.add_argument("--visual_yaw_align", action="store_true", default=False,
+                    help="시각만 diff-drive: vx/vy 유지(strafe 보존) + omega만 진행방향 자동 정렬. "
+                         "Amazon Kiva 방식. 회피 100% 유지 + 외형 diff-drive. 재학습 0.")
+parser.add_argument("--yaw_align_gain", type=float, default=4.0,
+                    help="yaw 정렬 속도 (클수록 빨리 회전해 따라감)")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -345,6 +350,8 @@ def main():
     env_cfg.disable_strafe = args.diff_drive   # diff-drive 모델은 학습과 동일하게 vy 차단
     env_cfg.diff_drive_controller = args.diff_drive_ctrl   # 계층 컨트롤러(재학습 0)
     env_cfg.diff_drive_turn_gain  = args.turn_gain
+    env_cfg.visual_yaw_align      = args.visual_yaw_align   # 시각만 diff-drive (회피 100% 보존)
+    env_cfg.yaw_align_gain        = args.yaw_align_gain
     if args.max_omega is not None:
         env_cfg.max_omega = args.max_omega
     # 커리큘럼 모델 데모: 학습 종료 max_vy(예: 0.3)와 동일 동역학으로 재생

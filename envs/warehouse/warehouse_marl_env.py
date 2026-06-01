@@ -98,6 +98,14 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     diff_drive_controller: bool = False
     diff_drive_turn_gain: float = 3.0        # 방향오차→omega 게인(클수록 빨리 돌아 향함)
 
+    # 시각만 diff-drive (yaw 자동 정렬) — 회피 능력 손상 0, 외형만 진행방향 바라봄.
+    #   vx/vy는 정책 그대로(strafe 보존, S5/S6 유지) → 물리 큐브가 진짜로 옆이동
+    #   omega만 자동으로 속도 방향 정렬 → 몸이 가는 방향 바라봄 = diff-drive 시각
+    #   Amazon Kiva 방식. (D) 컨트롤러와 차이: vy 안 죽임, omega만 정렬
+    visual_yaw_align: bool = False
+    yaw_align_gain: float = 4.0              # yaw 오차→omega 게인(클수록 빨리 정렬)
+    yaw_align_min_speed: float = 0.15        # 이 속도 미만이면 yaw 안 돌림(정지 시 빙빙 방지)
+
     # 확장 obs: 가장 가까운 장애물 body-frame xy(2D) 추가 — diff-drive 회피 학습용.
     #   17D(기본)에서 19D로 확장. 정책이 "왼쪽 장애물 → 오른쪽 turn" 식의 spatial 판단 가능해짐.
     #   model_10998(17D) 호환 깨짐 → from-scratch 재학습 필요. (False=기존 호환 보존)
@@ -422,6 +430,25 @@ class WarehouseMARLEnv(DirectRLEnv):
                 # 정렬된 만큼만 전진(향하는 중엔 감속, 다 돌면 풀속도) → 옆걸음 0
                 vx_b = desired_speed * torch.relu(torch.cos(heading_err))
                 vy_b = torch.zeros_like(vx_b)
+
+            if self.cfg.visual_yaw_align:
+                # ── 시각만 diff-drive: vx/vy 유지(strafe 보존) + omega만 진행방향 정렬 ──
+                #   물리는 holonomic 그대로(S5/S6 회피 100% 보존)
+                #   몸 yaw는 가는 방향 향함 → 외형 = diff-drive
+                #   정책 omega 무시(자동 정렬로 대체)
+                v_world_x = cos_yaw * vx_b - sin_yaw * vy_b   # 현재 적용될 world 속도
+                v_world_y = sin_yaw * vx_b + cos_yaw * vy_b
+                v_mag = torch.sqrt(v_world_x * v_world_x + v_world_y * v_world_y)
+                desired_yaw = torch.atan2(v_world_y, v_world_x)
+                yaw_err = desired_yaw - yaw
+                # wrap to [-pi, pi]
+                yaw_err = torch.atan2(torch.sin(yaw_err), torch.cos(yaw_err))
+                # 충분히 움직일 때만 yaw 정렬 (정지 시 빙빙 방지)
+                moving = (v_mag > self.cfg.yaw_align_min_speed).float()
+                omega = moving * torch.clamp(
+                    self.cfg.yaw_align_gain * yaw_err,
+                    -self.cfg.max_omega, self.cfg.max_omega,
+                )
 
             # 방전 시 속도 급감 — battery 낮으면 못 움직임 → 충전이 goal 도달의 전제
             if self.cfg.enable_battery:
