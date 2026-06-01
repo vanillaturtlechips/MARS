@@ -120,6 +120,8 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     goal_radius: float = 0.35
     goal_range: float = 4.0
     goal_min_dist: float = 1.0
+    # 데모 연출: 도달 즉시 새 골 부여(끊임없이 일하게) + all_reached 종료 안 함. 학습은 False 유지.
+    continuous_goals: bool = False
 
     # MPG 가중치 (SAFE_DIST 마스킹과 조합)
     # alpha↑: goal tracking 강화 / beta: SAFE_DIST 내 반발력만 작동
@@ -681,6 +683,15 @@ class WarehouseMARLEnv(DirectRLEnv):
                 d = (positions[i] - positions[j]).norm(dim=1)
                 collision |= (d < ROBOT_COLLISION_DIST)
 
+        # ── 데모 연속 골: 도달한 로봇에 즉시 새 골 부여 → 끊임없이 일함. all_reached 종료 억제 ──
+        if self.cfg.continuous_goals:
+            for i in range(N_ROBOTS):
+                reached_i = (positions[i] - self._goal_pos_w[:, i]).norm(dim=1) < self.cfg.goal_radius
+                idx = reached_i.nonzero(as_tuple=True)[0]
+                if idx.numel() > 0:
+                    self._goal_pos_w[idx, i] = self._sample_goal(idx)
+            all_reached = torch.zeros_like(all_reached)   # 도달로는 에피소드 안 끝냄(충돌/이탈만)
+
         terminated = all_reached | any_oob | collision
         timed_out  = self.episode_length_buf >= self.max_episode_length - 1
 
@@ -715,6 +726,27 @@ class WarehouseMARLEnv(DirectRLEnv):
     # ------------------------------------------------------------------
     # Reset
     # ------------------------------------------------------------------
+    def _sample_goal(self, env_ids_t: torch.Tensor) -> torch.Tensor:
+        """주어진 env들에 대해 선반과 안 겹치는 목표 1개씩 샘플(rejection). (n,2) world 좌표."""
+        n = env_ids_t.shape[0]
+        origins = self.scene.env_origins[env_ids_t, :2]
+        angle = sample_uniform(-math.pi, math.pi, (n,), device=self.device)
+        dist  = sample_uniform(self.cfg.goal_min_dist, self.cfg.goal_range, (n,), device=self.device)
+        candidates = origins + torch.stack([dist * torch.cos(angle), dist * torch.sin(angle)], dim=1)
+        bad = _goal_in_shelf(candidates - origins)
+        for _ in range(20):
+            if not bad.any():
+                break
+            rem = bad.nonzero(as_tuple=True)[0]
+            n_rem = rem.shape[0]
+            a2 = sample_uniform(-math.pi, math.pi, (n_rem,), device=self.device)
+            d2 = sample_uniform(self.cfg.goal_min_dist, self.cfg.goal_range, (n_rem,), device=self.device)
+            cand2 = origins[rem] + torch.stack([d2 * torch.cos(a2), d2 * torch.sin(a2)], dim=1)
+            b2 = _goal_in_shelf(cand2 - origins[rem])
+            candidates[rem[~b2]] = cand2[~b2]
+            bad[rem[~b2]] = False
+        return candidates
+
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
             env_ids = self.robots[0]._ALL_INDICES
@@ -748,27 +780,7 @@ class WarehouseMARLEnv(DirectRLEnv):
 
         # 로봇별 목표 샘플링 (선반과 겹치지 않도록)
         for i in range(N_ROBOTS):
-            angle = sample_uniform(-math.pi, math.pi, (n,), device=self.device)
-            dist  = sample_uniform(self.cfg.goal_min_dist, self.cfg.goal_range, (n,), device=self.device)
-            origins = self.scene.env_origins[env_ids_t, :2]
-            candidates = origins + torch.stack(
-                [dist * torch.cos(angle), dist * torch.sin(angle)], dim=1
-            )
-            local = candidates - origins
-            bad   = _goal_in_shelf(local)
-            for _ in range(20):
-                if not bad.any():
-                    break
-                rem = bad.nonzero(as_tuple=True)[0]
-                n_rem = rem.shape[0]
-                a2 = sample_uniform(-math.pi, math.pi, (n_rem,), device=self.device)
-                d2 = sample_uniform(self.cfg.goal_min_dist, self.cfg.goal_range, (n_rem,), device=self.device)
-                cand2 = origins[rem] + torch.stack([d2 * torch.cos(a2), d2 * torch.sin(a2)], dim=1)
-                b2 = _goal_in_shelf(cand2 - origins[rem])
-                candidates[rem[~b2]] = cand2[~b2]
-                bad[rem[~b2]] = False
-
-            self._goal_pos_w[env_ids_t, i] = candidates
+            self._goal_pos_w[env_ids_t, i] = self._sample_goal(env_ids_t)
 
         # reset된 env의 prev_positions를 현재 위치로 동기화 (delta = 0 보장)
         if self._prev_positions is not None:

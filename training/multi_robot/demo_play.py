@@ -41,6 +41,10 @@ parser.add_argument("--visual_yaw_align", action="store_true", default=False,
                          "Amazon Kiva 방식. 회피 100% 유지 + 외형 diff-drive. 재학습 0.")
 parser.add_argument("--yaw_align_gain", type=float, default=4.0,
                     help="yaw 정렬 속도 (클수록 빨리 회전해 따라감)")
+parser.add_argument("--continuous_goals", dest="continuous_goals", action="store_true", default=True,
+                    help="골 도달 즉시 새 골 부여 — 끊임없이 일하는 창고 연출(기본 ON)")
+parser.add_argument("--oneshot_goals", dest="continuous_goals", action="store_false",
+                    help="연속 골 끄기(한 번 가고 정지 — 학습과 동일 동작)")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -68,6 +72,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane, UsdFileCfg
 from isaaclab.utils import configclass
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import euler_xyz_from_quat, sample_uniform
 # quat_apply_inverse는 신규 Isaac Lab(RunPod) 이름. 구버전(Paperspace v2.0.0)은 quat_rotate_inverse(동일 기능)로 폴백
@@ -131,6 +136,10 @@ VIS_TURN_GAIN      = 0.25               # 목표방향으로 조향 게인(0~1)
 VIS_TURN_MAX       = 0.06               # 스텝당 최대 회전(rad) — 낮을수록 부드럽게 돎(코너 반경↑)
 VIS_DRIVE_GAIN     = 1.0                # 거리 대비 전진 비율(1=매 스텝 따라잡기 시도)
 VIS_SPEED_MAX      = 0.30               # 스텝당 최대 전진(m) — 목표 리스폰 순간 순간이동 방지
+# 골 마커 색(로봇별) — 어디로 가는지 보여서 '일하는' 느낌. 로봇 컬러와 매칭 권장.
+GOAL_COLORS        = [(0.10, 0.90, 0.30), (0.95, 0.25, 0.20), (0.25, 0.50, 1.0)]
+GOAL_MARKER_RADIUS = 0.15
+GOAL_MARKER_Z      = 0.12               # 바닥에 살짝 띄운 디스크/구 높이
 # ════════════════════════════════════════════════════════════════════════
 
 
@@ -138,6 +147,9 @@ class WarehouseDemoEnvCfg(WarehouseMARLEnvCfg):
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=1, env_spacing=14.0, replicate_physics=True
     )
+    # 연속 골 데모: 에피소드 타임아웃 리셋(=스폰 텔레포트)을 길게 늘려 영상 내내 매끄럽게.
+    # 충돌/이탈 리셋은 그대로 유지(회피 실패 시 자연 리셋).
+    episode_length_s = 200.0
 
 
 class WarehouseDemoEnv(WarehouseMARLEnv):
@@ -157,6 +169,20 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         # action 이동평균 버퍼 — 정책 출력 노이즈로 인한 cube velocity 매-step 점프 차단.
         # 이게 진짜 떨림 원인. 시각 LERP는 증상 가림용이고 이게 root cause fix.
         self._prev_actions = None
+        # 골 마커 — 로봇이 향하는 목적지를 색 구로 표시(목적 가시화 → '일하는' 연출)
+        marker_cfg = VisualizationMarkersCfg(
+            prim_path="/Visuals/goal_markers",
+            markers={
+                f"g{i}": sim_utils.SphereCfg(
+                    radius=GOAL_MARKER_RADIUS,
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=GOAL_COLORS[i % len(GOAL_COLORS)],
+                        emissive_color=GOAL_COLORS[i % len(GOAL_COLORS)],
+                    ),
+                ) for i in range(N_ROBOTS)
+            },
+        )
+        self._goal_markers = VisualizationMarkers(marker_cfg)
 
     def _apply_action(self):
         # ── ROOT CAUSE FIX: action 이동평균 (3-step) ──
@@ -207,6 +233,13 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             out_pos = pos.clone()
             out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET
             self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=flat_quat)
+
+        # 골 마커 갱신 — 각 로봇의 현재 목표 위치(연속 골이면 매번 바뀜)에 색 구 표시
+        g = self._goal_pos_w.reshape(-1, 2)                                   # (num_envs*N, 2) world
+        z = torch.full((g.shape[0], 1), GOAL_MARKER_Z, device=self.device)
+        trans = torch.cat([g, z], dim=1)
+        midx = torch.arange(N_ROBOTS, device=self.device).repeat(self.num_envs)
+        self._goal_markers.visualize(translations=trans, marker_indices=midx)
 
     def _setup_scene(self):
         # ── 로봇: 물리는 큐브(model_9999 동역학 100% 보존), 외형만 iw.hub ──
@@ -392,6 +425,7 @@ def main():
     env_cfg.diff_drive_turn_gain  = args.turn_gain
     env_cfg.visual_yaw_align      = args.visual_yaw_align   # 시각만 diff-drive (회피 100% 보존)
     env_cfg.yaw_align_gain        = args.yaw_align_gain
+    env_cfg.continuous_goals      = args.continuous_goals   # 도달 즉시 새 골 — 끊임없이 일함
     if args.max_omega is not None:
         env_cfg.max_omega = args.max_omega
     # 커리큘럼 모델 데모: 학습 종료 max_vy(예: 0.3)와 동일 동역학으로 재생
