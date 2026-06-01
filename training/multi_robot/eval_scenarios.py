@@ -34,6 +34,11 @@ parser.add_argument("--diff_drive_ctrl", action="store_true", default=False,
 parser.add_argument("--turn_gain", type=float, default=3.0, help="컨트롤러 방향오차→omega 게인")
 parser.add_argument("--max_omega", type=float, default=None,
                     help="회전 권한(예: 2.6). None=기본 유지")
+parser.add_argument("--max_vy", type=float, default=None,
+                    help="옆걸음 상한(eval 동역학을 학습 종료 상태와 정합). "
+                         "예: 커리큘럼이 max_vy=0.3에서 끝났으면 --max_vy 0.3. "
+                         "--diff_drive(vy=0 강제)와 달리 학습 종료값을 정확히 재현 가능. "
+                         "None=cfg 기본(1.0). --diff_drive와 동시 사용 비권장(strafe_curriculum=False라 disable_strafe가 우선).")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 args.headless = getattr(args, "headless", False)
@@ -306,6 +311,15 @@ def main():
     env_cfg.diff_drive_turn_gain  = args.turn_gain
     if args.max_omega is not None:
         env_cfg.max_omega = args.max_omega
+    # 커리큘럼 모델 eval: 학습 종료 시 _cur_max_vy(예: 0.3)와 동일하게 cfg.max_vy 설정.
+    # disable_strafe(=True) 경로는 eff_max_vy=0으로 *강제*하므로 부정확. --max_vy로 정확 재현.
+    if args.max_vy is not None:
+        env_cfg.max_vy = args.max_vy
+        # --diff_drive와 동시 지정 시 disable_strafe가 우선해 vy=0 되니 경고
+        if args.diff_drive:
+            print(f"[Eval] 경고: --diff_drive(vy=0)와 --max_vy {args.max_vy} 동시 — disable_strafe가 우선합니다. --diff_drive를 빼세요.")
+        else:
+            print(f"[Eval] max_vy 오버라이드: {args.max_vy} (학습 종료 상태와 정합)")
     if args.enable_obstacles:
         print("[Eval] 동적 장애물 활성화 — 회피/도달 측정")
     if args.enable_battery:

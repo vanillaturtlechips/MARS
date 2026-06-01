@@ -30,6 +30,10 @@ parser.add_argument("--turn_gain", type=float, default=3.0,
                     help="컨트롤러 방향오차→omega 게인(클수록 빨리 돌아 향함)")
 parser.add_argument("--max_omega", type=float, default=None,
                     help="회전 권한(예: 2.6). None=기본 유지")
+parser.add_argument("--max_vy", type=float, default=None,
+                    help="옆걸음 상한(데모 동역학을 학습 종료 상태와 정합). "
+                         "예: 커리큘럼이 max_vy=0.3에서 끝났으면 --max_vy 0.3 (--diff_drive 빼고). "
+                         "--diff_drive(vy=0 강제)와 달리 학습 종료값 정확 재현.")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -340,6 +344,13 @@ def main():
     env_cfg.diff_drive_turn_gain  = args.turn_gain
     if args.max_omega is not None:
         env_cfg.max_omega = args.max_omega
+    # 커리큘럼 모델 데모: 학습 종료 max_vy(예: 0.3)와 동일 동역학으로 재생
+    if args.max_vy is not None:
+        env_cfg.max_vy = args.max_vy
+        if args.diff_drive:
+            print(f"[Demo] 경고: --diff_drive(vy=0)와 --max_vy {args.max_vy} 동시 — disable_strafe가 우선해 vy=0 됨. --diff_drive 빼세요.")
+        else:
+            print(f"[Demo] max_vy 오버라이드: {args.max_vy} (학습 종료 상태와 정합)")
 
     env = WarehouseDemoEnv(env_cfg, render_mode="rgb_array" if args.video else None)
 
