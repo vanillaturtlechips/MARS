@@ -166,6 +166,12 @@ DOCK_USD_CANDIDATES = [f"{_PROPS}/SM_CratePlastic_B_1.usd", f"{_PROPS}/SM_CrateP
 BOX_USD_SCALE    = (1.0, 1.0, 1.0)      # 골판지 박스 스케일(에셋 native 크기 보고 조정)
 PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케일
 DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
+# ── 선반 적재물(꾸미기): 비어 보이는 랙에 박스를 올림(순수 비주얼, 충돌 없음) ──
+SHELF_GOODS         = True               # False면 빈 선반
+SHELF_GOODS_LEVELS  = [0.35, 1.25]       # 박스 얹는 높이(m) — 랙 보드에 맞춰 조정
+SHELF_GOODS_PER_ROW = 3                  # 한 층에 박스 개수(선반 x축 분포)
+SHELF_GOODS_XSPAN   = 2.0                # 박스 분포 x폭(선반 길이 3.0 안쪽)
+SHELF_GOODS_SCALE   = (1.0, 1.0, 1.0)    # 적재 박스 스케일
 # ════════════════════════════════════════════════════════════════════════
 
 
@@ -284,6 +290,27 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                                               translation=(0.0, 0.0, BOX_Z_HIDDEN), scale=BOX_USD_SCALE)
             if i == 0:
                 print(f"[Demo] 운반 박스: {got.rsplit('/',1)[-1] if got else '폴백(갈색 큐브)'}")
+
+    def _spawn_shelf_goods(self):
+        """선반(랙) 위에 박스 적재물을 올려 '재고 있는 창고'처럼. 순수 비주얼."""
+        box_fb = sim_utils.CuboidCfg(
+            size=(0.4, 0.4, 0.4),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=BOX_COLOR))
+        n = max(SHELF_GOODS_PER_ROW, 1)
+        printed = False
+        for s_i, (cx, cy, _cz) in enumerate(SHELF_CENTERS):
+            for l_i, lz in enumerate(SHELF_GOODS_LEVELS):
+                for k in range(n):
+                    gx = cx + (k - (n - 1) / 2.0) * (SHELF_GOODS_XSPAN / n)
+                    # 박스 변형 다양화: 후보 시작점을 셀마다 회전
+                    off = (s_i + l_i + k) % len(BOX_USD_CANDIDATES)
+                    cands = BOX_USD_CANDIDATES[off:] + BOX_USD_CANDIDATES[:off]
+                    got = self._spawn_usd_or_fallback(
+                        f"/World/envs/env_0/ShelfGoods_{s_i}_{l_i}_{k}",
+                        cands, box_fb, translation=(gx, cy, lz), scale=SHELF_GOODS_SCALE)
+                    if not printed:
+                        print(f"[Demo] 선반 적재물: {got.rsplit('/',1)[-1] if got else '폴백(큐브)'}")
+                        printed = True
 
     def _setup_task_visuals(self):
         """운반 사이클 좌표 텐서 + 운반 박스 XFormPrim 핸들(매 스텝 로봇 위로 이동)."""
@@ -590,6 +617,10 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                     for e_i, ex in enumerate((-1.45, 1.45)):       # 양끝 상단 가로빔
                         endbar.func(f"{base}/end_{e_i}", endbar, translation=(cx + ex, cy, H - 0.1))
                 print(f"[Demo] 절차적 톨 랙 생성 (height={H}m, 5단 선반)")
+
+        # ── 선반 적재물: 빈 랙에 박스를 올려 재고 있는 창고처럼(순수 비주얼) ──
+        if SHELF_GOODS:
+            self._spawn_shelf_goods()
 
         # ── 운반 사이클 프롭: 픽업 팔레트/하차 크레이트(정적) + 운반 박스(로봇당) ──
         #    clone 전 env_0에 스폰 → env_.*로 복제. cfg로 게이트(랜덤골 모드면 생략).
