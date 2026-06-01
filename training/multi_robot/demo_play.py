@@ -148,13 +148,24 @@ GOAL_MARKER_Z      = 0.12               # 바닥에 살짝 띄운 구 높이
 #    SHELF_CENTERS = (±2, ±2.5). 픽업 패드는 각 선반의 통로(중앙)쪽 면 앞에.
 PICK_POINTS = [(-2.0, 1.6), (2.0, 1.6), (-2.0, -1.6), (2.0, -1.6)]   # env-local
 DOCK_POINTS = [(-3.6, 0.0), (3.6, 0.0)]                              # 통로 양끝 패킹 도크
-PICK_PAD_COLOR  = (0.15, 0.85, 0.35)    # 픽업존(초록 원반)
-DOCK_PAD_COLOR  = (0.20, 0.55, 1.0)     # 하차존(파란 도크 패드)
-BOX_COLOR       = (0.60, 0.42, 0.22)    # 운반 박스(갈색)
+PICK_PAD_COLOR  = (0.15, 0.85, 0.35)    # 픽업존 폴백 색(초록 원반)
+DOCK_PAD_COLOR  = (0.20, 0.55, 1.0)     # 하차존 폴백 색(파란 도크 패드)
+BOX_COLOR       = (0.60, 0.42, 0.22)    # 운반 박스 폴백 색(갈색)
 PAD_Z           = 0.02                   # 바닥 패드 높이
 BOX_Z_ON_ROBOT  = 0.45                  # 운반 시 박스가 로봇 위에 얹히는 높이
 BOX_Z_HIDDEN    = -10.0                  # 비운반 시 박스 숨김(바닥 아래)
 REACH_EPS       = 0.10                   # 웨이포인트 도달 판정 여유(goal_radius에 가산)
+# ── 외부 에셋(Isaac Simple_Warehouse Props) 후보 — 첫 메시 성공 채택, 모두 실패 시 도형 폴백 ──
+_PROPS = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props"
+BOX_USD_CANDIDATES = [f"{_PROPS}/SM_CardBoxA_{n}.usd" for n in (1, 2, 3, 4)] + \
+                     [f"{_PROPS}/SM_CardBoxB_1.usd", f"{_PROPS}/SM_CardBoxC_1.usd", f"{_PROPS}/SM_CardBoxD_1.usd"]
+PALLET_USD_CANDIDATES = [f"{_PROPS}/SM_Pallet.usd", f"{_PROPS}/SM_PaletteA_01.usd",
+                         f"{_PROPS}/SM_CratePlastic_A_1.usd", f"{_PROPS}/SM_CratePlastic_A_2.usd"]
+DOCK_USD_CANDIDATES = [f"{_PROPS}/SM_CratePlastic_B_1.usd", f"{_PROPS}/SM_CratePlastic_C_1.usd",
+                       f"{_PROPS}/SM_CratePlastic_A_1.usd"]
+BOX_USD_SCALE    = (1.0, 1.0, 1.0)      # 골판지 박스 스케일(에셋 native 크기 보고 조정)
+PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케일
+DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
 # ════════════════════════════════════════════════════════════════════════
 
 
@@ -187,7 +198,7 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
 
         self._task_cycle = bool(getattr(self.cfg, "task_cycle", False))
         if self._task_cycle:
-            self._setup_task_markers()
+            self._setup_task_visuals()
             self._setup_task_state()
         else:
             # 랜덤 골 모드: 로봇별 목적지 색 구
@@ -206,39 +217,83 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             self._goal_markers = VisualizationMarkers(marker_cfg)
 
     # ── 운반 사이클 연출 ───────────────────────────────────────────────
-    def _setup_task_markers(self):
-        """바닥 픽업 패드(초록 원반)·하차 도크(파란 패드)·운반 박스 마커."""
+    @staticmethod
+    def _spawn_usd_or_fallback(prim_path, candidates, fallback_cfg, translation,
+                               orientation=(1.0, 0.0, 0.0, 0.0), scale=None):
+        """USD 후보를 순서대로 시도(메시 존재 확인), 모두 실패 시 fallback_cfg 스폰.
+        채택된 USD 경로(or None) 반환. 선반 스폰과 동일한 검증 패턴."""
+        import omni.usd
+        from pxr import UsdGeom, Usd
+        st = omni.usd.get_context().get_stage()
+        for cand in candidates:
+            ex = st.GetPrimAtPath(prim_path)
+            if ex.IsValid():
+                st.RemovePrim(ex.GetPath())
+            try:
+                cfg = sim_utils.UsdFileCfg(usd_path=cand, scale=scale) if scale \
+                    else sim_utils.UsdFileCfg(usd_path=cand)
+                cfg.func(prim_path, cfg, translation=translation, orientation=orientation)
+                pr = st.GetPrimAtPath(prim_path)
+                if pr.IsValid() and any(d.IsA(UsdGeom.Mesh) for d in Usd.PrimRange(pr)):
+                    # 순수 비주얼화: 충돌/리지드바디 비활성(로봇 막힘·박스 낙하 방지)
+                    try:
+                        from pxr import UsdPhysics
+                        for d in Usd.PrimRange(pr):
+                            if d.HasAPI(UsdPhysics.CollisionAPI):
+                                UsdPhysics.CollisionAPI(d).GetCollisionEnabledAttr().Set(False)
+                            if d.HasAPI(UsdPhysics.RigidBodyAPI):
+                                UsdPhysics.RigidBodyAPI(d).GetRigidBodyEnabledAttr().Set(False)
+                    except Exception:
+                        pass
+                    return cand
+            except Exception:
+                pass
+        ex = st.GetPrimAtPath(prim_path)
+        if ex.IsValid():
+            st.RemovePrim(ex.GetPath())
+        fallback_cfg.func(prim_path, fallback_cfg, translation=translation, orientation=orientation)
+        return None
+
+    def _spawn_task_props(self):
+        """_setup_scene에서 호출: 픽업 팔레트/하차 크레이트(정적) + 운반 박스(로봇당, env_0).
+        clone_environments 전에 env_0에 두면 env_.*로 복제됨."""
+        pick_fb = sim_utils.CylinderCfg(
+            radius=0.45, height=0.06,
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=PICK_PAD_COLOR, emissive_color=PICK_PAD_COLOR))
+        dock_fb = sim_utils.CuboidCfg(
+            size=(0.95, 0.95, 0.06),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=DOCK_PAD_COLOR, emissive_color=DOCK_PAD_COLOR))
+        box_fb = sim_utils.CuboidCfg(
+            size=(0.34, 0.34, 0.30),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=BOX_COLOR))
+        for p_i, (px, py) in enumerate(PICK_POINTS):
+            got = self._spawn_usd_or_fallback(f"/World/envs/env_0/PickPad_{p_i}",
+                                              PALLET_USD_CANDIDATES, pick_fb,
+                                              translation=(px, py, 0.0), scale=PALLET_USD_SCALE)
+            if p_i == 0:
+                print(f"[Demo] 픽업 프롭: {got.rsplit('/',1)[-1] if got else '폴백(초록 원반)'}")
+        for d_i, (dx, dy) in enumerate(DOCK_POINTS):
+            got = self._spawn_usd_or_fallback(f"/World/envs/env_0/DockPad_{d_i}",
+                                              DOCK_USD_CANDIDATES, dock_fb,
+                                              translation=(dx, dy, 0.0), scale=DOCK_USD_SCALE)
+            if d_i == 0:
+                print(f"[Demo] 하차 프롭: {got.rsplit('/',1)[-1] if got else '폴백(파란 패드)'}")
+        for i in range(N_ROBOTS):
+            got = self._spawn_usd_or_fallback(f"/World/envs/env_0/CarryBox_{i}",
+                                              BOX_USD_CANDIDATES, box_fb,
+                                              translation=(0.0, 0.0, BOX_Z_HIDDEN), scale=BOX_USD_SCALE)
+            if i == 0:
+                print(f"[Demo] 운반 박스: {got.rsplit('/',1)[-1] if got else '폴백(갈색 큐브)'}")
+
+    def _setup_task_visuals(self):
+        """운반 사이클 좌표 텐서 + 운반 박스 XFormPrim 핸들(매 스텝 로봇 위로 이동)."""
+        from isaacsim.core.prims import XFormPrim
         device = self.device
         self._pick_w = torch.tensor(PICK_POINTS, dtype=torch.float32, device=device)  # (P,2)
         self._dock_w = torch.tensor(DOCK_POINTS, dtype=torch.float32, device=device)  # (D,2)
-        # 정적 스테이션 패드 (픽업존 + 하차존) — 한 마커 세트에 두 타입
-        station_cfg = VisualizationMarkersCfg(
-            prim_path="/Visuals/stations",
-            markers={
-                "pick": sim_utils.CylinderCfg(
-                    radius=0.45, height=0.04,
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=PICK_PAD_COLOR, emissive_color=PICK_PAD_COLOR),
-                ),
-                "dock": sim_utils.CuboidCfg(
-                    size=(0.95, 0.95, 0.05),
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=DOCK_PAD_COLOR, emissive_color=DOCK_PAD_COLOR),
-                ),
-            },
-        )
-        self._station_markers = VisualizationMarkers(station_cfg)
-        # 운반 박스 (로봇당 1개, 비운반 시 바닥 아래로 숨김)
-        box_cfg = VisualizationMarkersCfg(
-            prim_path="/Visuals/carry_boxes",
-            markers={
-                "box": sim_utils.CuboidCfg(
-                    size=(0.34, 0.34, 0.30),
-                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=BOX_COLOR),
-                ),
-            },
-        )
-        self._box_markers = VisualizationMarkers(box_cfg)
+        self._carry_box_prims = [
+            XFormPrim(f"/World/envs/env_.*/CarryBox_{i}") for i in range(N_ROBOTS)
+        ]
 
     def _setup_task_state(self):
         E, device = self.num_envs, self.device
@@ -285,33 +340,17 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                     self._task_state[e, i] = 0
                     self._goal_pos_w[e, i] = self._pick_w[shelf] + origins[e]
 
-    def _update_task_markers(self):
-        device = self.device
-        origins = self.scene.env_origins[:, :2]                      # (E,2)
-        # 정적 스테이션 패드 (env마다 origin 더해 배치)
-        picks = (self._pick_w[None] + origins[:, None]).reshape(-1, 2)   # (E*P,2)
-        docks = (self._dock_w[None] + origins[:, None]).reshape(-1, 2)   # (E*D,2)
-        st_xy = torch.cat([picks, docks], dim=0)
-        st_z  = torch.full((st_xy.shape[0], 1), PAD_Z, device=device)
-        st_idx = torch.cat([
-            torch.zeros(picks.shape[0], dtype=torch.long, device=device),   # "pick"
-            torch.ones(docks.shape[0],  dtype=torch.long, device=device),   # "dock"
-        ])
-        self._station_markers.visualize(translations=torch.cat([st_xy, st_z], dim=1),
-                                        marker_indices=st_idx)
-        # 운반 박스: 운반 중이면 로봇 위, 아니면 바닥 아래로 숨김
-        box_xy, box_z = [], []
+    def _update_carry_boxes(self):
+        """운반 박스 prim을 로봇 위로(운반 중) 또는 바닥 아래로(숨김) 이동.
+        스테이션(픽업/하차)은 정적 prim이라 갱신 불필요."""
         for i in range(N_ROBOTS):
-            p = self.robots[i].data.root_pos_w[:, :2]
+            p = self.robots[i].data.root_pos_w                       # (E,3) world
             carrying = self._carrying[:, i]
-            box_xy.append(p)
-            box_z.append(torch.where(carrying,
-                                     torch.full_like(carrying, BOX_Z_ON_ROBOT, dtype=torch.float32),
-                                     torch.full_like(carrying, BOX_Z_HIDDEN,   dtype=torch.float32)))
-        bxy = torch.stack(box_xy, dim=1).reshape(-1, 2)             # (E*N,2)
-        bz  = torch.stack(box_z, dim=1).reshape(-1, 1)
-        self._box_markers.visualize(translations=torch.cat([bxy, bz], dim=1),
-                                    marker_indices=torch.zeros(bxy.shape[0], dtype=torch.long, device=device))
+            z = torch.where(carrying,
+                            p[:, 2] + BOX_Z_ON_ROBOT,
+                            torch.full_like(p[:, 2], BOX_Z_HIDDEN))
+            out = torch.stack([p[:, 0], p[:, 1], z], dim=1)
+            self._carry_box_prims[i].set_world_poses(positions=out)
 
     def _get_dones(self):
         terminated, time_out = super()._get_dones()
@@ -381,9 +420,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             out_pos[:, 2] = out_pos[:, 2] + VIS_Z_OFFSET
             self._robot_visuals[i].set_world_poses(positions=out_pos, orientations=flat_quat)
 
-        # 마커 갱신
+        # 마커/프롭 갱신
         if self._task_cycle:
-            self._update_task_markers()
+            self._update_carry_boxes()
         else:
             # 랜덤 골: 로봇별 목적지 색 구
             g = self._goal_pos_w.reshape(-1, 2)
@@ -551,6 +590,11 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                     for e_i, ex in enumerate((-1.45, 1.45)):       # 양끝 상단 가로빔
                         endbar.func(f"{base}/end_{e_i}", endbar, translation=(cx + ex, cy, H - 0.1))
                 print(f"[Demo] 절차적 톨 랙 생성 (height={H}m, 5단 선반)")
+
+        # ── 운반 사이클 프롭: 픽업 팔레트/하차 크레이트(정적) + 운반 박스(로봇당) ──
+        #    clone 전 env_0에 스폰 → env_.*로 복제. cfg로 게이트(랜덤골 모드면 생략).
+        if getattr(self.cfg, "task_cycle", False):
+            self._spawn_task_props()
 
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
