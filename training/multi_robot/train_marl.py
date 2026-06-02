@@ -61,6 +61,9 @@ parser.add_argument("--rew_evasive_turn", type=float, default=0.0,
                     help="확장보상: 가까운 장애물 반대방향 omega에 +. 권장 0.1. extended_obs=True 필요.")
 parser.add_argument("--rew_clearance", type=float, default=0.0,
                     help="확장보상: 정면 콘에 가까운 장애물 없을 때 +/step. 권장 0.05. extended_obs=True 필요.")
+parser.add_argument("--no_obs_norm", action="store_true", default=False,
+                    help="obs 정규화 끔(raw obs). model_10998(정규화 없이 학습)에서 warm-start할 때 규격 일치용. "
+                         "from_scratch엔 비권장(raw obs는 그래디언트 죽어 학습 안 됨).")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -86,7 +89,8 @@ from envs.warehouse.ippo_wrapper import IPPOReshapeWrapper
 ACT_DIM = 3
 
 
-def make_mappo_runner_cfg(num_envs: int, max_iter: int, exp_name: str = "warehouse_mappo") -> RslRlOnPolicyRunnerCfg:
+def make_mappo_runner_cfg(num_envs: int, max_iter: int, exp_name: str = "warehouse_mappo",
+                          obs_norm: bool = True) -> RslRlOnPolicyRunnerCfg:
     runner_cfg = RslRlOnPolicyRunnerCfg()
     runner_cfg.num_steps_per_env  = 24
     runner_cfg.max_iterations     = max_iter
@@ -94,11 +98,11 @@ def make_mappo_runner_cfg(num_envs: int, max_iter: int, exp_name: str = "warehou
     runner_cfg.experiment_name    = exp_name
     runner_cfg.run_name           = f"mappo_n{N_ROBOTS}_env{num_envs}"
     runner_cfg.logger             = "tensorboard"
-    # 정규화 ON 필수: raw obs는 스케일 커서 정책 그래디언트가 죽어 학습 안 됨(std 0.8 고정 확인).
-    # 이 rsl_rl은 empirical_normalization을 actor/critic_obs_normalization로 매핑하고 정규화 모듈을
-    # policy 안에 둠 → policy.state_dict()(=model_state_dict)에 저장됨. OnPolicyRunner.load로 복원.
-    # 단, 추론 스크립트도 동일 정규화 설정으로 policy를 만들어야 정규화 버퍼가 로드/적용됨.
-    runner_cfg.empirical_normalization = True
+    # 정규화: from_scratch는 ON 필수(raw obs는 그래디언트 죽어 학습 안 됨, std 0.8 고정 확인).
+    # warm-start(model_10998는 정규화 없이 학습됨)는 규격 일치 위해 OFF(--no_obs_norm).
+    #   이 rsl_rl은 empirical_normalization을 actor/critic_obs_normalization로 매핑, 정규화 모듈을
+    #   policy 안에 둬 model_state_dict에 저장(OnPolicyRunner.load로 복원). 추론 스크립트도 동일 설정 필요.
+    runner_cfg.empirical_normalization = obs_norm
 
     # Asymmetric Actor-Critic: actor obs ≠ critic obs
     runner_cfg.policy = RslRlPpoActorCriticCfg(
@@ -160,7 +164,10 @@ def main():
         exp_name = "warehouse_mappo_diffdrive_curr"   # 커리큘럼 전용(하드컷과도 분리)
     if args.extended_obs:
         exp_name = "warehouse_mappo_extobs"   # 확장 obs(19D) — 기존 17D와 호환 깨짐, 경로 분리
-    runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter, exp_name)
+    runner_cfg = make_mappo_runner_cfg(args.num_envs, args.max_iter, exp_name,
+                                       obs_norm=not args.no_obs_norm)
+    if args.no_obs_norm:
+        print("[MAPPO] obs 정규화 OFF (raw obs) — warm-start 규격 일치용")
     cfg_dict = runner_cfg.to_dict()
     cfg_dict["algorithm"]["class_name"] = "PPO"
     # 배터리: entropy_coef 0.01은 std 폭발(6.6), 0.005+clamp는 iter루프 부작용(episode 급감).
@@ -180,17 +187,32 @@ def main():
             runner.alg.policy.std.data.fill_(args.reset_noise_std)
             print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
     elif args.ippo_ckpt and not args.from_scratch:
-        print(f"[MAPPO] actor partial 로드 (IPPO→MAPPO): {args.ippo_ckpt}")
+        print(f"[MAPPO] actor 로드 (제로패딩 warm-start): {args.ippo_ckpt}")
         ckpt = torch.load(args.ippo_ckpt, map_location=env.device, weights_only=False)
         sd = ckpt.get("model_state_dict", ckpt)
         actor_sd = {k: v for k, v in sd.items() if k.startswith("actor.")}
-        # obs 차원이 다르면(battery: 17→20) 입력층 size mismatch → shape 일치 레이어만 transfer
         model_sd = runner.alg.policy.state_dict()
-        filtered = {k: v for k, v in actor_sd.items()
-                    if k in model_sd and v.shape == model_sd[k].shape}
-        skipped = [k for k in actor_sd if k not in filtered]
-        runner.alg.policy.load_state_dict(filtered, strict=False)
-        print(f"[MAPPO] actor {len(filtered)}층 transfer | 입력층 등 {len(skipped)}개 새로 초기화: {skipped}")
+        # ── 제로패딩 입력층 이식: obs 17→19(확장) 시 입력층(actor.0.weight, 256×17→256×19)을
+        #    버리지 않고 [기존 17칸 복사 + 새 칸 0]으로 키움. 새 dim은 per-robot obs '끝'에
+        #    붙으므로(끝 2열) 0초기화하면 시작 시점 출력이 원본과 동일 → model_10998의 회피 능력
+        #    100% 보존하면서, 학습으로 새 방향 정보를 점진 활용(선반 회피 추가 학습).
+        new_sd, copied, grown, skipped = {}, [], [], []
+        for k, v in actor_sd.items():
+            if k not in model_sd:
+                skipped.append(k); continue
+            tgt = model_sd[k]
+            if v.shape == tgt.shape:
+                new_sd[k] = v; copied.append(k)
+            elif (v.dim() == 2 and tgt.dim() == 2 and v.shape[0] == tgt.shape[0]
+                  and v.shape[1] < tgt.shape[1]):
+                w = tgt.clone()
+                w[:, :v.shape[1]] = v          # 기존 입력 가중치 복사
+                w[:, v.shape[1]:] = 0.0        # 새 입력(장애물 방향) 가중치 0 → 시작 영향 0
+                new_sd[k] = w; grown.append(f"{k}{tuple(v.shape)}→{tuple(tgt.shape)}")
+            else:
+                skipped.append(k)
+        runner.alg.policy.load_state_dict(new_sd, strict=False)
+        print(f"[MAPPO] 복사 {len(copied)}층 | 제로패딩 {grown} | 건너뜀 {skipped}")
         if args.reset_noise_std is not None:
             runner.alg.policy.std.data.fill_(args.reset_noise_std)
             print(f"[MAPPO] noise_std 강제 설정: {args.reset_noise_std}")
