@@ -619,21 +619,27 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         print("[Demo] iw.hub visual-only 로드 (물리: 큐브 유지)")
 
         # ── 바닥: 창고 USD (정렬 노브 적용), 실패 시 GroundPlane ───────
+        #    시나리오 데모는 부감 카메라를 쓰는데 창고 USD 지붕이 시야를 막음(하얗게 날아감).
+        #    → 시나리오 모드는 지붕/벽 없는 바닥판만 깔아 위에서 깔끔히 내려다보게 함.
         import math as _math
         _yaw = _math.radians(WAREHOUSE_ROT_DEG)
         _wq = (_math.cos(_yaw / 2), 0.0, 0.0, _math.sin(_yaw / 2))   # z축 yaw 쿼터니언
-        try:
-            warehouse_cfg = sim_utils.UsdFileCfg(
-                usd_path=WAREHOUSE_USD,
-                scale=(WAREHOUSE_SCALE, WAREHOUSE_SCALE, WAREHOUSE_SCALE),
-            )
-            warehouse_cfg.func("/World/Warehouse", warehouse_cfg,
-                               translation=WAREHOUSE_TRANSLATE,
-                               orientation=_wq)
-            print(f"[Demo] 창고 USD 로드 성공 (translate={WAREHOUSE_TRANSLATE}, rot={WAREHOUSE_ROT_DEG}°, scale={WAREHOUSE_SCALE})")
-        except Exception:
+        if getattr(self.cfg, "scenario_demo", False):
             spawn_ground_plane("/World/ground", GroundPlaneCfg())
-            print("[Demo] 창고 USD 없음, GroundPlane fallback")
+            print("[Demo] 시나리오 모드: 바닥판만(창고 지붕이 부감 시야 막음) — 랙/로봇은 그대로")
+        else:
+            try:
+                warehouse_cfg = sim_utils.UsdFileCfg(
+                    usd_path=WAREHOUSE_USD,
+                    scale=(WAREHOUSE_SCALE, WAREHOUSE_SCALE, WAREHOUSE_SCALE),
+                )
+                warehouse_cfg.func("/World/Warehouse", warehouse_cfg,
+                                   translation=WAREHOUSE_TRANSLATE,
+                                   orientation=_wq)
+                print(f"[Demo] 창고 USD 로드 성공 (translate={WAREHOUSE_TRANSLATE}, rot={WAREHOUSE_ROT_DEG}°, scale={WAREHOUSE_SCALE})")
+            except Exception:
+                spawn_ground_plane("/World/ground", GroundPlaneCfg())
+                print("[Demo] 창고 USD 없음, GroundPlane fallback")
 
         # ── 선반: cuboid (물리 충돌 항상 유지 — 로봇이 피하는 실제 장애물) ──
         #    외형은 산업용 금속 랙 느낌. 정렬 끝나면 SHOW_BOX_SHELVES=False로
