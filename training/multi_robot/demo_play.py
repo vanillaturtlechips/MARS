@@ -49,6 +49,14 @@ parser.add_argument("--task", dest="task_cycle", action="store_true", default=Tr
                     help="선반↔스테이션 운반 사이클 연출(픽업→하차 왕복+박스, 기본 ON)")
 parser.add_argument("--no_task", dest="task_cycle", action="store_false",
                     help="운반 사이클 끄고 랜덤 골(연속 골)로")
+parser.add_argument("--scenario_demo", action="store_true", default=False,
+                    help="실무 시나리오 4종 순차 시연(통로교행→교차로양보→스테이션경쟁→혼잡횡단). "
+                         "각 시나리오 콘솔 배너+색 골마커+자막 스케줄(logs/demo_videos/scenario_schedule.tsv). "
+                         "task/continuous 자동 OFF. 17D 모델 검증 경로(선반 미통과)라 박힘 없음.")
+parser.add_argument("--scn_hold", type=int, default=25,
+                    help="전원 도달 후 이만큼 스텝 유지하면 다음 시나리오로(성공 연출 여유)")
+parser.add_argument("--scn_max", type=int, default=240,
+                    help="시나리오당 최대 스텝(미도달이어도 이후 강제 전환)")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -153,6 +161,24 @@ GOAL_MARKER_Z      = 0.12               # 바닥에 살짝 띄운 구 높이
 PICK_POINTS = [(-2.0, 0.8), (2.0, 0.8), (-2.0, -0.8), (2.0, -0.8)]   # env-local
 DOCK_POINTS = [(-2.6, 0.0), (2.6, 0.0)]                              # 통로 패킹 도크(벽 안쪽)
 STUCK_STEPS = 180                        # 이 스텝(≈12s) 동안 골 못 닿으면 막힘→목적지 재배정
+# ── 시나리오 데모(--scenario_demo): 실무 상황 4종 순차 시연 ──────────────
+#    스폰/골은 eval_scenarios.py의 검증된 좌표(선반 내부 미통과)를 그대로 사용.
+#    17D 정책(model_10998)으로 의미있는 4종만(배터리/장애물 obs 필요한 S3/S6 제외).
+SCN_DEMO = [
+    {"label": "통로 교행 — 양방향 AGV 교차 통과",
+     "spawns": [(-3.0, 0.0), (3.0, 0.0), (0.0, 3.5)],
+     "goals":  [(3.0, 0.0), (-3.0, 0.0), (0.0, -3.5)]},          # eval S1_headon
+    {"label": "교차로 양보 — 3-way 교착 해소",
+     "spawns": [(0.0, 2.0), (-1.73, -1.0), (1.73, -1.0)],
+     "goals":  [(0.0, -2.0), (1.73, 1.0), (-1.73, 1.0)]},        # eval S2_3way_deadlock
+    {"label": "적재 스테이션 경쟁 — 동일 목표 순차 진입",
+     "spawns": [(-2.0, -1.5), (-2.0, 1.5), (3.0, 0.0)],
+     "goals":  [(2.0, 0.0), (2.0, 0.0), (-3.0, 0.0)]},           # eval S4_same_goal
+    {"label": "혼잡 통로 횡단 — 3방향 교차",
+     "spawns": [(-4.0, 0.0), (4.0, 0.3), (0.0, 4.0)],
+     "goals":  [(4.0, 0.0), (-4.0, 0.3), (0.0, -4.0)]},          # eval S5_mixed
+]
+SCN_SCHEDULE_PATH = "logs/demo_videos/scenario_schedule.tsv"   # 자막 burn-in용 (start_step\tlabel)
 PICK_PAD_COLOR  = (0.15, 0.85, 0.35)    # 픽업존 폴백 색(초록 원반)
 DOCK_PAD_COLOR  = (0.20, 0.55, 1.0)     # 하차존 폴백 색(파란 도크 패드)
 BOX_COLOR       = (0.60, 0.42, 0.22)    # 운반 박스 폴백 색(갈색)
@@ -226,6 +252,71 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                 },
             )
             self._goal_markers = VisualizationMarkers(marker_cfg)
+
+        # ── 시나리오 데모 상태 ──────────────────────────────────────────
+        self._scn_demo = bool(getattr(self.cfg, "scenario_demo", False))
+        if self._scn_demo:
+            self._scn_hold = int(getattr(self.cfg, "scn_hold", 25))
+            self._scn_max  = int(getattr(self.cfg, "scn_max", 240))
+            self._scn_idx  = 0
+            self._scn_step = 0          # 현재 시나리오 경과 스텝
+            self._scn_reach_hold = 0    # 전원 도달 연속 스텝
+            self._global_step = 0       # 영상 프레임 = 전역 스텝(자막 타이밍용)
+            import os as _os
+            _os.makedirs(_os.path.dirname(SCN_SCHEDULE_PATH), exist_ok=True)
+            # 새 실행마다 스케줄 초기화
+            with open(SCN_SCHEDULE_PATH, "w", encoding="utf-8") as _f:
+                _f.write("start_step\tlabel\n")
+            self._scn_apply(0)          # 첫 시나리오 즉시 배치(프레임0부터 정상)
+
+    # ── 시나리오 데모 ─────────────────────────────────────────────────
+    def _scn_apply(self, idx: int):
+        """idx 시나리오의 스폰으로 로봇 텔레포트 + 골 설정 + 콘솔 배너 + 스케줄 기록."""
+        scn = SCN_DEMO[idx]
+        all_ids = torch.arange(self.num_envs, device=self.device)
+        ox = self.scene.env_origins[:, 0]
+        oy = self.scene.env_origins[:, 1]
+        for i, robot in enumerate(self.robots):
+            state = robot.data.default_root_state.clone()
+            sx, sy = scn["spawns"][i]
+            gx, gy = scn["goals"][i]
+            state[:, 0] = ox + sx
+            state[:, 1] = oy + sy
+            state[:, 2] = 0.15
+            yaw = math.atan2(gy - sy, gx - sx)     # 목표를 바라보고 시작(자연스러운 출발)
+            state[:, 3] = math.cos(yaw / 2); state[:, 4] = 0.0
+            state[:, 5] = 0.0;               state[:, 6] = math.sin(yaw / 2)
+            state[:, 7:] = 0.0                      # 속도 0으로 리셋
+            robot.write_root_state_to_sim(state, all_ids)
+            self._goal_pos_w[:, i, 0] = ox + gx
+            self._goal_pos_w[:, i, 1] = oy + gy
+        self._scn_step = 0
+        self._scn_reach_hold = 0
+        print(f"\n[Scenario {idx+1}/{len(SCN_DEMO)}] {scn['label']}  (step {self._global_step})")
+        try:
+            with open(SCN_SCHEDULE_PATH, "a", encoding="utf-8") as _f:
+                _f.write(f"{self._global_step}\t{scn['label']}\n")
+        except Exception:
+            pass
+
+    def _scn_advance(self):
+        """매 스텝: 전원 도달(+hold) 또는 최대스텝 도달 시 다음 시나리오로 순환."""
+        self._scn_step += 1
+        self._global_step += 1
+        eps = self.cfg.goal_radius
+        reached = True
+        for i in range(N_ROBOTS):
+            d = (self.robots[i].data.root_pos_w[:, :2] - self._goal_pos_w[:, i]).norm(dim=1)
+            reached = reached and bool((d < eps).all().item())
+        self._scn_reach_hold = self._scn_reach_hold + 1 if reached else 0
+        ok   = self._scn_reach_hold >= self._scn_hold
+        over = self._scn_step >= self._scn_max
+        if ok or over:
+            status = "성공" if ok else "시간초과"
+            print(f"[Scenario {self._scn_idx+1}/{len(SCN_DEMO)}] {status} "
+                  f"({self._scn_step} steps)")
+            self._scn_idx = (self._scn_idx + 1) % len(SCN_DEMO)
+            self._scn_apply(self._scn_idx)
 
     # ── 운반 사이클 연출 ───────────────────────────────────────────────
     @staticmethod
@@ -400,6 +491,11 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
 
     def _get_dones(self):
         terminated, time_out = super()._get_dones()
+        if getattr(self, "_scn_demo", False):
+            self._scn_advance()
+            # 시나리오 데모: 충돌/타임아웃에도 자동 리셋(텔레포트) 금지 — 전환은 _scn_advance가 제어
+            z = torch.zeros_like(terminated)
+            return z, z
         if self._task_cycle:
             self._advance_task()
         return terminated, time_out
@@ -670,9 +766,16 @@ def main():
     env_cfg.diff_drive_turn_gain  = args.turn_gain
     env_cfg.visual_yaw_align      = args.visual_yaw_align   # 시각만 diff-drive (회피 100% 보존)
     env_cfg.yaw_align_gain        = args.yaw_align_gain
-    env_cfg.task_cycle            = args.task_cycle          # 선반↔스테이션 운반 사이클
-    # 운반 사이클이 골을 직접 구동하므로 랜덤 연속골은 끔(이중 구동 방지)
-    env_cfg.continuous_goals      = args.continuous_goals and not args.task_cycle
+    # 시나리오 데모는 task/continuous를 모두 끄고 골을 직접 구동(스폰 텔레포트+골 설정)
+    env_cfg.scenario_demo         = args.scenario_demo
+    env_cfg.scn_hold              = args.scn_hold
+    env_cfg.scn_max               = args.scn_max
+    env_cfg.task_cycle            = args.task_cycle and not args.scenario_demo   # 선반↔스테이션 운반 사이클
+    # 운반 사이클/시나리오가 골을 직접 구동하므로 랜덤 연속골은 끔(이중 구동 방지)
+    env_cfg.continuous_goals      = args.continuous_goals and not env_cfg.task_cycle and not args.scenario_demo
+    if args.scenario_demo:
+        print(f"[Demo] 시나리오 데모 모드: {len(SCN_DEMO)}종 순차 시연 "
+              f"(hold={args.scn_hold}, max={args.scn_max}/시나리오)")
     if args.max_omega is not None:
         env_cfg.max_omega = args.max_omega
     # 커리큘럼 모델 데모: 학습 종료 max_vy(예: 0.3)와 동일 동역학으로 재생
