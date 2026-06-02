@@ -64,6 +64,10 @@ parser.add_argument("--rew_clearance", type=float, default=0.0,
 parser.add_argument("--no_obs_norm", action="store_true", default=False,
                     help="obs 정규화 끔(raw obs). model_10998(정규화 없이 학습)에서 warm-start할 때 규격 일치용. "
                          "from_scratch엔 비권장(raw obs는 그래디언트 죽어 학습 안 됨).")
+parser.add_argument("--rew_shelf_prox", type=float, default=0.0,
+                    help="정적 선반 근접 페널티(표면 가까이 거리비례 -/step). 권장 -2.0. 선반 회피 직접 신호.")
+parser.add_argument("--goal_shelf_margin", type=float, default=0.8,
+                    help="목표를 선반에서 뗄 여유(작을수록 선반 근처/뒤 목표 → 우회 필수). 회피 학습엔 0.15 권장.")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -122,6 +126,8 @@ def main():
     env_cfg.extended_obstacle_obs = args.extended_obs
     env_cfg.rew_evasive_turn  = args.rew_evasive_turn
     env_cfg.rew_clearance     = args.rew_clearance
+    env_cfg.rew_shelf_prox    = args.rew_shelf_prox
+    env_cfg.goal_shelf_margin = args.goal_shelf_margin
     env_cfg.observation_space = obr * N_ROBOTS
     env_cfg.state_space       = obr * N_ROBOTS
     env_cfg.action_space      = ACT_DIM * N_ROBOTS          # 9

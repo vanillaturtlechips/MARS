@@ -71,11 +71,11 @@ def _shelf_aabb_dist(pos_xy: torch.Tensor) -> torch.Tensor:
     return min_dist
 
 
-def _goal_in_shelf(goal_xy: torch.Tensor) -> torch.Tensor:
-    """goal_xy (N,2) 중 선반 안에 있는 것을 True로 반환."""
+def _goal_in_shelf(goal_xy: torch.Tensor, margin: float = 0.8) -> torch.Tensor:
+    """goal_xy (N,2) 중 선반(+margin) 안에 있는 것을 True로 반환.
+    margin↓일수록 목표가 선반에 가까이/뒤에 생김(회피 학습용). 기본 0.8=기존(통로로 몰기)."""
     device = goal_xy.device
     inside = torch.zeros(goal_xy.shape[0], dtype=torch.bool, device=device)
-    margin = 0.8  # 로봇 반폭 + 선반 옆 여유(골이 선반에 바짝 안 붙고 통로로 몰리게)
     for cx, cy, _ in SHELF_CENTERS:
         in_x = (goal_xy[:, 0] - cx).abs() < SHELF_HALF[0] + margin
         in_y = (goal_xy[:, 1] - cy).abs() < SHELF_HALF[1] + margin

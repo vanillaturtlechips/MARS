@@ -116,10 +116,17 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
                                               # 권장 0.1 (충돌 -200 대비 회피 시도 sparse 신호 보강)
     rew_clearance: float    = 0.0            # 정면 콘에 장애물 없을 때 +/step
                                               # 권장 0.05 (회피 성공 결과에 매 step 양의 신호)
+    # 정적 선반 근접 페널티 — 표면 가까이 갈수록 거리 비례 벌점(선반 회피의 직접 신호).
+    #   기존엔 선반에 박아도 벌점 0(교착 시간낭비뿐)이라 회피를 안 배웠음. 기본 0=비활성.
+    rew_shelf_prox: float = 0.0              # 권장 -2.0 (표면 접촉 시 -2/step, 거리 비례 감쇠)
+    shelf_prox_dist: float = 0.6             # 이 거리(m) 이내부터 페널티 시작
 
     goal_radius: float = 0.35
     goal_range: float = 4.0
     goal_min_dist: float = 1.0
+    # 목표를 선반에서 얼마나 떼어 샘플할지(작을수록 선반 근처/뒤에 생겨 '돌아가기'를 강제).
+    #   기본 0.8=기존(트인 곳만). 회피 학습엔 0.15 권장(선반 옆/뒤 목표 → 우회 필수).
+    goal_shelf_margin: float = 0.8
     # 데모 연출: 도달 즉시 새 골 부여(끊임없이 일하게) + all_reached 종료 안 함. 학습은 False 유지.
     continuous_goals: bool = False
     # 데모 연출: 선반↔스테이션 운반 사이클(데모 env가 _goal_pos_w를 상태기계로 구동). 학습은 False.
@@ -351,14 +358,21 @@ class WarehouseMARLEnv(DirectRLEnv):
         n = pos_w.shape[0]
         env_origins_xy = self.scene.env_origins[:, :2]  # (N, 2)
 
-        # 선반 중심들 → 월드 좌표
-        shelf_xy = torch.tensor(
+        # 선반은 3m 긴 박스 → '중심'이 아니라 'AABB 가장 가까운 표면점'을 써야 회피에 유효.
+        #   중심을 쓰면 선반 끝에 있는 로봇이 엉뚱한 옆방향을 받아 벽 위치를 모름(회피 학습 불가).
+        shelf_c = torch.tensor(
             [[c[0], c[1]] for c in SHELF_CENTERS],
             device=self.device, dtype=torch.float32,
         )  # (S, 2)
-        shelf_world = env_origins_xy.unsqueeze(1) + shelf_xy.unsqueeze(0)  # (N, S, 2)
-        rel_shelf = shelf_world - pos_w.unsqueeze(1)                       # (N, S, 2)
-        dist_shelf = rel_shelf.norm(dim=2)                                 # (N, S)
+        shelf_world_c = env_origins_xy.unsqueeze(1) + shelf_c.unsqueeze(0)   # (N, S, 2) 중심(월드)
+        _half = torch.tensor([SHELF_HALF[0], SHELF_HALF[1]],
+                             device=self.device, dtype=torch.float32)         # (2,)
+        lo = shelf_world_c - _half
+        hi = shelf_world_c + _half
+        # 로봇 위치를 박스에 clamp → 박스 표면(밖이면)·로봇점(안이면) = 가장 가까운 점
+        nearest_pt = torch.minimum(torch.maximum(pos_w.unsqueeze(1), lo), hi)  # (N, S, 2)
+        rel_shelf  = nearest_pt - pos_w.unsqueeze(1)                           # (N, S, 2)
+        dist_shelf = rel_shelf.norm(dim=2)                                     # (N, S)
 
         # 동적 장애물 (등장한 것만)
         if self.cfg.enable_dynamic_obstacles:
@@ -607,6 +621,13 @@ class WarehouseMARLEnv(DirectRLEnv):
                 cdist = (local.unsqueeze(1) - _chargers.unsqueeze(0)).norm(dim=2).min(dim=1).values
                 not_at_goal = not_at_goal * (cdist >= self.cfg.charge_radius).float()  # 충전소 위면 면제
             per_robot[:, i] += (speed < 0.1).float() * not_at_goal * self.cfg.rew_stationary
+            # 정적 선반 근접 페널티 — 표면 < shelf_prox_dist 안으로 갈수록 거리 비례 벌점.
+            #   ramming/hugging을 직접 처벌 → "선반 돌아가기" 학습. rew_shelf_prox=0이면 무효.
+            if self.cfg.rew_shelf_prox != 0.0:
+                _local_i = robot.data.root_pos_w[:, :2] - self.scene.env_origins[:, :2]
+                _sd = _shelf_aabb_dist(_local_i)
+                _prox = ((self.cfg.shelf_prox_dist - _sd) / self.cfg.shelf_prox_dist).clamp(min=0.0)
+                per_robot[:, i] += self.cfg.rew_shelf_prox * _prox
             # diff-drive: 제자리 휙휙 회전 억제(|omega| 비례 페널티). rew_spin=0이면 무효.
             if self.cfg.rew_spin != 0.0:
                 per_robot[:, i] += self.cfg.rew_spin * self._actions[:, i, 2].abs()
@@ -738,7 +759,8 @@ class WarehouseMARLEnv(DirectRLEnv):
         angle = sample_uniform(-math.pi, math.pi, (n,), device=self.device)
         dist  = sample_uniform(self.cfg.goal_min_dist, self.cfg.goal_range, (n,), device=self.device)
         candidates = origins + torch.stack([dist * torch.cos(angle), dist * torch.sin(angle)], dim=1)
-        bad = _goal_in_shelf(candidates - origins)
+        _m = self.cfg.goal_shelf_margin   # 작을수록 선반 근처/뒤 목표 허용 → 우회 강제(회피 학습)
+        bad = _goal_in_shelf(candidates - origins, margin=_m)
         for _ in range(20):
             if not bad.any():
                 break
@@ -747,7 +769,7 @@ class WarehouseMARLEnv(DirectRLEnv):
             a2 = sample_uniform(-math.pi, math.pi, (n_rem,), device=self.device)
             d2 = sample_uniform(self.cfg.goal_min_dist, self.cfg.goal_range, (n_rem,), device=self.device)
             cand2 = origins[rem] + torch.stack([d2 * torch.cos(a2), d2 * torch.sin(a2)], dim=1)
-            b2 = _goal_in_shelf(cand2 - origins[rem])
+            b2 = _goal_in_shelf(cand2 - origins[rem], margin=_m)
             candidates[rem[~b2]] = cand2[~b2]
             bad[rem[~b2]] = False
         return candidates
