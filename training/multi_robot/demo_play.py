@@ -323,11 +323,20 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             cur_d.append(dmin)
             if dmin < self._scn_min_d[i]:
                 self._scn_min_d[i] = dmin
-        # 진단: 60스텝마다 로봇별 목표까지 현재거리 — 줄어들면 주행O, 안 줄면 좀비
-        if self._scn_step % 60 == 0:
-            print(f"   [진단] step{self._scn_step} 목표까지: "
-                  + "  ".join(f"R{i}={cur_d[i]:.2f}" for i in range(N_ROBOTS))
-                  + f"  (도달<{eps:.2f})")
+        # 진단: 30스텝마다 거리+위치+정책출력(action) — 정지 원인(정책0 vs 적용안됨) 판별
+        if self._scn_step == 1 or self._scn_step % 30 == 0:
+            pos_s = "  ".join(
+                f"R{i}@({float(self.robots[i].data.root_pos_w[:,0].min()):.2f},"
+                f"{float(self.robots[i].data.root_pos_w[:,1].min()):.2f})"
+                for i in range(N_ROBOTS))
+            act = getattr(self, "_actions", None)
+            if act is not None:
+                act_s = "  ".join(f"R{i}|a|={float(act[:, i, :].abs().mean()):.3f}"
+                                  for i in range(N_ROBOTS))
+            else:
+                act_s = "act=None"
+            dist_s = "  ".join(f"R{i}={cur_d[i]:.2f}" for i in range(N_ROBOTS))
+            print(f"   [진단] s{self._scn_step} 거리[{dist_s}] 위치[{pos_s}] 출력[{act_s}]")
         # 동시 도달이 아니라 '각 로봇이 한 번이라도 도달'이면 성공(동일목표/순차 진입도 인정)
         reached = bool(self._scn_reached_ever.all().item())
         self._scn_reach_hold = self._scn_reach_hold + 1 if reached else 0
