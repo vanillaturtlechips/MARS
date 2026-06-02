@@ -108,8 +108,19 @@ def load_policy(ckpt_path: str, device: str):
 
     import torch.nn as nn
 
-    norm_mean = raw.get("actor_normalizer.running_mean", None)
-    norm_var  = raw.get("actor_normalizer.running_var",  None)
+    # 정규화 버퍼 자동 탐색 — 이름이 버전마다 다름(actor_obs_normalizer.running_mean 등).
+    # critic쪽 정규화는 제외하고 actor obs 정규화의 mean/var/epsilon을 찾음.
+    def _find_norm(*subs):
+        for k, v in raw.items():
+            kl = k.lower()
+            if "critic" in kl:
+                continue
+            if all(s in kl for s in subs):
+                return v
+        return None
+    norm_mean = _find_norm("norm", "mean")
+    norm_var  = _find_norm("norm", "var")
+    norm_eps  = _find_norm("norm", "epsilon")
 
     # obs 차원 체크포인트에서 자동 감지 (17 or battery 20)
     ckpt_obs_dim = raw["actor.0.weight"].shape[1]
@@ -143,7 +154,8 @@ def load_policy(ckpt_path: str, device: str):
 
     if norm_mean is not None and norm_var is not None:
         _mean = norm_mean.to(device)
-        _std  = (norm_var.to(device) + 1e-8).sqrt()
+        _eps  = float(norm_eps) if norm_eps is not None else 1e-2   # rsl_rl EmpiricalNormalization 기본 1e-2
+        _std  = (norm_var.to(device) + _eps).sqrt()
 
         class NormalizedActor(nn.Module):
             def __init__(self, base: nn.Module):

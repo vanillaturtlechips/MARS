@@ -876,10 +876,19 @@ def main():
     env = RslRlVecEnvWrapper(env)
     env = IPPOReshapeWrapper(env, N_ROBOTS, obr_demo)
 
+    # 체크포인트에 정규화 버퍼(actor obs normalizer)가 있으면 policy를 정규화 포함으로 빌드해야
+    # OnPolicyRunner.load가 그 버퍼를 복원·적용함. 없으면(17D model_10998 등) 꺼야 로드 에러 안 남.
+    _ck = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    _sd = _ck.get("model_state_dict", _ck)
+    _has_norm = any(("norm" in k.lower() and "critic" not in k.lower()) for k in _sd)
+    del _ck, _sd
+    print(f"[Demo] 체크포인트 정규화 버퍼: {'있음→정규화 ON' if _has_norm else '없음→정규화 OFF'}")
+
     runner_cfg = RslRlOnPolicyRunnerCfg()
     runner_cfg.num_steps_per_env = 24
     runner_cfg.max_iterations = 999999
     runner_cfg.experiment_name = "warehouse_demo"
+    runner_cfg.empirical_normalization = _has_norm   # 학습과 동일 규격으로 policy 구성
     runner_cfg.policy = RslRlPpoActorCriticCfg(
         init_noise_std=0.01,  # 데모: 노이즈 최소화 (결정론적 행동)
         actor_hidden_dims=[256, 128, 64],
