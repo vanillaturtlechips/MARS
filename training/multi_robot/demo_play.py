@@ -302,6 +302,7 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         self._scn_reach_hold = 0
         if hasattr(self, "_scn_reached_ever"):
             self._scn_reached_ever[:] = False
+        self._scn_min_d = [float("inf")] * N_ROBOTS   # 진단: 시나리오 중 로봇별 목표 최소거리
         print(f"\n[Scenario {idx+1}/{len(SCN_DEMO)}] {scn['label']}  (step {self._global_step})")
         try:
             with open(SCN_SCHEDULE_PATH, "a", encoding="utf-8") as _f:
@@ -314,9 +315,19 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         self._scn_step += 1
         self._global_step += 1
         eps = self.cfg.goal_radius + 0.15   # 도달 판정 여유(데모는 빡세지 않게)
+        cur_d = []
         for i in range(N_ROBOTS):
             d = (self.robots[i].data.root_pos_w[:, :2] - self._goal_pos_w[:, i]).norm(dim=1)
             self._scn_reached_ever[:, i] |= (d < eps)
+            dmin = float(d.min().item())
+            cur_d.append(dmin)
+            if dmin < self._scn_min_d[i]:
+                self._scn_min_d[i] = dmin
+        # 진단: 60스텝마다 로봇별 목표까지 현재거리 — 줄어들면 주행O, 안 줄면 좀비
+        if self._scn_step % 60 == 0:
+            print(f"   [진단] step{self._scn_step} 목표까지: "
+                  + "  ".join(f"R{i}={cur_d[i]:.2f}" for i in range(N_ROBOTS))
+                  + f"  (도달<{eps:.2f})")
         # 동시 도달이 아니라 '각 로봇이 한 번이라도 도달'이면 성공(동일목표/순차 진입도 인정)
         reached = bool(self._scn_reached_ever.all().item())
         self._scn_reach_hold = self._scn_reach_hold + 1 if reached else 0
@@ -324,8 +335,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         over = self._scn_step >= self._scn_max
         if ok or over:
             status = "성공" if ok else "시간초과"
+            mind = "  ".join(f"R{i}최소={self._scn_min_d[i]:.2f}" for i in range(N_ROBOTS))
             print(f"[Scenario {self._scn_idx+1}/{len(SCN_DEMO)}] {status} "
-                  f"({self._scn_step} steps)")
+                  f"({self._scn_step} steps)  | {mind}  (도달<{eps:.2f})")
             self._scn_idx = (self._scn_idx + 1) % len(SCN_DEMO)
             self._scn_apply(self._scn_idx)
 
