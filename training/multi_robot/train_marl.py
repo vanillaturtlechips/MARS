@@ -94,10 +94,11 @@ def make_mappo_runner_cfg(num_envs: int, max_iter: int, exp_name: str = "warehou
     runner_cfg.experiment_name    = exp_name
     runner_cfg.run_name           = f"mappo_n{N_ROBOTS}_env{num_envs}"
     runner_cfg.logger             = "tensorboard"
-    # CRITICAL: False여야 함. True면 학습 중 obs를 정규화하지만 이 rsl_rl 버전은 정규화 통계를
-    # 체크포인트에 저장하지 않음 → 추론(eval/demo)에서 생짜 obs를 먹여 정책이 즉시 폭주(100% 충돌).
-    # model_10998(정상 동작)도 raw obs로 학습됨. raw 규격으로 통일해야 학습=추론 일치.
-    runner_cfg.empirical_normalization = False
+    # 정규화 ON 필수: raw obs는 스케일 커서 정책 그래디언트가 죽어 학습 안 됨(std 0.8 고정 확인).
+    # 이 rsl_rl은 empirical_normalization을 actor/critic_obs_normalization로 매핑하고 정규화 모듈을
+    # policy 안에 둠 → policy.state_dict()(=model_state_dict)에 저장됨. OnPolicyRunner.load로 복원.
+    # 단, 추론 스크립트도 동일 정규화 설정으로 policy를 만들어야 정규화 버퍼가 로드/적용됨.
+    runner_cfg.empirical_normalization = True
 
     # Asymmetric Actor-Critic: actor obs ≠ critic obs
     runner_cfg.policy = RslRlPpoActorCriticCfg(
