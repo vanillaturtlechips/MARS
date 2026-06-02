@@ -632,6 +632,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
                         disable_gravity=False, linear_damping=2.0, angular_damping=5.0,
                         max_linear_velocity=5.0, max_angular_velocity=10.0,
+                        # 슬립 비활성: 목표 근처서 느려지면 PhysX가 큐브를 재워(sleep) 이후 속도
+                        # 명령(write_root_velocity)이 안 먹어 영영 정지("좀비")됨. 0=절대 안 잠.
+                        sleep_threshold=0.0, stabilization_threshold=0.0,
                     ),
                     mass_props=sim_utils.MassPropertiesCfg(mass=20.0),
                     collision_props=sim_utils.CollisionPropertiesCfg(),
