@@ -146,9 +146,11 @@ GOAL_MARKER_RADIUS = 0.15
 GOAL_MARKER_Z      = 0.12               # 바닥에 살짝 띄운 구 높이
 # ── 운반 사이클(--task) 연출: 선반 통로면 픽업 패드 ↔ 통로 양끝 도크 ──
 #    SHELF_CENTERS = (±2, ±2.5). 픽업 패드는 각 선반의 통로(중앙)쪽 면 앞에.
-#  주의: |y| + (goal_radius+REACH_EPS) + 로봇 반폭 < 선반면(2.25)이어야 안 박음.
-#  1.2 + 0.45 + 0.2 = 1.85 < 2.25 (여유 0.4m). 1.6은 선반에 닿아 박던 값.
-PICK_POINTS = [(-2.0, 1.2), (2.0, 1.2), (-2.0, -1.2), (2.0, -1.2)]   # env-local
+#  주의: 박힘 판정은 큐브가 아니라 '눈에 보이는 iw.hub 외형'이 기준.
+#    |y| + (goal_radius+REACH_EPS) + iw.hub 외형 코(~0.55) < 선반면(2.25)이어야 시각 클리핑 없음.
+#    0.8 + 0.45 + 0.55 = 1.80 < 2.25 (여유 0.45m). 1.2는 합이 2.20으로 선반면에 닿아 박혀 보이던 값
+#    (이전 계산은 큐브 반폭 0.2만 넣고 외형 길이를 빼먹어 시각 클리핑이 남았음).
+PICK_POINTS = [(-2.0, 0.8), (2.0, 0.8), (-2.0, -0.8), (2.0, -0.8)]   # env-local
 DOCK_POINTS = [(-2.6, 0.0), (2.6, 0.0)]                              # 통로 패킹 도크(벽 안쪽)
 STUCK_STEPS = 180                        # 이 스텝(≈12s) 동안 골 못 닿으면 막힘→목적지 재배정
 PICK_PAD_COLOR  = (0.15, 0.85, 0.35)    # 픽업존 폴백 색(초록 원반)
@@ -363,11 +365,14 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             for e in (reached | stuck).nonzero(as_tuple=True)[0].tolist():
                 self._task_age[e, i] = 0
                 if not bool(reached[e]):
-                    # 막힘(미도달 타임아웃) → 현재 단계의 다른 목적지로 재배정(벽붙음/원형회전 탈출)
-                    if self._task_state[e, i].item() == 0:
-                        self._goal_pos_w[e, i] = self._pick_w[torch.randint(0, n_pick, (1,)).item()] + origins[e]
-                    else:
-                        self._goal_pos_w[e, i] = self._dock_w[torch.randint(0, n_dock, (1,)).item()] + origins[e]
+                    # 막힘(미도달 타임아웃) → 반드시 '통로 중앙 도크'로 빼서 열린 공간으로 탈출.
+                    #   선반 코앞 픽업점으로 재배정하면(이전 동작) 방향 모르는 17D 정책이 또 선반에
+                    #   박혀 영원히 못 빠져나옴. 도크(y=0 통로)는 항상 열려 있어 확실한 탈출구.
+                    #   state=1('하차하러 가는 중')로 두면 도크 도달 시 정상 사이클로 자연 복귀.
+                    dock = int(torch.randint(0, n_dock, (1,)).item())
+                    self._task_dock[e, i] = dock
+                    self._task_state[e, i] = 1
+                    self._goal_pos_w[e, i] = self._dock_w[dock] + origins[e]
                 elif self._task_state[e, i].item() == 0:      # 픽업 도달 → 박스 들고 하차로
                     self._carrying[e, i] = True
                     dock = int(torch.randint(0, n_dock, (1,)).item())
