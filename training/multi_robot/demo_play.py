@@ -132,6 +132,10 @@ SHELF_USD = SHELF_USD_CANDIDATES[0]   # 하위호환: 단일 변수도 유지
 RACK_HEIGHT         = 3.5               # 랙 높이(m) — 로봇 대비 확실히 크게(선반이 작다는 피드백 반영)
 CAMERA_EYE    = (3.88, -9.80, 5.43)     # 창고 외벽 바깥에서 내부 비스듬히 (사용자 viewport 캡처)
 CAMERA_TARGET = (1.45, -6.15, 3.03)     # 창고 내부 상단 영역 — 로봇 활동 구역 위쪽
+# 시나리오 데모 전용 카메라 — 로봇이 원점 주변(y -4~+4)에 퍼지므로 중앙 부감(높은 3/4뷰).
+#   기존 카메라는 아래 선반만 잡아 시나리오가 화면 밖/가림. --cam_eye 주면 그게 우선.
+SCN_CAMERA_EYE    = (5.0, -7.0, 13.5)   # 높은 3/4 부감 — 3.5m 랙이 중앙 통로를 안 가리게 가파르게
+SCN_CAMERA_TARGET = (0.0, 0.0, 0.2)
 #  로봇 외형(iw.hub) — 큐브 yaw 대신 '진행 방향'으로 향하게 + 수평 yaw만(기울기/덜덜 제거)
 ROBOT_VISUAL_SCALE = 1.0                # iw.hub 외형 크기 (선반 대비 안 맞으면 조정)
 VIS_YAW_OFFSET_DEG = 0.0                # iw.hub 메시 정면축 보정(도) — 옆을 보면 90/180 등으로
@@ -171,9 +175,11 @@ SCN_DEMO = [
     {"label": "교차로 양보 — 3-way 교착 해소",
      "spawns": [(0.0, 2.0), (-1.73, -1.0), (1.73, -1.0)],
      "goals":  [(0.0, -2.0), (1.73, 1.0), (-1.73, 1.0)]},        # eval S2_3way_deadlock
-    {"label": "적재 스테이션 경쟁 — 동일 목표 순차 진입",
+    {"label": "적재 스테이션 — 인접 구역 나란히 진입",
      "spawns": [(-2.0, -1.5), (-2.0, 1.5), (3.0, 0.0)],
-     "goals":  [(2.0, 0.0), (2.0, 0.0), (-3.0, 0.0)]},           # eval S4_same_goal
+     # 두 대가 같은 스테이션으로 몰리되 충돌거리(0.55) 밖 인접 슬롯(±0.45)에 나란히 정렬.
+     # 동일 점(2,0)이면 물리적으로 둘 다 못 서서 영영 미도달 → 인접으로 분리.
+     "goals":  [(2.0, 0.45), (2.0, -0.45), (-3.0, 0.0)]},        # eval S4_same_goal 변형
     {"label": "혼잡 통로 횡단 — 3방향 교차",
      "spawns": [(-4.0, 0.0), (4.0, 0.3), (0.0, 4.0)],
      "goals":  [(4.0, 0.0), (-4.0, 0.3), (0.0, -4.0)]},          # eval S5_mixed
@@ -260,8 +266,10 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             self._scn_max  = int(getattr(self.cfg, "scn_max", 240))
             self._scn_idx  = 0
             self._scn_step = 0          # 현재 시나리오 경과 스텝
-            self._scn_reach_hold = 0    # 전원 도달 연속 스텝
+            self._scn_reach_hold = 0    # 전원 '한 번이라도 도달' 후 유지 스텝
             self._global_step = 0       # 영상 프레임 = 전역 스텝(자막 타이밍용)
+            # 로봇별 '이 시나리오에서 한 번이라도 목표 도달' 플래그(동시 도달 요구 X — 동일목표/순차도 인정)
+            self._scn_reached_ever = torch.zeros(self.num_envs, N_ROBOTS, dtype=torch.bool, device=self.device)
             import os as _os
             _os.makedirs(_os.path.dirname(SCN_SCHEDULE_PATH), exist_ok=True)
             # 새 실행마다 스케줄 초기화
@@ -292,6 +300,8 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             self._goal_pos_w[:, i, 1] = oy + gy
         self._scn_step = 0
         self._scn_reach_hold = 0
+        if hasattr(self, "_scn_reached_ever"):
+            self._scn_reached_ever[:] = False
         print(f"\n[Scenario {idx+1}/{len(SCN_DEMO)}] {scn['label']}  (step {self._global_step})")
         try:
             with open(SCN_SCHEDULE_PATH, "a", encoding="utf-8") as _f:
@@ -303,11 +313,12 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         """매 스텝: 전원 도달(+hold) 또는 최대스텝 도달 시 다음 시나리오로 순환."""
         self._scn_step += 1
         self._global_step += 1
-        eps = self.cfg.goal_radius
-        reached = True
+        eps = self.cfg.goal_radius + 0.15   # 도달 판정 여유(데모는 빡세지 않게)
         for i in range(N_ROBOTS):
             d = (self.robots[i].data.root_pos_w[:, :2] - self._goal_pos_w[:, i]).norm(dim=1)
-            reached = reached and bool((d < eps).all().item())
+            self._scn_reached_ever[:, i] |= (d < eps)
+        # 동시 도달이 아니라 '각 로봇이 한 번이라도 도달'이면 성공(동일목표/순차 진입도 인정)
+        reached = bool(self._scn_reached_ever.all().item())
         self._scn_reach_hold = self._scn_reach_hold + 1 if reached else 0
         ok   = self._scn_reach_hold >= self._scn_hold
         over = self._scn_step >= self._scn_max
@@ -839,8 +850,11 @@ def main():
 
     # 카메라 고정 — 활동 구역을 비스듬히 프레이밍 (넓어 보이는 문제 해결)
     #   비디오 모드에선 마우스 못 쓰니 --cam_eye/--cam_target로 CLI 지정
-    _eye    = _parse_xyz(args.cam_eye,    CAMERA_EYE)
-    _target = _parse_xyz(args.cam_target, CAMERA_TARGET)
+    #   시나리오 데모는 중앙 부감 카메라가 기본(--cam_eye 주면 그게 우선)
+    _def_eye    = SCN_CAMERA_EYE    if args.scenario_demo else CAMERA_EYE
+    _def_target = SCN_CAMERA_TARGET if args.scenario_demo else CAMERA_TARGET
+    _eye    = _parse_xyz(args.cam_eye,    _def_eye)
+    _target = _parse_xyz(args.cam_target, _def_target)
     try:
         env.unwrapped.sim.set_camera_view(eye=_eye, target=_target)
         print(f"[Demo] 카메라 고정: eye={_eye} target={_target}")
