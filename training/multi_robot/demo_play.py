@@ -275,7 +275,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             # 새 실행마다 스케줄 초기화
             with open(SCN_SCHEDULE_PATH, "w", encoding="utf-8") as _f:
                 _f.write("start_step\tlabel\n")
-            self._scn_apply(0)          # 첫 시나리오 즉시 배치(프레임0부터 정상)
+            # 첫 배치는 __init__(시뮬 시작 전)이 아니라 첫 스텝(스텝 중)에 — 시작 전 텔레포트는
+            # 물리 초기화에 덮어써져 안 먹음(베이스 reset이 스텝 중에 도는 것과 동일 타이밍 맞춤).
+            self._scn_started = False
 
     # ── 시나리오 데모 ─────────────────────────────────────────────────
     def _scn_apply(self, idx: int):
@@ -532,7 +534,11 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
     def _get_dones(self):
         terminated, time_out = super()._get_dones()
         if getattr(self, "_scn_demo", False):
-            self._scn_advance()
+            if not getattr(self, "_scn_started", False):
+                self._scn_apply(self._scn_idx)   # 첫 배치를 스텝 중에(시뮬 시작 후) 실행
+                self._scn_started = True
+            else:
+                self._scn_advance()
             # 시나리오 데모: 충돌/타임아웃에도 자동 리셋(텔레포트) 금지 — 전환은 _scn_advance가 제어
             z = torch.zeros_like(terminated)
             return z, z
