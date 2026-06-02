@@ -298,6 +298,14 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             robot.write_root_state_to_sim(state, all_ids)
             self._goal_pos_w[:, i, 0] = ox + gx
             self._goal_pos_w[:, i, 1] = oy + gy
+        # 진단: env_origin과 설정된 스폰/골 월드좌표 확인(좌표 어긋남 추적)
+        _eo = [round(float(v), 2) for v in self.scene.env_origins[0].tolist()]
+        _sp = [(round(float(self.scene.env_origins[0,0] + sx), 2),
+                round(float(self.scene.env_origins[0,1] + sy), 2))
+               for (sx, sy) in scn["spawns"]]
+        _gp = [(round(float(self._goal_pos_w[0, i, 0]), 2),
+                round(float(self._goal_pos_w[0, i, 1]), 2)) for i in range(N_ROBOTS)]
+        print(f"   [APPLY] env_origin={_eo}  스폰(월드)={_sp}  골(월드)={_gp}")
         self._scn_step = 0
         self._scn_reach_hold = 0
         if hasattr(self, "_scn_reached_ever"):
