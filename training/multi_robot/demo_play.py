@@ -55,8 +55,8 @@ parser.add_argument("--scenario_demo", action="store_true", default=False,
                          "task/continuous 자동 OFF. 17D 모델 검증 경로(선반 미통과)라 박힘 없음.")
 parser.add_argument("--scn_hold", type=int, default=25,
                     help="전원 도달 후 이만큼 스텝 유지하면 다음 시나리오로(성공 연출 여유)")
-parser.add_argument("--scn_max", type=int, default=240,
-                    help="시나리오당 최대 스텝(미도달이어도 이후 강제 전환)")
+parser.add_argument("--scn_max", type=int, default=300,
+                    help="시나리오당 최대 스텝(미도달이어도 이후 강제 전환). 느린 경로(우회) 도달 여유")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -816,6 +816,11 @@ def _parse_xyz(s: str, default):
 def main():
     env_cfg = WarehouseDemoEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
+    # 시나리오 데모 기본 주행: 모드 미지정 시 visual_yaw_align(완전 홀로노믹 주행 + 외형만 회전).
+    #   diff_drive_ctrl은 목표가 옆/뒤면 전진=0(회전만)으로 묶여 목표에 못 닿음 → 기본에서 제외.
+    if args.scenario_demo and not (args.diff_drive_ctrl or args.diff_drive or args.visual_yaw_align):
+        args.visual_yaw_align = True
+        print("[Demo] 시나리오 기본 주행: --visual_yaw_align 자동(홀로노믹 주행 + 외형 diff-drive)")
     env_cfg.disable_strafe = args.diff_drive   # diff-drive 모델은 학습과 동일하게 vy 차단
     env_cfg.diff_drive_controller = args.diff_drive_ctrl   # 계층 컨트롤러(재학습 0)
     env_cfg.diff_drive_turn_gain  = args.turn_gain
