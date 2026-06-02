@@ -68,6 +68,14 @@ parser.add_argument("--rew_shelf_prox", type=float, default=0.0,
                     help="정적 선반 근접 페널티(표면 가까이 거리비례 -/step). 권장 -2.0. 선반 회피 직접 신호.")
 parser.add_argument("--goal_shelf_margin", type=float, default=0.8,
                     help="목표를 선반에서 뗄 여유(작을수록 선반 근처/뒤 목표 → 우회 필수). 회피 학습엔 0.15 권장.")
+parser.add_argument("--scenario_train", action="store_true", default=False,
+                    help="시나리오형 학습(docs §6): eval 상황(정면교행·3way·선반우회)을 학습 분포에 주입. "
+                         "랜덤 목표만으론 그 상황을 안 겪어 못 배운다는 진단의 해법. extended_obs와 병용 권장.")
+parser.add_argument("--scenario_weights", type=float, nargs=4, default=None,
+                    metavar=("D", "A", "B", "C"),
+                    help="시나리오 혼합 가중치 [D랜덤 A교행 B3way C선반우회]. 예: 0.3 0.25 0.2 0.25. None=cfg기본.")
+parser.add_argument("--scenario_face_goal", action="store_true", default=False,
+                    help="시나리오 스폰 yaw를 목표 방향±지터로(교행 정렬 phase 단축). 기본 랜덤 yaw.")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 app_launcher = AppLauncher(args)
@@ -128,6 +136,13 @@ def main():
     env_cfg.rew_clearance     = args.rew_clearance
     env_cfg.rew_shelf_prox    = args.rew_shelf_prox
     env_cfg.goal_shelf_margin = args.goal_shelf_margin
+    env_cfg.scenario_train    = args.scenario_train
+    env_cfg.scenario_face_goal = args.scenario_face_goal
+    if args.scenario_weights is not None:
+        env_cfg.scenario_weights = tuple(args.scenario_weights)
+    if args.scenario_train:
+        print(f"[MAPPO] 시나리오형 학습 ON — 혼합 가중치 [D,A,B,C]={env_cfg.scenario_weights}, "
+              f"face_goal={args.scenario_face_goal}")
     env_cfg.observation_space = obr * N_ROBOTS
     env_cfg.state_space       = obr * N_ROBOTS
     env_cfg.action_space      = ACT_DIM * N_ROBOTS          # 9

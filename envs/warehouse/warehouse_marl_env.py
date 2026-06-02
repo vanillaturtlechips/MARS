@@ -127,6 +127,16 @@ class WarehouseMARLEnvCfg(DirectRLEnvCfg):
     # 목표를 선반에서 얼마나 떼어 샘플할지(작을수록 선반 근처/뒤에 생겨 '돌아가기'를 강제).
     #   기본 0.8=기존(트인 곳만). 회피 학습엔 0.15 권장(선반 옆/뒤 목표 → 우회 필수).
     goal_shelf_margin: float = 0.8
+
+    # ── 시나리오형 학습 (docs §6 정공법): eval이 시험하는 상황을 학습 분포에 직접 주입 ──
+    #   랜덤 목표만으론 정면교행·3way·선반관통을 안 겪어 영영 못 배운다는 진단의 해법.
+    #   reset마다 env별로 시나리오 종류를 뽑아 구조화 스폰/목표를 부여(좌표는 랜덤화→일반화).
+    scenario_train: bool = False
+    # 혼합 가중치 [D 랜덤, A 정면교행, B 3way삼각, C 선반우회]. 합은 내부에서 정규화.
+    #   D를 섞어 model_10998 일반 내비 능력 보존(warm-start). C가 선반우회(19D 방향obs 필요).
+    scenario_weights: tuple = (0.30, 0.25, 0.20, 0.25)
+    # True면 시나리오 스폰 yaw를 목표 방향±지터로(교행 정렬 phase 단축). 기본 False=랜덤 yaw(학습 정합).
+    scenario_face_goal: bool = False
     # 데모 연출: 도달 즉시 새 골 부여(끊임없이 일하게) + all_reached 종료 안 함. 학습은 False 유지.
     continuous_goals: bool = False
     # 데모 연출: 선반↔스테이션 운반 사이클(데모 env가 _goal_pos_w를 상태기계로 구동). 학습은 False.
@@ -774,6 +784,107 @@ class WarehouseMARLEnv(DirectRLEnv):
             bad[rem[~b2]] = False
         return candidates
 
+    def _sample_scenario_layout(
+        self, env_ids_t: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """시나리오형 학습용 구조화 스폰/목표 생성 (env-local 좌표).
+
+        env마다 종류를 뽑아(D/A/B/C) 패밀리별 파라메트릭 레이아웃을 채운다. 좌표는
+        매 reset 랜덤화 → eval 인스턴스가 학습 분포의 한 샘플이 되게(암기 아닌 일반화).
+
+        반환:
+          spawn_local (n, N_ROBOTS, 2) — 전 env(랜덤 envs는 기본 오프셋+노이즈)
+          goal_local  (n, N_ROBOTS, 2) — 시나리오 envs만 유효(랜덤 envs는 placeholder)
+          rand_mask   (n,) bool        — True면 _reset_idx가 _sample_goal로 목표 덮어씀
+        선반 배치: 중심 (±2,±2.5), x∈[-3.5,-0.5]/[0.5,3.5], y∈[±2.25,±2.75].
+          중앙 수평통로 |y|<2.25 개방, x≈0 세로틈(폭1m)으로 남북 통과.
+        """
+        n = env_ids_t.shape[0]
+        d = self.device
+        R = N_ROBOTS
+
+        def U(lo, hi, *shape):
+            return sample_uniform(lo, hi, tuple(shape), device=d)
+
+        def push_clear(pts: torch.Tensor, margin: float = 0.35) -> torch.Tensor:
+            """선반(+margin) 안에 든 점을 y축으로 '가장 가까운 통로 면' 밖으로 이동.
+            선반은 y로 얇아(half 0.25) y만 살짝 밀면 도달 가능·트인 곳이 됨. 원래 side 보존."""
+            out = pts.clone()
+            for cx, cy, *_ in SHELF_CENTERS:
+                in_x = (out[..., 0] - cx).abs() < SHELF_HALF[0] + margin
+                in_y = (out[..., 1] - cy).abs() < SHELF_HALF[1] + margin
+                hit = in_x & in_y
+                below = cy - (SHELF_HALF[1] + margin)
+                above = cy + (SHELF_HALF[1] + margin)
+                pick_below = (out[..., 1] - below).abs() < (out[..., 1] - above).abs()
+                new_y = torch.where(pick_below, torch.full_like(out[..., 1], below),
+                                    torch.full_like(out[..., 1], above))
+                out[..., 1] = torch.where(hit, new_y, out[..., 1])
+            return out
+
+        spawn = torch.zeros(n, R, 2, device=d)
+        goal  = torch.zeros(n, R, 2, device=d)
+
+        w = torch.tensor(self.cfg.scenario_weights, device=d, dtype=torch.float32)
+        sid = torch.multinomial(w / w.sum(), n, replacement=True)   # (n,) ∈ {0:D,1:A,2:B,3:C}
+        rand_mask = (sid == 0)
+
+        # ── D 랜덤(id 0): 기존 고정 오프셋+노이즈 스폰. 목표는 _reset_idx가 _sample_goal로 채움 ──
+        off = torch.tensor(SPAWN_OFFSETS, device=d, dtype=torch.float32)   # (R, 2)
+        spawn[:] = off.unsqueeze(0) + U(-0.3, 0.3, n, R, 2)
+
+        # ── A 정면교행(id 1): 원점 통과 교행 2대 + 수직 횡단 1대(S1/S5형) ──
+        a = (sid == 1)
+        if a.any():
+            na = int(a.sum())
+            th = U(-math.pi, math.pi, na)
+            ux, uy = torch.cos(th), torch.sin(th)
+            u = torch.stack([ux, uy], dim=1) * U(2.5, 4.0, na).unsqueeze(1)   # 교행축
+            v = torch.stack([-uy, ux], dim=1) * U(2.5, 3.5, na).unsqueeze(1)  # 수직축
+            sp = torch.zeros(na, R, 2, device=d)
+            gl = torch.zeros(na, R, 2, device=d)
+            sp[:, 0] =  u; gl[:, 0] = -u    # 로봇0 ↔ 로봇1 정면교행(목표 교환)
+            sp[:, 1] = -u; gl[:, 1] =  u
+            sp[:, 2] =  v; gl[:, 2] = -v    # 로봇2 수직 횡단
+            sp += U(-0.3, 0.3, na, R, 2)
+            spawn[a] = push_clear(sp); goal[a] = push_clear(gl)   # 선반 박힌 끝점 통로로
+
+        # ── B 3way 삼각(id 2): 삼각 정점 → 각자 반대 정점(중심 통과, S2형) ──
+        b = (sid == 2)
+        if b.any():
+            nb = int(b.sum())
+            r   = U(2.0, 3.5, nb)
+            phi = U(-math.pi, math.pi, nb)
+            sp = torch.zeros(nb, R, 2, device=d)
+            for k in range(R):
+                ang = phi + k * (2.0 * math.pi / R)
+                sp[:, k, 0] = r * torch.cos(ang)
+                sp[:, k, 1] = r * torch.sin(ang)
+            sp += U(-0.25, 0.25, nb, R, 2)
+            spawn[b] = push_clear(sp)
+            goal[b]  = push_clear(-sp)      # 반대 정점 = 중심 통과 대치(선반 박힌 끝점 통로로)
+
+        # ── C 선반우회(id 3): 중앙통로 출발 → 선반 너머 목표(직선경로가 선반 관통→우회 강제) ──
+        #   x열을 셔플([-2,0,2])해 로봇 간 ≥1.6m x-분리 보장. 같은 부호=세로로 선반 한 줄 가로지름.
+        #   x≈0 로봇은 세로틈 통과(트임), x±2 로봇은 우회 필수. 19D 방향obs가 출구를 알려줘야 학습됨.
+        c = (sid == 3)
+        if c.any():
+            nc = int(c.sum())
+            base = torch.tensor([-2.0, 0.0, 2.0], device=d)
+            perm = torch.argsort(torch.rand(nc, R, device=d), dim=1)   # env별 열 셔플
+            cols = base[perm]                                          # (nc, R)
+            sgn = torch.where(U(0.0, 1.0, nc, R) > 0.5, 1.0, -1.0)     # 위/아래 면 선택
+            sp = torch.zeros(nc, R, 2, device=d)
+            gl = torch.zeros(nc, R, 2, device=d)
+            xk = cols + U(-0.4, 0.4, nc, R)
+            sp[..., 0] = xk
+            sp[..., 1] = sgn * U(0.8, 1.5, nc, R)    # 중앙통로(|y|<2.25) 출발
+            gl[..., 0] = xk
+            gl[..., 1] = sgn * U(3.3, 4.2, nc, R)    # 선반 너머(|y|>2.75) 목표 — 경로만 선반 관통
+            spawn[c] = sp; goal[c] = gl
+
+        return spawn, goal, rand_mask
+
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
             env_ids = self.robots[0]._ALL_INDICES
@@ -789,14 +900,28 @@ class WarehouseMARLEnv(DirectRLEnv):
         if self.cfg.strafe_curriculum:
             self._reached_ever[env_ids_t] = False
 
+        # 시나리오형 학습: env별 구조화 스폰/목표(교행·3way·선반우회). 비활성 시 기존 랜덤 경로.
+        scenario = self.cfg.scenario_train
+        if scenario:
+            spawn_local, goal_local, rand_mask = self._sample_scenario_layout(env_ids_t)
+
         for i, robot in enumerate(self.robots):
             default_state = robot.data.default_root_state[env_ids_t].clone()
             default_state[:, :3] += self.scene.env_origins[env_ids_t]
-            default_state[:, 0] += SPAWN_OFFSETS[i][0]
-            default_state[:, 1] += SPAWN_OFFSETS[i][1]
-            default_state[:, :2] += sample_uniform(-0.3, 0.3, (n, 2), device=self.device)
+            if scenario:
+                # 레이아웃이 이미 지터 포함 → 추가 노이즈 없이 그대로 사용
+                default_state[:, 0] += spawn_local[:, i, 0]
+                default_state[:, 1] += spawn_local[:, i, 1]
+            else:
+                default_state[:, 0] += SPAWN_OFFSETS[i][0]
+                default_state[:, 1] += SPAWN_OFFSETS[i][1]
+                default_state[:, :2] += sample_uniform(-0.3, 0.3, (n, 2), device=self.device)
 
-            yaw = sample_uniform(-math.pi, math.pi, (n,), device=self.device)
+            if scenario and self.cfg.scenario_face_goal:
+                gvec = goal_local[:, i] - spawn_local[:, i]
+                yaw = torch.atan2(gvec[:, 1], gvec[:, 0]) + sample_uniform(-0.4, 0.4, (n,), device=self.device)
+            else:
+                yaw = sample_uniform(-math.pi, math.pi, (n,), device=self.device)
             zeros = torch.zeros(n, device=self.device)
             default_state[:, 3] = torch.cos(yaw / 2)
             default_state[:, 4] = zeros
@@ -806,8 +931,18 @@ class WarehouseMARLEnv(DirectRLEnv):
             robot.write_root_state_to_sim(default_state, env_ids_t)
 
         # 로봇별 목표 샘플링 (선반과 겹치지 않도록)
-        for i in range(N_ROBOTS):
-            self._goal_pos_w[env_ids_t, i] = self._sample_goal(env_ids_t)
+        if scenario:
+            origins_xy = self.scene.env_origins[env_ids_t, :2]
+            for i in range(N_ROBOTS):
+                self._goal_pos_w[env_ids_t, i] = goal_local[:, i] + origins_xy
+            # 랜덤(D) envs는 일반 내비 보존을 위해 _sample_goal로 목표 덮어쓰기
+            if rand_mask.any():
+                ridx = env_ids_t[rand_mask]
+                for i in range(N_ROBOTS):
+                    self._goal_pos_w[ridx, i] = self._sample_goal(ridx)
+        else:
+            for i in range(N_ROBOTS):
+                self._goal_pos_w[env_ids_t, i] = self._sample_goal(env_ids_t)
 
         # reset된 env의 prev_positions를 현재 위치로 동기화 (delta = 0 보장)
         if self._prev_positions is not None:
