@@ -139,7 +139,7 @@ CAMERA_TARGET = (1.45, -6.15, 3.03)     # 창고 내부 상단 영역 — 로봇
 SCN_CAMERA_EYE    = (5.0, -7.0, 13.5)   # 높은 3/4 부감 — 3.5m 랙이 중앙 통로를 안 가리게 가파르게
 SCN_CAMERA_TARGET = (0.0, 0.0, 0.2)
 #  로봇 외형(iw.hub) — 큐브 yaw 대신 '진행 방향'으로 향하게 + 수평 yaw만(기울기/덜덜 제거)
-ROBOT_VISUAL_SCALE = 1.0                # iw.hub 외형 크기 (선반 대비 안 맞으면 조정)
+ROBOT_VISUAL_SCALE = 0.9                # iw.hub 외형 크기 — 약간 줄여 충돌큐브(0.8) 안에 들게(코 오버행↓)
 VIS_YAW_OFFSET_DEG = 0.0                # iw.hub 메시 정면축 보정(도) — 옆을 보면 90/180 등으로
 VIS_SMOOTH_YAW     = 0.20               # 회전 보간(0=안돎, 1=즉시) — 코너링 부드럽게
 VIS_SMOOTH_POS     = 0.85               # 위치 보간(1=큐브에 딱 붙음) — 낮추면 덜덜 줄지만 지연↑
@@ -632,7 +632,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             robot_cfg = RigidObjectCfg(
                 prim_path=f"/World/envs/env_.*/Robot_{i}",
                 spawn=sim_utils.CuboidCfg(
-                    size=(0.5, 0.4, 0.3),
+                    # 충돌 큐브를 iw.hub 외형 길이에 맞춰 키움(0.5→0.8): 외형 코가 큐브 밖으로
+                    #   삐져나와 선반에 박혀 보이던 현상 방지. 큐브 앞면이 코 근처까지 와 더 일찍 멈춤.
+                    size=(0.8, 0.5, 0.3),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
                         disable_gravity=False, linear_damping=2.0, angular_damping=5.0,
                         max_linear_velocity=5.0, max_angular_velocity=10.0,
