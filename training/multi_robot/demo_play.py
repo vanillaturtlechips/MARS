@@ -208,7 +208,7 @@ BOX_USD_SCALE    = (1.0, 1.0, 1.0)      # 골판지 박스 스케일(에셋 nati
 PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케일
 DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
 # ── 선반 적재물(꾸미기): 비어 보이는 랙에 박스를 올림(순수 비주얼, 충돌 없음) ──
-SHELF_GOODS         = False              # 임시: eval 물리 동치 테스트(추가 prim 제거). R2 배회 원인 격리용.
+SHELF_GOODS         = True               # 랙에 박스 적재(비주얼). 물리 무관 확인됨.
 SHELF_GOODS_LEVELS  = [0.3, 1.25, 2.1]   # 절차적 랙 선반판(0.08/1.05/1.925) 위에 정확히 얹기(=판높이+박스반높이)
 SHELF_GOODS_PER_ROW = 3                  # 한 층에 박스 개수(선반 x축 분포)
 SHELF_GOODS_XSPAN   = 2.0                # 박스 분포 x폭(선반 길이 3.0 안쪽)
@@ -294,8 +294,12 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             state = robot.data.default_root_state.clone()
             sx, sy = scn["spawns"][i]
             gx, gy = scn["goals"][i]
-            state[:, 0] = ox + sx
-            state[:, 1] = oy + sy
+            # 스폰 지터(±0.35): 고정 스폰은 매번 같은 결정론 롤아웃 → 같은 나쁜 케이스 반복(docs §3).
+            #   살짝 흔들면 매 렌더가 다른 롤아웃 → 모델이 견고하니(eval 100%) 대부분 전원 도달.
+            _jx = (torch.rand(self.num_envs, device=self.device) - 0.5) * 0.7
+            _jy = (torch.rand(self.num_envs, device=self.device) - 0.5) * 0.7
+            state[:, 0] = ox + sx + _jx
+            state[:, 1] = oy + sy + _jy
             state[:, 2] = 0.15
             # eval run_scenario와 동일하게 yaw=0(identity, +x 향함)으로 시작.
             #   목표 바라보게 하면(atan2) 초기 yaw가 달라져 3-way 교차 타이밍이 바뀌고
