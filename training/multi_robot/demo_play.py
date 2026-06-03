@@ -563,20 +563,11 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             self._init_task(ids)
 
     def _apply_action(self):
-        # ── ROOT CAUSE FIX: action 이동평균 (3-step) ──
-        # PPO는 매 0.067s마다 새 action 출력 → cube velocity 매 step 점프 → damping이 누름 → 다음 점프...
-        # = cube physics 자체가 떨림. 시각은 그걸 그대로 보여줘서 "발광"하는 듯 보임.
-        # 해법: action을 3-step 이동평균으로 부드럽게 → velocity 점프 줄어듬 → 물리 떨림 자체 ↓
-        if self._prev_actions is None:
-            self._prev_actions = [self._actions.clone(), self._actions.clone()]
-        smoothed = (self._actions + self._prev_actions[0] + self._prev_actions[1]) / 3.0
-        self._prev_actions[1] = self._prev_actions[0].clone()
-        self._prev_actions[0] = self._actions.clone()
-        # 원본 보존하고 평균값으로 physics step
-        orig_actions = self._actions
-        self._actions = smoothed
+        # 물리 action은 eval과 100% 동일하게 raw 적용(스무딩 제거).
+        #   3-step 이동평균 스무딩은 떨림은 줄였지만 action을 둔하게 만들어, 좁은 통로 통과·
+        #   회피 같은 샤프한 기동을 못 해 로봇이 통로서 멈춤(=화면상 박힘). eval S1/S2/S5 클린은
+        #   raw action 기준이라, 내비 정확도를 우선해 raw로. (떨림은 아래 시각 yaw 평활로 흡수)
         super()._apply_action()
-        self._actions = orig_actions   # 원래 action 복원 (다음 step 정상 처리)
 
         # 시각 메시: 위치는 큐브 그대로(LERP 빼서 lag artifact 제거), yaw만 스무딩
         SMOOTH_YAW = 0.15
