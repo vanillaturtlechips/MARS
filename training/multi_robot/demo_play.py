@@ -632,9 +632,10 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             robot_cfg = RigidObjectCfg(
                 prim_path=f"/World/envs/env_.*/Robot_{i}",
                 spawn=sim_utils.CuboidCfg(
-                    # 충돌 큐브를 iw.hub 외형 길이에 맞춰 키움(0.5→0.8): 외형 코가 큐브 밖으로
-                    #   삐져나와 선반에 박혀 보이던 현상 방지. 큐브 앞면이 코 근처까지 와 더 일찍 멈춤.
-                    size=(0.8, 0.5, 0.3),
+                    # 학습/eval과 동일한 0.5 큐브 유지(필수). 0.8로 키웠더니 로봇이 뚱뚱해져
+                    #   좁은 곳에서 끼어 멈춤(=화면상 박힘)이 발생. eval S5 0%는 0.5 큐브 기준.
+                    #   외형 코 오버행은 ROBOT_VISUAL_SCALE로 약간만 줄이고, 끼임을 우선 제거.
+                    size=(0.5, 0.4, 0.3),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
                         disable_gravity=False, linear_damping=2.0, angular_damping=5.0,
                         max_linear_velocity=5.0, max_angular_velocity=10.0,
