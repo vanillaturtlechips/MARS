@@ -18,6 +18,11 @@ python training/multi_robot/demo_play.py \
   --checkpoint "$CKPT" --scn_only "$ONLY" \
   --video --video_length "$VLEN" --headless > /tmp/scn.log 2>&1
 
+# 시나리오별로 따로 보존(덮어쓰기 방지). scn_only -1=all, 0~3=시나리오별.
+OUT="logs/demo_videos/scn_${ONLY}.mp4"
+[ "$ONLY" = "-1" ] && OUT="logs/demo_videos/scn_all.mp4"
+cp -f logs/demo_videos/demo-step-0.mp4 "$OUT" 2>/dev/null && echo "[render-scn] 저장: $OUT"
+
 echo "=== 시나리오 결과(성공/시간초과) ==="
 grep -iE "Scenario.*(성공|시간초과)" /tmp/scn.log || echo "(stdout 가로채짐)"
 echo "=== 타이밍 tsv ==="
