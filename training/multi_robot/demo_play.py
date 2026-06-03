@@ -118,17 +118,16 @@ WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_wareho
 WAREHOUSE_TRANSLATE = (0.0, 0.0, 0.0)   # 창고 USD 위치 (열린 통로가 원점에 오도록 이동)
 WAREHOUSE_ROT_DEG   = 0.0               # z축 회전(도) — 창고 통로 방향 맞추기
 WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
-SHOW_BOX_SHELVES    = True              # 충돌 큐브를 '단단한 선반'으로 그대로 표시(충돌과 100% 일치).
-                                         #   False+랙USD는 SM_RackShelf_01이 투명 렌더돼 박스만 공중에 뜸 → True로 고정.
-USE_SHELF_USD       = False              # 랙 USD 오버레이 비활성(투명 문제). 큐브 선반만 깔끔히 보임.
-# 선반 USD 후보 — 위에서부터 시도, 첫 성공(메시 존재)을 채택. 모두 실패시 절차적 폴백.
-# 실제 5.1 에셋 이름(S3 목록 확인). 기존 SM_RackLongMetal_*는 5.1에 없어 전부 폴백됐었음.
+SHOW_BOX_SHELVES    = False             # 큐브 외형 숨김(충돌 유지) → 아래 진짜 랙 USD가 외형 담당.
+USE_SHELF_USD       = True               # 진짜 Isaac 창고 랙 USD(배경 랙과 동일 계열).
+# 선반 USD 후보 — RackPile(박스 적재된 랙) 우선. SM_RackShelf_01은 납작해 투명하게 보여 제외.
 SHELF_USD_CANDIDATES = [
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackShelf_01.usd",
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackFrame_03.usd",
     f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_03.usd",
     f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_04.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_06.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackFrame_03.usd",
 ]
+SHELF_USD_SCALE     = (1.0, 1.0, 1.0)    # 랙 스케일 — 네이티브 크기 보고 1차 렌더 후 조정(footprint 3.0×0.5 목표)
 SHELF_USD = SHELF_USD_CANDIDATES[0]   # 하위호환: 단일 변수도 유지
 RACK_HEIGHT         = 3.5               # 랙 높이(m) — 로봇 대비 확실히 크게(선반이 작다는 피드백 반영)
 CAMERA_EYE    = (3.88, -9.80, 5.43)     # 창고 외벽 바깥에서 내부 비스듬히 (사용자 viewport 캡처)
@@ -164,7 +163,7 @@ GOAL_MARKER_Z      = 0.12               # 바닥에 살짝 띄운 구 높이
 #    0.8 + 0.45 + 0.55 = 1.80 < 2.25 (여유 0.45m). 1.2는 합이 2.20으로 선반면에 닿아 박혀 보이던 값
 #    (이전 계산은 큐브 반폭 0.2만 넣고 외형 길이를 빼먹어 시각 클리핑이 남았음).
 PICK_POINTS = [(-2.0, 0.8), (2.0, 0.8), (-2.0, -0.8), (2.0, -0.8)]   # env-local
-DOCK_POINTS = [(-2.6, 0.0), (2.6, 0.0)]                              # 통로 패킹 도크(벽 안쪽)
+DOCK_POINTS = [(-4.5, 0.0), (4.5, 0.0)]                              # 통로 끝 도크(선반 x≤3.5 너머 트인 곳) — 로봇 분산·블록 뭉침↓
 STUCK_STEPS = 180                        # 이 스텝(≈12s) 동안 골 못 닿으면 막힘→목적지 재배정
 # ── 시나리오 데모(--scenario_demo): 실무 상황 4종 순차 시연 ──────────────
 #    스폰/골은 eval_scenarios.py의 검증된 좌표(선반 내부 미통과)를 그대로 사용.
@@ -207,7 +206,7 @@ BOX_USD_SCALE    = (1.0, 1.0, 1.0)      # 골판지 박스 스케일(에셋 nati
 PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케일
 DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
 # ── 선반 적재물(꾸미기): 비어 보이는 랙에 박스를 올림(순수 비주얼, 충돌 없음) ──
-SHELF_GOODS         = True               # False면 빈 선반
+SHELF_GOODS         = False              # RackPile USD가 자체 적재 박스를 포함 → 추가 박스 끔(이중 클러터·공중부양 방지)
 SHELF_GOODS_LEVELS  = [1.65]             # 박스 얹는 높이(m) — 선반 큐브(높이 1.5) 위에 얹기(임베드 방지)
 SHELF_GOODS_PER_ROW = 3                  # 한 층에 박스 개수(선반 x축 분포)
 SHELF_GOODS_XSPAN   = 2.0                # 박스 분포 x폭(선반 길이 3.0 안쪽)
@@ -747,7 +746,7 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                         if _existing.IsValid():
                             _st.RemovePrim(_existing.GetPath())
                     try:
-                        rack_usd = sim_utils.UsdFileCfg(usd_path=_cand)
+                        rack_usd = sim_utils.UsdFileCfg(usd_path=_cand, scale=SHELF_USD_SCALE)
                         ok = True
                         for s_i, (cx, cy, cz) in enumerate(SHELF_CENTERS):
                             _rp = f"/World/envs/env_0/Rack_{s_i}"
