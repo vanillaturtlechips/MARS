@@ -208,7 +208,7 @@ BOX_USD_SCALE    = (1.0, 1.0, 1.0)      # 골판지 박스 스케일(에셋 nati
 PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케일
 DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
 # ── 선반 적재물(꾸미기): 비어 보이는 랙에 박스를 올림(순수 비주얼, 충돌 없음) ──
-SHELF_GOODS         = True               # 랙 프레임을 박스로 채워 '재고 있는 선반'으로(SM_RackFrame_03은 골조라 비어보임)
+SHELF_GOODS         = False              # 임시: eval 물리 동치 테스트(추가 prim 제거). R2 배회 원인 격리용.
 SHELF_GOODS_LEVELS  = [0.3, 1.25, 2.1]   # 절차적 랙 선반판(0.08/1.05/1.925) 위에 정확히 얹기(=판높이+박스반높이)
 SHELF_GOODS_PER_ROW = 3                  # 한 층에 박스 개수(선반 x축 분포)
 SHELF_GOODS_XSPAN   = 2.0                # 박스 분포 x폭(선반 길이 3.0 안쪽)
@@ -631,11 +631,11 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                     #   외형 코 오버행은 ROBOT_VISUAL_SCALE로 약간만 줄이고, 끼임을 우선 제거.
                     size=(0.5, 0.4, 0.3),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                        # eval env(WarehouseMARLEnv)와 100% 동일한 rigid 속성으로 맞춤.
+                        #   데모만 있던 sleep/stabilization_threshold=0이 좁은갭 통과 거동을 미묘히
+                        #   바꿔(체계적 물리 차이) R2/R0 배회 유발 의심 → eval처럼 기본값(미설정).
                         disable_gravity=False, linear_damping=2.0, angular_damping=5.0,
                         max_linear_velocity=5.0, max_angular_velocity=10.0,
-                        # 슬립 비활성: 목표 근처서 느려지면 PhysX가 큐브를 재워(sleep) 이후 속도
-                        # 명령(write_root_velocity)이 안 먹어 영영 정지("좀비")됨. 0=절대 안 잠.
-                        sleep_threshold=0.0, stabilization_threshold=0.0,
                     ),
                     mass_props=sim_utils.MassPropertiesCfg(mass=20.0),
                     collision_props=sim_utils.CollisionPropertiesCfg(),
