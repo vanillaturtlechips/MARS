@@ -121,12 +121,12 @@ WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
 SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표시. False면 외형 숨기고 아래 랙만 보임(충돌은 유지)
 USE_SHELF_USD       = True               # True면 실제 Isaac 창고 랙 USD 시도(빈 로드면 자동으로 절차적 폴백)
 # 선반 USD 후보 — 위에서부터 시도, 첫 성공(메시 존재)을 채택. 모두 실패시 절차적 폴백.
+# 실제 5.1 에셋 이름(S3 목록 확인). 기존 SM_RackLongMetal_*는 5.1에 없어 전부 폴백됐었음.
 SHELF_USD_CANDIDATES = [
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_A1.usd",
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_B1.usd",
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackLongMetal_C1.usd",
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_A1.usd",
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_A4.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackShelf_01.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackFrame_03.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_03.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_04.usd",
 ]
 SHELF_USD = SHELF_USD_CANDIDATES[0]   # 하위호환: 단일 변수도 유지
 RACK_HEIGHT         = 3.5               # 랙 높이(m) — 로봇 대비 확실히 크게(선반이 작다는 피드백 반영)
@@ -194,12 +194,14 @@ BOX_Z_HIDDEN    = -10.0                  # 비운반 시 박스 숨김(바닥 �
 REACH_EPS       = 0.10                   # 웨이포인트 도달 판정 여유(goal_radius에 가산)
 # ── 외부 에셋(Isaac Simple_Warehouse Props) 후보 — 첫 메시 성공 채택, 모두 실패 시 도형 폴백 ──
 _PROPS = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props"
-BOX_USD_CANDIDATES = [f"{_PROPS}/SM_CardBoxA_{n}.usd" for n in (1, 2, 3, 4)] + \
-                     [f"{_PROPS}/SM_CardBoxB_1.usd", f"{_PROPS}/SM_CardBoxC_1.usd", f"{_PROPS}/SM_CardBoxD_1.usd"]
-PALLET_USD_CANDIDATES = [f"{_PROPS}/SM_Pallet.usd", f"{_PROPS}/SM_PaletteA_01.usd",
-                         f"{_PROPS}/SM_CratePlastic_A_1.usd", f"{_PROPS}/SM_CratePlastic_A_2.usd"]
-DOCK_USD_CANDIDATES = [f"{_PROPS}/SM_CratePlastic_B_1.usd", f"{_PROPS}/SM_CratePlastic_C_1.usd",
-                       f"{_PROPS}/SM_CratePlastic_A_1.usd"]
+# 실제 5.1 에셋 이름(0 채움). 기존 _1/_2 형식은 전부 404 → 갈색 큐브 폴백이었음.
+BOX_USD_CANDIDATES = [f"{_PROPS}/SM_CardBoxA_01.usd", f"{_PROPS}/SM_CardBoxB_01.usd",
+                      f"{_PROPS}/SM_CardBoxC_01.usd"]
+# SM_Pallet* 는 5.1에 없음 → 픽업 마커를 플라스틱 크레이트로 대체
+PALLET_USD_CANDIDATES = [f"{_PROPS}/SM_CratePlastic_D_01.usd", f"{_PROPS}/SM_CratePlastic_A_01.usd",
+                         f"{_PROPS}/SM_CratePlastic_E_01.usd"]
+DOCK_USD_CANDIDATES = [f"{_PROPS}/SM_CratePlastic_B_01.usd", f"{_PROPS}/SM_CratePlastic_C_01.usd",
+                       f"{_PROPS}/SM_CratePlastic_A_01.usd"]
 BOX_USD_SCALE    = (1.0, 1.0, 1.0)      # 골판지 박스 스케일(에셋 native 크기 보고 조정)
 PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케일
 DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
