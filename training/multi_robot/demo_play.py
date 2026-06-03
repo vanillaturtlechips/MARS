@@ -818,11 +818,12 @@ def _parse_xyz(s: str, default):
 def main():
     env_cfg = WarehouseDemoEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
-    # 시나리오 데모 기본 주행: 모드 미지정 시 visual_yaw_align(완전 홀로노믹 주행 + 외형만 회전).
+    # 기본 주행: 시나리오/운반 데모 모두 visual_yaw_align(홀로노믹 주행 + 외형만 진행방향 정렬).
+    #   안 켜면 큐브가 옆으로 미끄러지듯 움직여 어색함(운반 모드도 동일) → 둘 다 자동 ON.
     #   diff_drive_ctrl은 목표가 옆/뒤면 전진=0(회전만)으로 묶여 목표에 못 닿음 → 기본에서 제외.
-    if args.scenario_demo and not (args.diff_drive_ctrl or args.diff_drive or args.visual_yaw_align):
+    if (args.scenario_demo or args.task_cycle) and not (args.diff_drive_ctrl or args.diff_drive or args.visual_yaw_align):
         args.visual_yaw_align = True
-        print("[Demo] 시나리오 기본 주행: --visual_yaw_align 자동(홀로노믹 주행 + 외형 diff-drive)")
+        print("[Demo] 기본 주행: --visual_yaw_align 자동(홀로노믹 주행 + 외형 진행방향 정렬)")
     env_cfg.disable_strafe = args.diff_drive   # diff-drive 모델은 학습과 동일하게 vy 차단
     env_cfg.diff_drive_controller = args.diff_drive_ctrl   # 계층 컨트롤러(재학습 0)
     env_cfg.diff_drive_turn_gain  = args.turn_gain
