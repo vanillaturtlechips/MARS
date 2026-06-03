@@ -761,6 +761,18 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                             use_usd_ok = True
                             chosen_usd = _cand
                             print(f"[Demo] 창고 랙 USD 채택: {_cand.rsplit('/', 1)[-1]}")
+                            # 랙 실제 치수 측정(스케일·박스 층높이 정밀 조정용 1회 출력)
+                            try:
+                                _bc = UsdGeom.BBoxCache(Usd.TimeCode.Default(),
+                                                        ['default', 'render', 'proxy', 'guide'])
+                                _rng = _bc.ComputeWorldBound(
+                                    _st.GetPrimAtPath("/World/envs/env_0/Rack_0")).ComputeAlignedRange()
+                                _mn, _mx = _rng.GetMin(), _rng.GetMax()
+                                print(f"[Demo][RACK BBOX] size(x,y,z)=("
+                                      f"{_mx[0]-_mn[0]:.3f},{_mx[1]-_mn[1]:.3f},{_mx[2]-_mn[2]:.3f})  "
+                                      f"z범위 {_mn[2]:.2f}~{_mx[2]:.2f}")
+                            except Exception as _be:
+                                print(f"[Demo][RACK BBOX] 측정 실패: {_be}")
                             break
                         else:
                             print(f"[Demo] 랙 USD 비어있음, 다음 후보 시도: {_cand.rsplit('/', 1)[-1]}")
