@@ -139,8 +139,8 @@ CAMERA_EYE    = (3.88, -9.80, 5.43)     # 창고 외벽 바깥에서 내부 비�
 CAMERA_TARGET = (1.45, -6.15, 3.03)     # 창고 내부 상단 영역 — 로봇 활동 구역 위쪽
 # 시나리오 데모 전용 카메라 — 로봇이 원점 주변(y -4~+4)에 퍼지므로 중앙 부감(높은 3/4뷰).
 #   기존 카메라는 아래 선반만 잡아 시나리오가 화면 밖/가림. --cam_eye 주면 그게 우선.
-SCN_CAMERA_EYE    = (5.0, -7.0, 13.5)   # 높은 3/4 부감 — 3.5m 랙이 중앙 통로를 안 가리게 가파르게
-SCN_CAMERA_TARGET = (0.0, 0.0, 0.2)
+SCN_CAMERA_EYE    = (2.0, -13.0, 7.0)   # B안: 창고 지붕 아래 옆 3/4 각도(부감 13.5는 지붕에 막힘). ±4 영역 프레이밍.
+SCN_CAMERA_TARGET = (0.0, 0.0, 0.4)     # 안 맞으면 --cam_eye "x,y,z" --cam_target "x,y,z"로 즉석 조정
 #  로봇 외형(iw.hub) — 큐브 yaw 대신 '진행 방향'으로 향하게 + 수평 yaw만(기울기/덜덜 제거)
 ROBOT_VISUAL_SCALE = 0.9                # iw.hub 외형 크기 — 약간 줄여 충돌큐브(0.8) 안에 들게(코 오버행↓)
 VIS_YAW_OFFSET_DEG = 0.0                # iw.hub 메시 정면축 보정(도) — 옆을 보면 90/180 등으로
@@ -679,22 +679,21 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         import math as _math
         _yaw = _math.radians(WAREHOUSE_ROT_DEG)
         _wq = (_math.cos(_yaw / 2), 0.0, 0.0, _math.sin(_yaw / 2))   # z축 yaw 쿼터니언
-        if getattr(self.cfg, "scenario_demo", False):
+        # B안: 시나리오·운반 모두 창고 맵을 깔아 'S1~S6를 공장 안에서' 보이게(실패 시 GroundPlane).
+        #   시나리오 카메라도 부감→옆각도(SCN_CAMERA)로 바꿔 창고 지붕에 안 막히게 함.
+        try:
+            warehouse_cfg = sim_utils.UsdFileCfg(
+                usd_path=WAREHOUSE_USD,
+                scale=(WAREHOUSE_SCALE, WAREHOUSE_SCALE, WAREHOUSE_SCALE),
+            )
+            warehouse_cfg.func("/World/Warehouse", warehouse_cfg,
+                               translation=WAREHOUSE_TRANSLATE,
+                               orientation=_wq)
+            _mode = "scenario" if getattr(self.cfg, "scenario_demo", False) else "task"
+            print(f"[Demo] 창고 USD 로드 성공 (모드={_mode}, scale={WAREHOUSE_SCALE})")
+        except Exception:
             spawn_ground_plane("/World/ground", GroundPlaneCfg())
-            print("[Demo] 시나리오 모드: 바닥판만(창고 지붕이 부감 시야 막음) — 랙/로봇은 그대로")
-        else:
-            try:
-                warehouse_cfg = sim_utils.UsdFileCfg(
-                    usd_path=WAREHOUSE_USD,
-                    scale=(WAREHOUSE_SCALE, WAREHOUSE_SCALE, WAREHOUSE_SCALE),
-                )
-                warehouse_cfg.func("/World/Warehouse", warehouse_cfg,
-                                   translation=WAREHOUSE_TRANSLATE,
-                                   orientation=_wq)
-                print(f"[Demo] 창고 USD 로드 성공 (translate={WAREHOUSE_TRANSLATE}, rot={WAREHOUSE_ROT_DEG}°, scale={WAREHOUSE_SCALE})")
-            except Exception:
-                spawn_ground_plane("/World/ground", GroundPlaneCfg())
-                print("[Demo] 창고 USD 없음, GroundPlane fallback")
+            print("[Demo] 창고 USD 없음, GroundPlane fallback")
 
         # ── 선반: cuboid (물리 충돌 항상 ON — 로봇이 피하는 실제 장애물) ──
         #    [데모버그 수정] 이전엔 scenario_demo에서 충돌을 껐었음(17D가 선반 방향을 몰라
