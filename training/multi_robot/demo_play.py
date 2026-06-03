@@ -121,7 +121,8 @@ WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_wareho
 WAREHOUSE_TRANSLATE = (0.0, 0.0, 0.0)   # 창고 USD 위치 (열린 통로가 원점에 오도록 이동)
 WAREHOUSE_ROT_DEG   = 0.0               # z축 회전(도) — 창고 통로 방향 맞추기
 WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
-SHOW_BOX_SHELVES    = False             # 큐브 외형 숨김(충돌 유지) → 아래 진짜 랙 USD가 외형 담당.
+SHOW_BOX_SHELVES    = True              # 단단한 큐브 선반(충돌과 일치, 확실히 보임). 절차적랙/USD랙은
+                                         #   투명·파이프·개판 문제로 비활성. 깔끔·신뢰 우선.
 USE_SHELF_USD       = False              # USD 끔 → 아래 절차적 큐브 랙(기둥+선반판 5단, 높이 3.5m) 사용.
                                          #   SM_RackFrame_03은 얇은 기둥뿐이라 안 보임. 큐브 랙이 치수 통제·확실히 보임.
 # 선반 USD 후보 — RackPile(박스 적재된 랙) 우선. SM_RackShelf_01은 납작해 투명하게 보여 제외.
@@ -211,7 +212,7 @@ BOX_USD_SCALE    = (1.0, 1.0, 1.0)      # 골판지 박스 스케일(에셋 nati
 PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케일
 DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
 # ── 선반 적재물(꾸미기): 비어 보이는 랙에 박스를 올림(순수 비주얼, 충돌 없음) ──
-SHELF_GOODS         = True               # 랙에 박스 적재(비주얼). 물리 무관 확인됨.
+SHELF_GOODS         = False              # 떠다니는 박스 적재물 끔(개판 원인). 단단한 큐브 선반만 깔끔히.
 SHELF_GOODS_LEVELS  = [0.3, 1.25, 2.1]   # 절차적 랙 선반판(0.08/1.05/1.925) 위에 정확히 얹기(=판높이+박스반높이)
 SHELF_GOODS_PER_ROW = 3                  # 한 층에 박스 개수(선반 x축 분포)
 SHELF_GOODS_XSPAN   = 2.0                # 박스 분포 x폭(선반 길이 3.0 안쪽)
@@ -576,11 +577,17 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             self._init_task(ids)
 
     def _apply_action(self):
-        # 물리 action은 eval과 100% 동일하게 raw 적용(스무딩 제거).
-        #   3-step 이동평균 스무딩은 떨림은 줄였지만 action을 둔하게 만들어, 좁은 통로 통과·
-        #   회피 같은 샤프한 기동을 못 해 로봇이 통로서 멈춤(=화면상 박힘). eval S1/S2/S5 클린은
-        #   raw action 기준이라, 내비 정확도를 우선해 raw로. (떨림은 아래 시각 yaw 평활로 흡수)
+        # action 3-step 이동평균 — cube velocity 매-step 점프(=물리 떨림/발광) 차단. 필수.
+        #   (제거했더니 로봇이 부들부들 떨렸고 R2 문제도 안 고쳐져서 복원.)
+        if self._prev_actions is None:
+            self._prev_actions = [self._actions.clone(), self._actions.clone()]
+        smoothed = (self._actions + self._prev_actions[0] + self._prev_actions[1]) / 3.0
+        self._prev_actions[1] = self._prev_actions[0].clone()
+        self._prev_actions[0] = self._actions.clone()
+        orig_actions = self._actions
+        self._actions = smoothed
         super()._apply_action()
+        self._actions = orig_actions
 
         # 시각 메시: 위치는 큐브 그대로(LERP 빼서 lag artifact 제거), yaw만 스무딩
         SMOOTH_YAW = 0.15
@@ -641,11 +648,11 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                     #   외형 코 오버행은 ROBOT_VISUAL_SCALE로 약간만 줄이고, 끼임을 우선 제거.
                     size=(0.5, 0.4, 0.3),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                        # eval env(WarehouseMARLEnv)와 100% 동일한 rigid 속성으로 맞춤.
-                        #   데모만 있던 sleep/stabilization_threshold=0이 좁은갭 통과 거동을 미묘히
-                        #   바꿔(체계적 물리 차이) R2/R0 배회 유발 의심 → eval처럼 기본값(미설정).
                         disable_gravity=False, linear_damping=2.0, angular_damping=5.0,
                         max_linear_velocity=5.0, max_angular_velocity=10.0,
+                        # 슬립 비활성 복원: 목표 근처서 큐브가 sleep되면 속도명령 안 먹어 "좀비" 정지.
+                        #   (R2 디버깅 중 제거했으나 R2와 무관 + 안정성에 필요해 복원.)
+                        sleep_threshold=0.0, stabilization_threshold=0.0,
                     ),
                     mass_props=sim_utils.MassPropertiesCfg(mass=20.0),
                     collision_props=sim_utils.CollisionPropertiesCfg(),
