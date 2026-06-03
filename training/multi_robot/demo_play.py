@@ -207,8 +207,8 @@ BOX_USD_SCALE    = (1.0, 1.0, 1.0)      # 골판지 박스 스케일(에셋 nati
 PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케일
 DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
 # ── 선반 적재물(꾸미기): 비어 보이는 랙에 박스를 올림(순수 비주얼, 충돌 없음) ──
-SHELF_GOODS         = False              # RackPile USD가 자체 적재 박스를 포함 → 추가 박스 끔(이중 클러터·공중부양 방지)
-SHELF_GOODS_LEVELS  = [1.65]             # 박스 얹는 높이(m) — 선반 큐브(높이 1.5) 위에 얹기(임베드 방지)
+SHELF_GOODS         = True               # 랙 프레임을 박스로 채워 '재고 있는 선반'으로(SM_RackFrame_03은 골조라 비어보임)
+SHELF_GOODS_LEVELS  = [0.45, 1.35, 2.25] # 프레임 층 높이(m) — 3층 적재. 프레임 빔 높이와 안 맞으면 조정
 SHELF_GOODS_PER_ROW = 3                  # 한 층에 박스 개수(선반 x축 분포)
 SHELF_GOODS_XSPAN   = 2.0                # 박스 분포 x폭(선반 길이 3.0 안쪽)
 SHELF_GOODS_SCALE   = (1.0, 1.0, 1.0)    # 적재 박스 스케일
