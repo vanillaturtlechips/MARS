@@ -118,8 +118,9 @@ WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_wareho
 WAREHOUSE_TRANSLATE = (0.0, 0.0, 0.0)   # 창고 USD 위치 (열린 통로가 원점에 오도록 이동)
 WAREHOUSE_ROT_DEG   = 0.0               # z축 회전(도) — 창고 통로 방향 맞추기
 WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
-SHOW_BOX_SHELVES    = False             # True면 민짜 충돌박스 외형 표시. False면 외형 숨기고 아래 랙만 보임(충돌은 유지)
-USE_SHELF_USD       = True               # True면 실제 Isaac 창고 랙 USD 시도(빈 로드면 자동으로 절차적 폴백)
+SHOW_BOX_SHELVES    = True              # 충돌 큐브를 '단단한 선반'으로 그대로 표시(충돌과 100% 일치).
+                                         #   False+랙USD는 SM_RackShelf_01이 투명 렌더돼 박스만 공중에 뜸 → True로 고정.
+USE_SHELF_USD       = False              # 랙 USD 오버레이 비활성(투명 문제). 큐브 선반만 깔끔히 보임.
 # 선반 USD 후보 — 위에서부터 시도, 첫 성공(메시 존재)을 채택. 모두 실패시 절차적 폴백.
 # 실제 5.1 에셋 이름(S3 목록 확인). 기존 SM_RackLongMetal_*는 5.1에 없어 전부 폴백됐었음.
 SHELF_USD_CANDIDATES = [
@@ -207,7 +208,7 @@ PALLET_USD_SCALE = (1.0, 1.0, 1.0)      # 픽업 팔레트/크레이트 스케�
 DOCK_USD_SCALE   = (1.0, 1.0, 1.0)      # 하차 크레이트 스케일
 # ── 선반 적재물(꾸미기): 비어 보이는 랙에 박스를 올림(순수 비주얼, 충돌 없음) ──
 SHELF_GOODS         = True               # False면 빈 선반
-SHELF_GOODS_LEVELS  = [0.35, 1.25]       # 박스 얹는 높이(m) — 랙 보드에 맞춰 조정
+SHELF_GOODS_LEVELS  = [1.65]             # 박스 얹는 높이(m) — 선반 큐브(높이 1.5) 위에 얹기(임베드 방지)
 SHELF_GOODS_PER_ROW = 3                  # 한 층에 박스 개수(선반 x축 분포)
 SHELF_GOODS_XSPAN   = 2.0                # 박스 분포 x폭(선반 길이 3.0 안쪽)
 SHELF_GOODS_SCALE   = (1.0, 1.0, 1.0)    # 적재 박스 스케일
