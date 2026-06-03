@@ -232,3 +232,4 @@ __marimo__/
 .~lock.*
 !logs/warehouse_manipulation_teacher/model_2999.pt
 !logs/warehouse_mappo_extobs/model_600.pt
+!logs/warehouse_mappo_extobs/model_shelf_final.pt
