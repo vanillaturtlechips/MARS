@@ -121,11 +121,12 @@ WAREHOUSE_SCALE     = 1.0               # 창고 전체 스케일
 SHOW_BOX_SHELVES    = False             # 큐브 외형 숨김(충돌 유지) → 아래 진짜 랙 USD가 외형 담당.
 USE_SHELF_USD       = True               # 진짜 Isaac 창고 랙 USD(배경 랙과 동일 계열).
 # 선반 USD 후보 — RackPile(박스 적재된 랙) 우선. SM_RackShelf_01은 납작해 투명하게 보여 제외.
+# full_warehouse.usd 분석 결과 배경 랙 본체 = SM_RackFrame_03(금속 프레임). 이걸 1순위로.
+#   RackShelf_01=납작한 선반판(투명해보임), RackPile=파이프더미 → 프레임이 본체.
 SHELF_USD_CANDIDATES = [
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_03.usd",
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_04.usd",
-    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_06.usd",
     f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackFrame_03.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackShelf_01.usd",
+    f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_03.usd",
 ]
 SHELF_USD_SCALE     = (1.0, 1.0, 1.0)    # 랙 스케일 — 네이티브 크기 보고 1차 렌더 후 조정(footprint 3.0×0.5 목표)
 SHELF_USD = SHELF_USD_CANDIDATES[0]   # 하위호환: 단일 변수도 유지
