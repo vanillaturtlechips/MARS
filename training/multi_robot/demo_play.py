@@ -943,7 +943,10 @@ def main():
     step = 0
     while simulation_app.is_running():
         with torch.inference_mode():
-            actions = policy.act_inference(obs)
+            # eval(load_policy)은 actor 출력에 tanh를 적용해 [-1,1]로 짬 → S1/S2/S5 100%.
+            #   act_inference는 raw mean이라 clamp만 돼 더 공격적 → 3-way서 오버슈팅·배회(R2/R0 교착).
+            #   eval과 동일하게 tanh 적용해 데모 거동을 검증된 eval과 일치시킴.
+            actions = policy.act_inference(obs).tanh()
         obs, _, _, _ = env.step(actions)
         if isinstance(obs, tuple):
             obs = obs[0]
