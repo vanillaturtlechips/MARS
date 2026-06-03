@@ -679,17 +679,16 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
                 spawn_ground_plane("/World/ground", GroundPlaneCfg())
                 print("[Demo] 창고 USD 없음, GroundPlane fallback")
 
-        # ── 선반: cuboid (물리 충돌 항상 유지 — 로봇이 피하는 실제 장애물) ──
-        #    외형은 산업용 금속 랙 느낌. 정렬 끝나면 SHOW_BOX_SHELVES=False로
-        #    외형만 숨겨 USD 창고 선반만 보이게(충돌은 그대로) 할 수 있음.
-        # 시나리오 데모: 랙 충돌 OFF(배경 비주얼만). 17D 정책은 선반 방향을 몰라 목표가 랙
-        #   너머/옆이면 회피하다 랙에 박혀 정지(pin)함 — 협응 시연이 목적이므로 충돌 제거해 모두 도달.
-        _scn = getattr(self.cfg, "scenario_demo", False)
+        # ── 선반: cuboid (물리 충돌 항상 ON — 로봇이 피하는 실제 장애물) ──
+        #    [데모버그 수정] 이전엔 scenario_demo에서 충돌을 껐었음(17D가 선반 방향을 몰라
+        #    랙에 박혀 pin → 통과시키려 충돌 제거). 그러나 충돌 OFF면 로봇이 선반을 '뚫고
+        #    들어가 안에서 흔들리는' 버그가 됨. 선반 회피를 학습한 19D 모델(scenario_train)부턴
+        #    충돌을 켜야 실제로 선반을 피해 정상으로 보임 → scenario_demo 포함 항상 ON으로 통일.
         shelf_cfg_base = sim_utils.CuboidCfg(
             size=(3.0, 0.5, 1.5),
-            rigid_props=None if _scn else sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-            mass_props=None if _scn else sim_utils.MassPropertiesCfg(mass=500.0),
-            collision_props=None if _scn else sim_utils.CollisionPropertiesCfg(),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            mass_props=sim_utils.MassPropertiesCfg(mass=500.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(
                 diffuse_color=(0.30, 0.34, 0.40), metallic=0.7, roughness=0.35
             ),
