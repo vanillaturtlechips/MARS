@@ -297,9 +297,12 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             state[:, 0] = ox + sx
             state[:, 1] = oy + sy
             state[:, 2] = 0.15
-            yaw = math.atan2(gy - sy, gx - sx)     # 목표를 바라보고 시작(자연스러운 출발)
-            state[:, 3] = math.cos(yaw / 2); state[:, 4] = 0.0
-            state[:, 5] = 0.0;               state[:, 6] = math.sin(yaw / 2)
+            # eval run_scenario와 동일하게 yaw=0(identity, +x 향함)으로 시작.
+            #   목표 바라보게 하면(atan2) 초기 yaw가 달라져 3-way 교차 타이밍이 바뀌고
+            #   R2가 교착에 걸림. eval(S1 100%·S2 100%)은 yaw=0 기준이라 동일하게 맞춤.
+            #   외형은 visual_yaw_align이 진행방향으로 돌려주니 시각상 어색하지 않음.
+            state[:, 3] = 1.0; state[:, 4] = 0.0
+            state[:, 5] = 0.0; state[:, 6] = 0.0
             state[:, 7:] = 0.0                      # 속도 0으로 리셋
             robot.write_root_state_to_sim(state, all_ids)
             self._goal_pos_w[:, i, 0] = ox + gx
