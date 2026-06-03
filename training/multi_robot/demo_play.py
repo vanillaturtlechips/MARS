@@ -935,18 +935,48 @@ def main():
     except Exception as _e:
         print(f"[Demo] 카메라 설정 실패(무시): {_e}")
 
-    # 데모: 정책 고정 inference (act_inference = actor mean, std 미사용 → std 음수 에러 회피)
-    policy = runner.alg.policy
+    # ── eval(load_policy)과 100% 동일한 추론 경로: 수동 ActorMLP ──
+    #   runner.alg.policy(act_inference)와 미묘한 차이(R2 배회)를 제거하기 위해 eval과 동일
+    #   ActorMLP로 추론. eval_scenarios.load_policy가 이 actor로 S1/S2/S5 100% 검증함.
+    import torch.nn as _nn
+    _raw = torch.load(args.checkpoint, map_location=env.device, weights_only=False)
+    _raw = _raw.get("model_state_dict", _raw)
+    _odim = _raw["actor.0.weight"].shape[1]
+
+    class _ActorMLP(_nn.Module):
+        def __init__(self):
+            super().__init__()
+            _layers = []
+            _ind = _odim
+            for _h in [256, 128, 64]:
+                _layers += [_nn.Linear(_ind, _h), _nn.ELU()]
+                _ind = _h
+            _layers.append(_nn.Linear(_ind, 3))
+            self.net = _nn.Sequential(*_layers)
+
+        def forward(self, x):
+            return self.net(x).tanh()
+
+    eval_actor = _ActorMLP().to(env.device)
+    _esd = {}
+    for _k, _v in _raw.items():
+        if _k.startswith("actor.net."):
+            _esd[_k[len("actor."):]] = _v
+        elif _k.startswith("actor."):
+            _esd["net." + _k[len("actor."):]] = _v
+    _miss, _unexp = eval_actor.load_state_dict(_esd, strict=False)
+    eval_actor.eval()
+    print(f"[Demo] eval-동일 ActorMLP 추론 (로드 누락 {len(_miss)}개)")
+
     obs = env.get_observations()
     if isinstance(obs, tuple):
         obs = obs[0]
     step = 0
     while simulation_app.is_running():
         with torch.inference_mode():
-            # eval(load_policy)은 actor 출력에 tanh를 적용해 [-1,1]로 짬 → S1/S2/S5 100%.
-            #   act_inference는 raw mean이라 clamp만 돼 더 공격적 → 3-way서 오버슈팅·배회(R2/R0 교착).
-            #   eval과 동일하게 tanh 적용해 데모 거동을 검증된 eval과 일치시킴.
-            actions = policy.act_inference(obs).tanh()
+            # eval과 동일한 ActorMLP로 추론(per-robot obs → tanh action). TensorDict면 policy 키 추출.
+            _op = obs["policy"] if not isinstance(obs, torch.Tensor) else obs
+            actions = eval_actor(_op)
         obs, _, _, _ = env.step(actions)
         if isinstance(obs, tuple):
             obs = obs[0]
