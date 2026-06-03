@@ -57,6 +57,9 @@ parser.add_argument("--scn_hold", type=int, default=25,
                     help="전원 도달 후 이만큼 스텝 유지하면 다음 시나리오로(성공 연출 여유)")
 parser.add_argument("--scn_max", type=int, default=300,
                     help="시나리오당 최대 스텝(미도달이어도 이후 강제 전환). 느린 경로(우회) 도달 여유")
+parser.add_argument("--scn_only", type=int, default=-1,
+                    help="이 시나리오 인덱스(0=S1교행,1=S2삼각,2=S4스테이션,3=S5혼잡)만 반복재생. "
+                         "매 회 다른 지터 → 한 영상에 여러 draw. -1=전체 순차(기본). 시나리오별 좋은 take 뽑기용.")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -268,7 +271,8 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         if self._scn_demo:
             self._scn_hold = int(getattr(self.cfg, "scn_hold", 25))
             self._scn_max  = int(getattr(self.cfg, "scn_max", 240))
-            self._scn_idx  = 0
+            self._scn_only = int(getattr(self.cfg, "scn_only", -1))   # -1=전체, >=0=그것만 반복
+            self._scn_idx  = self._scn_only if self._scn_only >= 0 else 0
             self._scn_step = 0          # 현재 시나리오 경과 스텝
             self._scn_reach_hold = 0    # 전원 '한 번이라도 도달' 후 유지 스텝
             self._global_step = 0       # 영상 프레임 = 전역 스텝(자막 타이밍용)
@@ -368,7 +372,9 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             mind = "  ".join(f"R{i}최소={self._scn_min_d[i]:.2f}" for i in range(N_ROBOTS))
             print(f"[Scenario {self._scn_idx+1}/{len(SCN_DEMO)}] {status} "
                   f"({self._scn_step} steps)  | {mind}  (도달<{eps:.2f})")
-            self._scn_idx = (self._scn_idx + 1) % len(SCN_DEMO)
+            # scn_only면 같은 시나리오를 다른 지터로 반복재생(좋은 take 뽑기), 아니면 순차 전환
+            if getattr(self, "_scn_only", -1) < 0:
+                self._scn_idx = (self._scn_idx + 1) % len(SCN_DEMO)
             self._scn_apply(self._scn_idx)
 
     # ── 운반 사이클 연출 ───────────────────────────────────────────────
@@ -850,6 +856,7 @@ def main():
     env_cfg.scenario_demo         = args.scenario_demo
     env_cfg.scn_hold              = args.scn_hold
     env_cfg.scn_max               = args.scn_max
+    env_cfg.scn_only              = args.scn_only
     env_cfg.task_cycle            = args.task_cycle and not args.scenario_demo   # 선반↔스테이션 운반 사이클
     # 운반 사이클/시나리오가 골을 직접 구동하므로 랜덤 연속골은 끔(이중 구동 방지)
     env_cfg.continuous_goals      = args.continuous_goals and not env_cfg.task_cycle and not args.scenario_demo
