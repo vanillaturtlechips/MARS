@@ -58,8 +58,12 @@ parser.add_argument("--scn_hold", type=int, default=25,
 parser.add_argument("--scn_max", type=int, default=300,
                     help="시나리오당 최대 스텝(미도달이어도 이후 강제 전환). 느린 경로(우회) 도달 여유")
 parser.add_argument("--scn_only", type=int, default=-1,
-                    help="이 시나리오 인덱스(0=S1교행,1=S2삼각,2=S4스테이션,3=S5혼잡)만 반복재생. "
-                         "매 회 다른 지터 → 한 영상에 여러 draw. -1=전체 순차(기본). 시나리오별 좋은 take 뽑기용.")
+                    help="이 시나리오 인덱스(0=S1교행,1=S2삼각,2=S4스테이션,3=S5혼잡,4=S6동적장애물)만 반복재생. "
+                         "매 회 다른 지터 → 한 영상에 여러 draw. -1=전체 순차(기본). 시나리오별 좋은 take 뽑기용. "
+                         "S6(4)는 17D model_10998 + --enable_obstacles 필수(19D는 S6 ~32%).")
+parser.add_argument("--enable_obstacles", action="store_true", default=False,
+                    help="동적 장애물 활성화(S6 시나리오용). 경로에 장애물(주황 큐브)이 출현 → 우회 시연. "
+                         "S6는 17D model_10998과 함께 사용(--extended_obs 끄고).")
 parser.add_argument("--video", action="store_true",
                     help="rgb_array→mp4 헤드리스 녹화 (livestream 불필요)")
 parser.add_argument("--video_length", type=int, default=1500,
@@ -188,6 +192,14 @@ SCN_DEMO = [
     {"label": "혼잡 통로 횡단 — 3방향 교차",
      "spawns": [(-4.0, 0.0), (4.0, 0.3), (0.0, 4.0)],
      "goals":  [(4.0, 0.0), (-4.0, 0.3), (0.0, -4.0)]},          # eval S5_mixed
+    # S6: 동적 장애물 회피. 17D model_10998 + --enable_obstacles 로 렌더(--scn_only 4).
+    #   로봇0(y=-2)·로봇1(y=0) 경로 정면에 장애물 출현 → 우회. 로봇2(y=2)는 대조군(장애물 없음).
+    #   eval S6_obstacle_detour 와 동일 기하(98% 도달).
+    {"label": "동적 장애물 회피 — 경로 위 장애물 출현, 우회 도달",
+     "spawns": [(-4.0, -2.0), (-4.0, 0.0), (-4.0, 2.0)],
+     "goals":  [( 4.0, -2.0), ( 4.0, 0.0), ( 4.0, 2.0)],
+     "obstacles": [(0.0, -2.0), (0.0, 0.0)],
+     "obstacle_spawn_step": 25},                                 # eval S6_obstacle_detour
 ]
 SCN_SCHEDULE_PATH = "logs/demo_videos/scenario_schedule.tsv"   # 자막 burn-in용 (start_step\tlabel)
 PICK_PAD_COLOR  = (0.15, 0.85, 0.35)    # 픽업존 폴백 색(초록 원반)
@@ -315,6 +327,20 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             robot.write_root_state_to_sim(state, all_ids)
             self._goal_pos_w[:, i, 0] = ox + gx
             self._goal_pos_w[:, i, 1] = oy + gy
+        # 동적 장애물(S6): 시나리오 지정 위치·등장시점으로 강제(eval run_scenario와 동일).
+        #   episode_length_buf은 시나리오 데모에서 리셋 안 됨(done 강제 0)이라, 현재값 기준 상대
+        #   등장시점으로 설정 → 매 재적용마다 장애물이 가라앉았다 spawn_step 뒤 다시 출현(우회 드라마 반복).
+        scn_obst = scn.get("obstacles")
+        if scn_obst and getattr(self.cfg, "enable_dynamic_obstacles", False) \
+                and hasattr(self, "_obst_pos_local"):
+            spawn_step = int(scn.get("obstacle_spawn_step", 25))
+            for o, (obx, oby) in enumerate(scn_obst):
+                if o < self.cfg.n_dynamic_obstacles:
+                    self._obst_pos_local[:, o, 0] = obx
+                    self._obst_pos_local[:, o, 1] = oby
+            self._obst_spawn_step[all_ids] = self.episode_length_buf.float() + float(spawn_step)
+            self._obst_active[all_ids] = False
+            print(f"   [S6] 장애물 {len(scn_obst)}개 @ {scn_obst}  등장=+{spawn_step}step")
         # 진단: env_origin과 설정된 스폰/골 월드좌표 확인(좌표 어긋남 추적)
         _eo = [round(float(v), 2) for v in self.scene.env_origins[0].tolist()]
         _sp = [(round(float(self.scene.env_origins[0,0] + sx), 2),
@@ -863,6 +889,7 @@ def main():
     env_cfg.scn_max               = args.scn_max
     env_cfg.scn_only              = args.scn_only
     env_cfg.task_cycle            = args.task_cycle and not args.scenario_demo   # 선반↔스테이션 운반 사이클
+    env_cfg.enable_dynamic_obstacles = args.enable_obstacles                     # S6 동적 장애물(주황 큐브)
     # 운반 사이클/시나리오가 골을 직접 구동하므로 랜덤 연속골은 끔(이중 구동 방지)
     env_cfg.continuous_goals      = args.continuous_goals and not env_cfg.task_cycle and not args.scenario_demo
     if args.scenario_demo:
