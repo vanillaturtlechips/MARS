@@ -29,6 +29,14 @@ grep -iE "\[S6\]" /tmp/s6.log | head -5 || echo "(없음 — 장애물 미배치
 echo "=== 타이밍 tsv ==="
 cat logs/demo_videos/scenario_schedule.tsv 2>/dev/null || echo "(없음)"
 
+# 편집 기준점: 각 회차(take) 시작 시점을 mm:ss로 저장(15fps). tsv는 다음 렌더에 덮어쓰이므로
+#   scn별로 보존. 끝 시점 = 다음 행 시작(마지막은 영상 끝).
+CUTS="logs/demo_videos/scn_4_cuts.txt"
+awk -F'\t' 'NR>1{sec=$1/15; printf "%02d:%02d\tstep %d\t%s\n", int(sec/60), int(sec)%60, $1, $2}' \
+  logs/demo_videos/scenario_schedule.tsv > "$CUTS" 2>/dev/null
+echo "=== 편집 기준점(회차 시작 mm:ss) → $CUTS ==="
+cat "$CUTS" 2>/dev/null || echo "(없음)"
+
 if command -v ffmpeg >/dev/null 2>&1; then
   ffmpeg -y -i logs/demo_videos/demo-step-0.mp4 -vframes 1 /tmp/s6_check.png >/dev/null 2>&1 && echo "[render-s6] 스샷: /tmp/s6_check.png"
 fi
