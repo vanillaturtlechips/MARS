@@ -2,12 +2,12 @@
 
 실행 (로컬 GUI):
   python training/single_robot/demo_manipulation.py \
-    --ckpt logs/warehouse_manipulation/model_2999.pt \
+    --ckpt logs/warehouse_manipulation_teacher/model_2999.pt \
     --num_envs 4
 
 실행 (RunPod Livestream):
   python training/single_robot/demo_manipulation.py \
-    --ckpt logs/warehouse_manipulation/model_2999.pt \
+    --ckpt logs/warehouse_manipulation_teacher/model_2999.pt \
     --num_envs 4 --livestream 1
 """
 

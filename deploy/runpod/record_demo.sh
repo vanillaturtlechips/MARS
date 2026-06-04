@@ -8,7 +8,7 @@
 
 set -e
 
-CKPT="${1:-logs/warehouse_manipulation/model_2999.pt}"
+CKPT="${1:-logs/warehouse_manipulation_teacher/model_2999.pt}"   # Teacher place_rate 100% (실제 경로: _teacher/)
 OUTPUT="${2:-/workspace/phase2_demo.mp4}"
 NUM_EPISODES="${3:-5}"
 RES="1280x720"
