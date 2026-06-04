@@ -8,7 +8,8 @@
 
 set -e
 
-CKPT="${1:-logs/warehouse_manipulation_teacher/model_2999.pt}"   # Teacher place_rate 100% (실제 경로: _teacher/)
+CKPT="${1:-logs/warehouse_pickplace/model_300.pt}"   # WarehouseManipulationEnv(obs23/act4)로 학습됨 → 규격 일치. place 86~94%
+# 주의: model_2999(_teacher)는 33D/9D 다른 env용이라 이 데모(23D/4D)와 안 맞음(차원 에러). model_300 사용.
 OUTPUT="${2:-/workspace/phase2_demo.mp4}"
 NUM_EPISODES="${3:-5}"
 RES="1280x720"
