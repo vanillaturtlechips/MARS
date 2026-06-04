@@ -16,9 +16,10 @@ command -v ffmpeg >/dev/null 2>&1 || { echo "[record] ffmpeg 설치..."; apt-get
 
 rm -f "$OUTPUT"   # stale 파일 오인 방지
 LOG=/tmp/arm_record.log
-echo "[record] demo_record.py (검증된 헤드리스 카메라 녹화)  ckpt=$CKPT  out=$OUTPUT  ep=$NUM_EPISODES"
-python training/single_robot/demo_record.py \
-  --ckpt "$CKPT" --num_episodes "$NUM_EPISODES" --output "$OUTPUT" > "$LOG" 2>&1 || true
+echo "[record] demo_manipulation.py --record (env.render+RecordVideo, nav 데모와 동일 경로)  ckpt=$CKPT  ep=$NUM_EPISODES"
+python training/single_robot/demo_manipulation.py \
+  --ckpt "$CKPT" --num_envs 4 --num_episodes "$NUM_EPISODES" \
+  --record --video_out "$OUTPUT" --headless > "$LOG" 2>&1 || true
 
 echo "=== 핵심 로그 ==="
 grep -aE "\[Actor\]|에피소드|place_rate|프레임|frame|Error|Traceback|mp4|saved|저장" "$LOG" | tail -25

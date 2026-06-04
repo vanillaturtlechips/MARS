@@ -139,30 +139,37 @@ def main():
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs  = args.num_envs
     env_cfg.enable_background = True   # 창고 배경 + 조명
-    env = WarehouseManipulationEnv(env_cfg)
-    env._demo_place_override = True  # goal 근처에서 자동 박스 해제
+    eye    = (0.4, 0.8, 0.7)
+    target = (0.5, 0.0, 0.45)
+    # --record: nav 데모와 동일한 env.render(rgb_array)+RecordVideo 경로(이 파드에서 검증됨).
+    #   이 파드는 standalone Camera 센서 초기화가 깨짐("Camera could not be initialized") →
+    #   Camera 대신 env 자체 렌더를 녹화. UI 없음. (demo_play.py와 동일 메커니즘)
+    env = WarehouseManipulationEnv(env_cfg, render_mode="rgb_array" if args.record else None)
+    env._demo_place_override = True  # goal 근처에서 자동 박스 해제 (raw env에 설정 — wrap 전)
 
     actor = load_actor(args.ckpt, device)
 
-    # Stage 카메라 설정 (USD prim으로 생성 → stage에서 검색/수정 가능)
-    eye    = (0.4, 0.8, 0.7)
-    target = (0.5, 0.0, 0.45)
-    quat   = _lookat_quat_wxyz(eye, target)
-
-    cam_cfg = CameraCfg(
-        prim_path="/World/ViewCamera",
-        update_period=0.0,
-        height=720,
-        width=1280,
-        data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=24.0),
-        offset=CameraCfg.OffsetCfg(
-            pos=eye,
-            rot=quat,
-            convention="world",
-        ),
-    )
-    view_camera = Camera(cam_cfg)
+    view_camera = None
+    if args.record:
+        import gymnasium as gym
+        import os
+        os.makedirs("/tmp/arm_rec", exist_ok=True)
+        env = gym.wrappers.RecordVideo(
+            env, video_folder="/tmp/arm_rec", step_trigger=lambda s: s == 0,
+            video_length=100000, disable_logger=True, name_prefix="arm",
+        )
+        try:
+            env.unwrapped.sim.set_camera_view(eye=eye, target=target)
+        except Exception as _e:
+            print(f"[Demo] 카메라뷰 설정 실패(무시): {_e}")
+    else:
+        quat = _lookat_quat_wxyz(eye, target)
+        cam_cfg = CameraCfg(
+            prim_path="/World/ViewCamera", update_period=0.0, height=720, width=1280,
+            data_types=["rgb"], spawn=sim_utils.PinholeCameraCfg(focal_length=24.0),
+            offset=CameraCfg.OffsetCfg(pos=eye, rot=quat, convention="world"),
+        )
+        view_camera = Camera(cam_cfg)
 
     print(f"\n[Demo] {args.num_envs}개 env, 창고 배경 ON")
     print("[Demo] 카메라: /World/ViewCamera (stage에서 수정 가능)")
@@ -174,11 +181,8 @@ def main():
 
     placed_count = 0
     episode_count = 0
-    frames = [] if getattr(args, "record", False) else None   # 헤드리스 카메라 녹화 버퍼
 
-    obs_dict, _ = env.reset()
-    if frames is not None:
-        view_camera.reset()   # standalone 카메라 초기화(env.reset 이후 필요) — demo_record.py와 동일 패턴
+    obs_dict, _ = env.reset()   # --record면 RecordVideo가 이 step부터 자동 녹화
 
     with torch.inference_mode():
         while simulation_app.is_running():
@@ -186,15 +190,6 @@ def main():
             actions = actor(obs).clone()
 
             obs_dict, _, terminated, truncated, extras = env.step(actions)
-
-            if frames is not None:
-                view_camera.update(dt=env.sim.get_rendering_dt())   # demo_record.py와 동일
-                rgb = view_camera.data.output.get("rgb")
-                if rgb is not None and rgb.shape[0] > 0:
-                    arr = rgb[0, :, :, :3].detach().cpu().numpy()
-                    if arr.dtype != np.uint8:
-                        arr = (arr.clip(0, 1) * 255).astype(np.uint8) if float(arr.max()) <= 1.0 else arr.astype(np.uint8)
-                    frames.append(arr)
 
             done = terminated | truncated
             if done.any():
@@ -208,14 +203,16 @@ def main():
                 print(f"[Demo] {episode_count}에피소드 완료 — 종료")
                 break
 
-    if frames:
-        import imageio.v2 as imageio
-        imageio.mimsave(args.video_out, frames, fps=30, macro_block_size=None)
-        print(f"[Demo] 녹화 저장: {args.video_out} ({len(frames)} 프레임, UI 없음·헤드리스)")
-    elif frames is not None:
-        print("[Demo] ⚠ 녹화 프레임 0개 — 카메라 렌더 안 됨(--enable_cameras 확인)")
+    env.close()   # RecordVideo가 여기서 mp4 마무리
 
-    env.close()
+    if args.record:
+        import glob, shutil
+        mp4s = sorted(glob.glob("/tmp/arm_rec/*.mp4"))
+        if mp4s:
+            shutil.copy(mp4s[-1], args.video_out)
+            print(f"[Demo] 녹화 저장: {args.video_out}  (RecordVideo, UI 없음·헤드리스)")
+        else:
+            print("[Demo] ⚠ RecordVideo가 mp4를 안 만듦 — env.render 확인")
 
 
 if __name__ == "__main__":
