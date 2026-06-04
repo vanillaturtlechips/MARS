@@ -310,10 +310,13 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
             state = robot.data.default_root_state.clone()
             sx, sy = scn["spawns"][i]
             gx, gy = scn["goals"][i]
-            # 스폰 지터(±0.35): 고정 스폰은 매번 같은 결정론 롤아웃 → 같은 나쁜 케이스 반복(docs §3).
+            # 스폰 지터(±0.15): 고정 스폰은 매번 같은 결정론 롤아웃 → 같은 나쁜 케이스 반복(docs §3).
             #   살짝 흔들면 매 렌더가 다른 롤아웃 → 모델이 견고하니(eval 100%) 대부분 전원 도달.
-            _jx = (torch.rand(self.num_envs, device=self.device) - 0.5) * 0.7
-            _jy = (torch.rand(self.num_envs, device=self.device) - 0.5) * 0.7
+            # [수정] ±0.35→±0.15: 선반 중앙 틈새가 1.0m(반폭0.5)이고 로봇 반폭0.25 → 여유 0.25m뿐.
+            #   ±0.35면 수직 관통 로봇(S1/S5 R2)이 틈새 모서리에 걸려 "비비다 포기". eval은 무지터라
+            #   x=0 중앙 통과로 100%. ±0.15(모서리 0.4<0.5)면 안 걸리면서 변동성은 유지.
+            _jx = (torch.rand(self.num_envs, device=self.device) - 0.5) * 0.3
+            _jy = (torch.rand(self.num_envs, device=self.device) - 0.5) * 0.3
             state[:, 0] = ox + sx + _jx
             state[:, 1] = oy + sy + _jy
             state[:, 2] = 0.15
