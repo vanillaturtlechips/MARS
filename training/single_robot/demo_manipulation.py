@@ -57,6 +57,10 @@ parser.add_argument("--record", action="store_true",
                     help="헤드리스 카메라 녹화(UI 없는 깨끗한 mp4). nav 데모와 동일 방식.")
 parser.add_argument("--video_out", type=str, default="/workspace/phase2_demo.mp4",
                     help="--record 시 저장 경로")
+parser.add_argument("--cam_eye", type=str, default="2.0,1.8,1.6",
+                    help="카메라 위치 x,y,z (작업공간 z≈0.8~1.2 기준)")
+parser.add_argument("--cam_target", type=str, default="0.5,0.0,0.95",
+                    help="카메라 타겟 x,y,z (팔 베이스 z=0.8, 박스 z=1.15 사이)")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
 if args.record:
@@ -139,8 +143,8 @@ def main():
     env_cfg = WarehouseManipulationEnvCfg()
     env_cfg.scene.num_envs  = args.num_envs
     env_cfg.enable_background = True   # 창고 배경 + 조명
-    eye    = (0.4, 0.8, 0.7)
-    target = (0.5, 0.0, 0.45)
+    eye    = tuple(float(v) for v in args.cam_eye.split(","))
+    target = tuple(float(v) for v in args.cam_target.split(","))
     # --record: nav 데모와 동일한 env.render(rgb_array)+RecordVideo 경로(이 파드에서 검증됨).
     #   이 파드는 standalone Camera 센서 초기화가 깨짐("Camera could not be initialized") →
     #   Camera 대신 env 자체 렌더를 녹화. UI 없음. (demo_play.py와 동일 메커니즘)
