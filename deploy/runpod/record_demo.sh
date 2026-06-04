@@ -1,7 +1,7 @@
 #!/bin/bash
-# 팔(Franka) 픽앤플레이스 데모 녹화.
-# [변경] Xvfb 화면캡처(x11grab) → 헤드리스 카메라 직접 녹화. RTX 뷰포트가 가상화면에 합성 안 돼
-#        검게 찍히던 문제 해결 + Isaac Sim UI 안 들어감(nav 데모와 동일 방식, view_camera 출력).
+# 팔(Franka) 픽앤플레이스 데모 녹화 — 검증된 demo_record.py 사용.
+#   demo_record.py가 headless+enable_cameras를 내부에서 강제하고, env.reset 후 camera.reset로
+#   초기화한 뒤 카메라 프레임을 PNG→MP4로 만듦(UI 없음, 검은화면 없음). nav 데모와 동일 원리.
 #
 # 사용: bash deploy/runpod/record_demo.sh [ckpt] [output] [episodes]
 set -e
@@ -11,21 +11,24 @@ CKPT="${1:-logs/warehouse_pickplace/model_300.pt}"   # obs23/act4 — WarehouseM
 OUTPUT="${2:-/workspace/phase2_demo.mp4}"
 NUM_EPISODES="${3:-5}"
 
-echo "[record] ckpt=$CKPT  out=$OUTPUT  episodes=$NUM_EPISODES  (헤드리스 카메라 녹화, UI 없음)"
-rm -f "$OUTPUT"   # stale 파일이 ✅로 오인되지 않게 먼저 삭제
+# demo_record.py는 frames_to_video에서 ffmpeg(subprocess) 사용 → 없으면 설치
+command -v ffmpeg >/dev/null 2>&1 || { echo "[record] ffmpeg 설치..."; apt-get install -y --quiet ffmpeg >/dev/null 2>&1 || true; }
+
+rm -f "$OUTPUT"   # stale 파일 오인 방지
 LOG=/tmp/arm_record.log
-python training/single_robot/demo_manipulation.py \
-  --ckpt "$CKPT" --num_envs 4 --num_episodes "$NUM_EPISODES" \
-  --record --video_out "$OUTPUT" --headless --enable_cameras > "$LOG" 2>&1 || true
+echo "[record] demo_record.py (검증된 헤드리스 카메라 녹화)  ckpt=$CKPT  out=$OUTPUT  ep=$NUM_EPISODES"
+python training/single_robot/demo_record.py \
+  --ckpt "$CKPT" --num_episodes "$NUM_EPISODES" --output "$OUTPUT" > "$LOG" 2>&1 || true
+
 echo "=== 핵심 로그 ==="
-grep -aE "\[Actor\]|place_rate|녹화 저장|프레임|Error|Traceback" "$LOG" | tail -25
-echo "=== 마지막 15줄(에러 확인용) ==="
-tail -15 "$LOG"
+grep -aE "\[Actor\]|에피소드|place_rate|프레임|frame|Error|Traceback|mp4|saved|저장" "$LOG" | tail -25
+echo "=== 마지막 12줄 ==="
+tail -12 "$LOG"
 echo "================="
 
 if [ -f "$OUTPUT" ]; then
   echo "[record] ✅ $OUTPUT ($(du -sh "$OUTPUT" | cut -f1))"
   echo "[record] 다운로드: scp -P {PORT} -i ~/.ssh/id_ed25519 root@{POD_IP}:$OUTPUT ."
 else
-  echo "[record] ❌ 파일 없음 — 위 로그 확인 (프레임 0개면 카메라 렌더 문제)"
+  echo "[record] ❌ 파일 없음 — 위 마지막 줄 확인"
 fi
