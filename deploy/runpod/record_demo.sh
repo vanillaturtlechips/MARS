@@ -20,7 +20,7 @@ rm -f "$OUTPUT"   # stale 파일 오인 방지
 LOG=/tmp/arm_record.log
 echo "[record] demo_manipulation.py --record (env.render+RecordVideo, nav 데모와 동일 경로)  ckpt=$CKPT  ep=$NUM_EPISODES"
 python training/single_robot/demo_manipulation.py \
-  --ckpt "$CKPT" --num_envs 1 --num_episodes "$NUM_EPISODES" \
+  --ckpt "$CKPT" --num_envs 4 --num_episodes "$NUM_EPISODES" \
   --record --video_out "$OUTPUT" --cam_eye "$CAM_EYE" --cam_target "$CAM_TARGET" \
   --headless > "$LOG" 2>&1 || true
 

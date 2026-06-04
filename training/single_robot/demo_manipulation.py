@@ -154,6 +154,7 @@ def main():
     actor = load_actor(args.ckpt, device)
 
     view_camera = None
+    grasp_box_vis = None   # 손에 보이는 박스 프록시(env가 잡은 박스를 -5로 숨기므로)
     if args.record:
         import gymnasium as gym
         import os
@@ -166,6 +167,20 @@ def main():
             env.unwrapped.sim.set_camera_view(eye=eye, target=target)
         except Exception as _e:
             print(f"[Demo] 카메라뷰 설정 실패(무시): {_e}")
+        # 데모용 프록시 박스: env는 잡은 박스를 지하 -5m로 숨김 → 손에 보이는 가짜 박스를 띄워
+        #   "잡고 있다"가 보이게. 실제 박스는 그대로 숨겨 물리/IK 영향 없음. (visual-only)
+        try:
+            _pbox = sim_utils.CuboidCfg(
+                size=(0.08, 0.08, 0.13),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.62, 0.45, 0.24)),
+            )
+            _pbox.func("/World/DemoGraspBox", _pbox, translation=(0.0, 0.0, -5.0))
+            from isaacsim.core.prims import XFormPrim
+            grasp_box_vis = XFormPrim("/World/DemoGraspBox")
+            print("[Demo] 손에 보이는 프록시 박스 생성")
+        except Exception as _e:
+            print(f"[Demo] 프록시 박스 생성 실패(무시): {_e}")
+            grasp_box_vis = None
     else:
         quat = _lookat_quat_wxyz(eye, target)
         cam_cfg = CameraCfg(
@@ -192,6 +207,20 @@ def main():
         while simulation_app.is_running():
             obs = obs_dict["policy"]
             actions = actor(obs).clone()
+
+            # 프록시 박스를 손 위치로(잡는 중) 또는 지하로(아닐 때) — env.step의 render 전에 갱신
+            if grasp_box_vis is not None:
+                raw = env.unwrapped
+                try:
+                    if bool(raw._grasped[0].item()):
+                        ee = raw.robot.data.body_pos_w[0, raw._ee_body_idx]
+                        p = torch.tensor([[float(ee[0]), float(ee[1]), float(ee[2]) - 0.05]],
+                                         device=raw.device)
+                    else:
+                        p = torch.tensor([[0.0, 0.0, -5.0]], device=raw.device)
+                    grasp_box_vis.set_world_poses(positions=p)
+                except Exception:
+                    pass
 
             obs_dict, _, terminated, truncated, extras = env.step(actions)
 
