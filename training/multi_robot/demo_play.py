@@ -853,11 +853,36 @@ class WarehouseDemoEnv(WarehouseMARLEnv):
         if getattr(self.cfg, "task_cycle", False):
             self._spawn_task_props()
 
+        # ── 동적 장애물(S6): kinematic cuboid, 초기 지하 -5m(등장 전). ──
+        #    부모 _setup_scene을 통째로 오버라이드하므로 여기서 다시 생성해야 self.obstacles 존재.
+        #    (없으면 부모 _update_obstacles가 self.obstacles 접근 시 AttributeError)
+        #    버퍼(_obst_pos_local 등)는 부모 __init__이 생성 → 여기선 prim/RigidObject만.
+        self.obstacles: list[RigidObject] = []
+        if getattr(self.cfg, "enable_dynamic_obstacles", False):
+            for o in range(self.cfg.n_dynamic_obstacles):
+                obst_cfg = RigidObjectCfg(
+                    prim_path=f"/World/envs/env_.*/DynObstacle_{o}",
+                    spawn=sim_utils.CuboidCfg(
+                        size=self.cfg.obstacle_size,
+                        rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+                        mass_props=sim_utils.MassPropertiesCfg(mass=100.0),
+                        collision_props=sim_utils.CollisionPropertiesCfg(),
+                        visual_material=sim_utils.PreviewSurfaceCfg(
+                            diffuse_color=(0.9, 0.5, 0.1), metallic=0.0
+                        ),
+                    ),
+                    init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, -5.0)),
+                )
+                self.obstacles.append(RigidObject(obst_cfg))
+            print(f"[Demo] 동적 장애물 {len(self.obstacles)}개 생성(S6) — 등장 전 지하 -5m")
+
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
         for i, robot in enumerate(self.robots):
             self.scene.rigid_objects[f"robot_{i}"] = robot
+        for o, obst in enumerate(self.obstacles):
+            self.scene.rigid_objects[f"obstacle_{o}"] = obst
 
         light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(1.0, 0.98, 0.95))
         light_cfg.func("/World/Light", light_cfg)
