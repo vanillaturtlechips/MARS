@@ -12,9 +12,16 @@ OUTPUT="${2:-/workspace/phase2_demo.mp4}"
 NUM_EPISODES="${3:-5}"
 
 echo "[record] ckpt=$CKPT  out=$OUTPUT  episodes=$NUM_EPISODES  (헤드리스 카메라 녹화, UI 없음)"
+rm -f "$OUTPUT"   # stale 파일이 ✅로 오인되지 않게 먼저 삭제
+LOG=/tmp/arm_record.log
 python training/single_robot/demo_manipulation.py \
   --ckpt "$CKPT" --num_envs 4 --num_episodes "$NUM_EPISODES" \
-  --record --video_out "$OUTPUT" --headless --enable_cameras 2>&1 | grep -aE "\[Actor\]|\[Demo\]|place_rate|녹화"
+  --record --video_out "$OUTPUT" --headless --enable_cameras > "$LOG" 2>&1 || true
+echo "=== 핵심 로그 ==="
+grep -aE "\[Actor\]|place_rate|녹화 저장|프레임|Error|Traceback" "$LOG" | tail -25
+echo "=== 마지막 15줄(에러 확인용) ==="
+tail -15 "$LOG"
+echo "================="
 
 if [ -f "$OUTPUT" ]; then
   echo "[record] ✅ $OUTPUT ($(du -sh "$OUTPUT" | cut -f1))"
