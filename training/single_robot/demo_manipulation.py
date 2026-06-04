@@ -53,8 +53,14 @@ parser.add_argument("--ckpt",         type=str, required=True)
 parser.add_argument("--num_envs",     type=int, default=4)
 parser.add_argument("--num_episodes", type=int, default=0,
                     help="이 수만큼 에피소드 후 자동 종료 (0=무한)")
+parser.add_argument("--record", action="store_true",
+                    help="헤드리스 카메라 녹화(UI 없는 깨끗한 mp4). nav 데모와 동일 방식.")
+parser.add_argument("--video_out", type=str, default="/workspace/phase2_demo.mp4",
+                    help="--record 시 저장 경로")
 AppLauncher.add_app_launcher_args(parser)
 args, _ = parser.parse_known_args()
+if args.record:
+    args.enable_cameras = True   # view_camera 오프스크린 렌더 필요(헤드리스에서도 카메라는 렌더됨)
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
 
@@ -168,6 +174,7 @@ def main():
 
     placed_count = 0
     episode_count = 0
+    frames = [] if getattr(args, "record", False) else None   # 헤드리스 카메라 녹화 버퍼
 
     obs_dict, _ = env.reset()
 
@@ -177,6 +184,15 @@ def main():
             actions = actor(obs).clone()
 
             obs_dict, _, terminated, truncated, extras = env.step(actions)
+
+            if frames is not None:
+                view_camera.update(dt=0.0)
+                rgb = view_camera.data.output.get("rgb")
+                if rgb is not None and rgb.shape[0] > 0:
+                    arr = rgb[0, :, :, :3].detach().cpu().numpy()
+                    if arr.dtype != np.uint8:
+                        arr = (arr.clip(0, 1) * 255).astype(np.uint8) if float(arr.max()) <= 1.0 else arr.astype(np.uint8)
+                    frames.append(arr)
 
             done = terminated | truncated
             if done.any():
@@ -189,6 +205,13 @@ def main():
             if args.num_episodes > 0 and episode_count >= args.num_episodes:
                 print(f"[Demo] {episode_count}에피소드 완료 — 종료")
                 break
+
+    if frames:
+        import imageio.v2 as imageio
+        imageio.mimsave(args.video_out, frames, fps=30, macro_block_size=None)
+        print(f"[Demo] 녹화 저장: {args.video_out} ({len(frames)} 프레임, UI 없음·헤드리스)")
+    elif frames is not None:
+        print("[Demo] ⚠ 녹화 프레임 0개 — 카메라 렌더 안 됨(--enable_cameras 확인)")
 
     env.close()
 
