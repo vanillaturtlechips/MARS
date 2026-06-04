@@ -177,6 +177,8 @@ def main():
     frames = [] if getattr(args, "record", False) else None   # 헤드리스 카메라 녹화 버퍼
 
     obs_dict, _ = env.reset()
+    if frames is not None:
+        view_camera.reset()   # standalone 카메라 초기화(env.reset 이후 필요) — demo_record.py와 동일 패턴
 
     with torch.inference_mode():
         while simulation_app.is_running():
@@ -186,7 +188,7 @@ def main():
             obs_dict, _, terminated, truncated, extras = env.step(actions)
 
             if frames is not None:
-                view_camera.update(dt=0.0)
+                view_camera.update(dt=env.sim.get_rendering_dt())   # demo_record.py와 동일
                 rgb = view_camera.data.output.get("rgb")
                 if rgb is not None and rgb.shape[0] > 0:
                     arr = rgb[0, :, :, :3].detach().cpu().numpy()
