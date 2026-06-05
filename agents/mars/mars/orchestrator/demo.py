@@ -51,11 +51,12 @@ log = logging.getLogger("demo")
 # Mars imports
 # ---------------------------------------------------------------------------
 import mars.blackboard.queries as Q
-from mars.blackboard.db import apply_migrations, connect, ping
+from mars.blackboard.db import apply_migrations, connect, connect_readonly, ping
 from mars.blackboard.hot_state import HotState
 from mars.aggregator.aggregator import Aggregator
 from mars.router.router import route, Path
 from mars.agents.failure_analysis import FailureAnalysisAgent
+from mars.agents.tools import InvestigatorTools
 from mars.agents.fleet_state import FleetStateAgent
 from mars.agents.operations_strategy import OperationsStrategyAgent
 from mars.orchestrator.orchestrator import Orchestrator, fast_disposition
@@ -71,7 +72,7 @@ from mars.services.ros_executor import ROSExecutor
 from mars.outcome.evaluator import OutcomeEvaluator
 from mars.sim.mock_sim import MockSim
 from mars.sim.fault_injector import FaultInjector
-from mars.llm.client import get_llm_client, get_embedder
+from mars.llm.client import get_llm_client, get_investigator_client, get_embedder
 from mars.config import (
     FAILURE_WINDOW_SECONDS,
     ROUTER_SCOPE_HINT,
@@ -159,10 +160,16 @@ def build_components(conn_factory, hot_state, llm, embedder) -> dict[str, Any]:
         interval_sec=60.0,   # real production interval; demo calls run_once() directly
     )
 
+    # Read-only investigator: real ReAct tool-loop over the blackboard.
+    # connect_readonly() uses DB_READONLY_DSN (set == DB_DSN locally to skip
+    # the mars_reader role). embedder powers the search_incidents tool.
+    investigator_tools = InvestigatorTools(connect_readonly(), embedder)
+
     orchestrator = Orchestrator(
         blackboard_queries=Q,
         hot_state=hot_state,
-        failure_analysis_agent=FailureAnalysisAgent(llm),
+        failure_analysis_agent=FailureAnalysisAgent(
+            get_investigator_client(), investigator_tools),
         retrieval_validator_fn=validate_retrieval_set,
         decision_validator_fn=validate_diagnosis,
         strategy_trigger_fn=strategy_trigger.evaluate,
