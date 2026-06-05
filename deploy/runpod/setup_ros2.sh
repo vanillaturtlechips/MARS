@@ -21,6 +21,20 @@ echo "▶ OS: $PRETTY_NAME  (jammy OK)"
 # 디스크 경고 — ros-humble-desktop 은 약 2.5GB (root fs)
 echo "▶ root 디스크:"; df -h / | tail -1
 
+# ── 0b. python3 → 3.10 정렬 ────────────────────────────────────
+# ROS Humble은 python3.10 빌드. 베이스 이미지가 python3→3.11이면 rclpy/apt_pkg가 깨짐.
+# RL venv(isaac_venv, 3.11)는 자기 인터프리터를 쓰므로 영향 없음. 원복: --set ...python3.11
+echo "▶ python3 → 3.10 정렬 (RL venv는 3.11 독립 유지)"
+if [ -x /usr/bin/python3.10 ]; then
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 2>/dev/null || true
+    [ -x /usr/bin/python3.11 ] && \
+        update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2 2>/dev/null || true
+    update-alternatives --set python3 /usr/bin/python3.10 2>/dev/null || true
+    echo "  python3 = $(python3 --version 2>&1)"
+else
+    echo "  [경고] /usr/bin/python3.10 없음 — 수동 확인 필요"
+fi
+
 # ── 1. locale ──────────────────────────────────────────────────
 echo "[1/5] locale..."
 apt-get update -q
