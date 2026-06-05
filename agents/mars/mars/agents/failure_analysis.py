@@ -253,6 +253,13 @@ class FailureAnalysisAgent:
                 log.exception("[investigator] final structured output failed — using fallback")
                 diagnosis = dict(_FALLBACK_DIAGNOSIS)
 
+        # Deterministic guard: the agent cannot have "relied on precedents" if
+        # search_incidents returned none. Clearing it stops the DecisionValidator
+        # from degrading an otherwise-grounded diagnosis (relied_on_precedents
+        # non-empty + LOW retrieval_trust + high confidence).
+        if not tool_results.get("search_incidents"):
+            diagnosis["relied_on_precedents"] = []
+
         log.info(
             "[investigator] diagnosis cause=%s scope=%s persistence=%s "
             "affected_zone=%s confidence=%.2f",
