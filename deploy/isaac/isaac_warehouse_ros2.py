@@ -104,6 +104,54 @@ set_target_prims(
     targetPrimPaths=[ROBOT_PRIM],
 )
 
+# ------------------------------------------------------------------
+# Drive graph: /cmd_vel -> DifferentialController -> wheel joints.
+# Separate graph + try/except so a node/port typo can't break the verified
+# odom/tf graph above. iw_hub drive wheels: left_wheel_joint, right_wheel_joint.
+# ------------------------------------------------------------------
+WHEEL_RADIUS = 0.125   # m (iw_hub approx — tune later)
+WHEEL_BASE   = 0.54    # m distance between drive wheels (approx)
+try:
+    og.Controller.edit(
+        {"graph_path": "/DriveGraph", "evaluator_name": "execution"},
+        {
+            og.Controller.Keys.CREATE_NODES: [
+                ("OnTick", "omni.graph.action.OnPlaybackTick"),
+                ("Context", "isaacsim.ros2.bridge.ROS2Context"),
+                ("SubTwist", "isaacsim.ros2.bridge.ROS2SubscribeTwist"),
+                ("BreakLin", "omni.graph.nodes.BreakVector3"),
+                ("BreakAng", "omni.graph.nodes.BreakVector3"),
+                ("DiffCtrl", "isaacsim.robot.wheeled_robots.DifferentialController"),
+                ("ArtCtrl", "isaacsim.core.nodes.IsaacArticulationController"),
+            ],
+            og.Controller.Keys.SET_VALUES: [
+                ("SubTwist.inputs:topicName", "cmd_vel"),
+                ("DiffCtrl.inputs:wheelRadius", WHEEL_RADIUS),
+                ("DiffCtrl.inputs:wheelDistance", WHEEL_BASE),
+                ("ArtCtrl.inputs:jointNames", ["left_wheel_joint", "right_wheel_joint"]),
+            ],
+            og.Controller.Keys.CONNECT: [
+                ("OnTick.outputs:tick", "SubTwist.inputs:execIn"),
+                ("OnTick.outputs:tick", "DiffCtrl.inputs:execIn"),
+                ("OnTick.outputs:tick", "ArtCtrl.inputs:execIn"),
+                ("Context.outputs:context", "SubTwist.inputs:context"),
+                ("SubTwist.outputs:linearVelocity", "BreakLin.inputs:tuple"),
+                ("SubTwist.outputs:angularVelocity", "BreakAng.inputs:tuple"),
+                ("BreakLin.outputs:x", "DiffCtrl.inputs:linearVelocity"),
+                ("BreakAng.outputs:z", "DiffCtrl.inputs:angularVelocity"),
+                ("DiffCtrl.outputs:velocityCommand", "ArtCtrl.inputs:velocityCommand"),
+            ],
+        },
+    )
+    set_target_prims(
+        primPath="/DriveGraph/ArtCtrl",
+        inputName="inputs:targetPrim",
+        targetPrimPaths=[ROBOT_PRIM],
+    )
+    carb.log_warn("[1c] drive graph ready: /cmd_vel -> diff drive (left/right_wheel_joint)")
+except Exception as exc:  # noqa: BLE001
+    carb.log_error(f"[1c] drive graph FAILED (odom/tf still OK): {exc}")
+
 world.reset()
 
 # Discover joints (for the upcoming cmd_vel / differential-drive step).
