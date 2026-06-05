@@ -31,8 +31,17 @@ export LANG=en_US.UTF-8
 
 # ── 2. ROS2 apt 저장소 ─────────────────────────────────────────
 echo "[2/5] ROS2 apt 저장소 등록..."
-apt-get install -y -q software-properties-common curl gnupg lsb-release
-add-apt-repository universe -y
+apt-get install -y -q curl gnupg lsb-release ca-certificates
+# universe 활성화 — add-apt-repository 우회 (시스템 python3 변경으로 apt_pkg 깨진 환경 대응)
+if apt-cache policy 2>/dev/null | grep -qi universe; then
+    echo "  universe 이미 활성"
+else
+    MIRROR=$(grep -m1 -oP '^deb \K(https?://[^ ]+)' /etc/apt/sources.list 2>/dev/null \
+             || echo "http://archive.ubuntu.com/ubuntu")
+    printf 'deb %s jammy universe\ndeb %s jammy-updates universe\n' "$MIRROR" "$MIRROR" \
+        > /etc/apt/sources.list.d/universe.list
+    echo "  universe 추가: $MIRROR"
+fi
 curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
     -o /usr/share/keyrings/ros-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main" \
