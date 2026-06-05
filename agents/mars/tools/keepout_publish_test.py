@@ -1,22 +1,17 @@
 """
-Standalone keepout-mask publisher — isolates the "mask → Nav2 KeepoutFilter"
-plumbing WITHOUT Isaac Sim or the full agent brain.
+Standalone keepout-mask publisher — drives the "agent decided avoid_zone"
+side of the Nav2 keepout demo WITHOUT the full brain, so we can verify
+mask -> KeepoutFilter -> planner reroute in isolation.
 
-It publishes one keepout mask (receiving_dock by default) on the same latched
-topic the real supervisor uses (/keepout_filter_mask), reusing the exact same
-mask-building code (mars.ros.keepout).  Pair it with:
+Publishes one rectangular keepout zone (a "wall" across the corridor) on the
+same latched topic the real supervisor uses (/keepout_filter_mask), reusing
+mars.ros.keepout. Default places a wall centered at (4,0), 1m thick x 5m wide,
+so a straight path from (0,0) to (8,0) is blocked and the planner must detour.
 
-    ros2 launch deploy/nav2/keepout_filter.launch.py     # costmap_filter_info_server
-    python3 -m tools.keepout_publish_test                 # this script
-    ros2 topic echo /keepout_filter_mask --once           # see the mask
-    ros2 topic echo /costmap_filter_info --once           # see the filter info
-
-Then a Nav2 global_costmap configured with the keepout_filter plugin will mark
-the zone lethal and the planner will route around it.
-
-Run from agents/mars/ (so `tools` and `mars` are importable):
-    source /opt/ros/humble/setup.bash
-    python3 -m tools.keepout_publish_test --zone receiving_dock
+Run (RunPod, `source deploy/isaac/env_ros2.sh`, from agents/mars/):
+    python3 -m tools.keepout_publish_test                  # wall at (4,0) 1x5
+    python3 -m tools.keepout_publish_test --cx 4 --cy 0 --w 1 --h 5
+Leave it running (latched). Ctrl+C to clear.
 """
 from __future__ import annotations
 
@@ -24,19 +19,15 @@ import argparse
 
 from mars.ros.keepout import MapMeta, build_occupancy_grid_dict
 
-# Same demo polygon as mars/orchestrator/demo.py _ZONES (meters, map frame).
-_DEMO_POLYGONS = {
-    "receiving_dock": [(0.0, -1.0), (4.0, -1.0), (4.0, 2.0), (0.0, 2.0)],
-    "charging_bay":   [(4.0, -1.0), (7.0, -1.0), (7.0, 2.0), (4.0, 2.0)],
-    "storage_area_a": [(7.0, -1.0), (10.0, -1.0), (10.0, 2.0), (7.0, 2.0)],
-}
-
 KEEPOUT_MASK_TOPIC = "/keepout_filter_mask"
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--zone", default="receiving_dock", choices=list(_DEMO_POLYGONS))
+    ap.add_argument("--cx", type=float, default=4.0, help="zone center x (m)")
+    ap.add_argument("--cy", type=float, default=0.0, help="zone center y (m)")
+    ap.add_argument("--w", type=float, default=1.0, help="zone width along x (m)")
+    ap.add_argument("--h", type=float, default=5.0, help="zone height along y (m)")
     ap.add_argument("--resolution", type=float, default=0.05)
     args = ap.parse_args()
 
@@ -46,9 +37,15 @@ def main() -> None:
     from nav_msgs.msg import OccupancyGrid
     from geometry_msgs.msg import Pose, Point, Quaternion
 
-    poly = _DEMO_POLYGONS[args.zone]
-    xs = [x for x, _ in poly]
-    ys = [y for _, y in poly]
+    hx, hy = args.w / 2.0, args.h / 2.0
+    poly = [
+        (args.cx - hx, args.cy - hy),
+        (args.cx + hx, args.cy - hy),
+        (args.cx + hx, args.cy + hy),
+        (args.cx - hx, args.cy + hy),
+    ]
+    xs = [p[0] for p in poly]
+    ys = [p[1] for p in poly]
     meta = MapMeta.covering(min(xs), min(ys), max(xs), max(ys),
                             resolution=args.resolution, margin=0.5)
     grid = build_occupancy_grid_dict([poly], meta)
@@ -80,13 +77,13 @@ def main() -> None:
 
     keepout_cells = sum(1 for v in grid["data"] if v >= 100)
     node.get_logger().info(
-        f"published keepout mask for '{args.zone}' on {KEEPOUT_MASK_TOPIC}: "
-        f"{msg.info.width}x{msg.info.height}, {keepout_cells} keepout cells "
-        f"(res={msg.info.resolution} origin=({origin['position']['x']},"
-        f"{origin['position']['y']})). Latched — Ctrl+C to stop."
+        f"published keepout wall center=({args.cx},{args.cy}) "
+        f"size=({args.w}x{args.h}) on {KEEPOUT_MASK_TOPIC}: "
+        f"{msg.info.width}x{msg.info.height} cells, {keepout_cells} keepout. "
+        f"Latched — Ctrl+C to clear."
     )
     try:
-        rclpy.spin(node)   # keep the latched publisher alive for subscribers
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
