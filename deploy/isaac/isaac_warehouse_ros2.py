@@ -91,12 +91,17 @@ og.Controller.edit(
         ],
     },
 )
-# ComputeOdometry needs to know which prim is the robot chassis.
-og.Controller.edit(
-    "/ActionGraph",
-    {og.Controller.Keys.SET_VALUES: [
-        ("ComputeOdom.inputs:chassisPrim", [og.Controller.attribute(f"{ROBOT_PRIM}")]),
-    ]},
+# ComputeOdometry needs to know which prim is the robot chassis. chassisPrim
+# is a target/relationship input — set it with Isaac's set_target_prims helper
+# (NOT og.Controller.attribute, which is for graph attributes).
+try:
+    from isaacsim.core.nodes.scripts.utils import set_target_prims
+except ImportError:
+    from omni.isaac.core_nodes.scripts.utils import set_target_prims
+set_target_prims(
+    primPath="/ActionGraph/ComputeOdom",
+    inputName="inputs:chassisPrim",
+    targetPrimPaths=[ROBOT_PRIM],
 )
 
 world.reset()
