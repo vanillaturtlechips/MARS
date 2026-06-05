@@ -246,6 +246,11 @@ class StrategyTrigger:
             except Exception:
                 log.warning("[strategy_trigger] strategy embedding failed — skipping")
 
+        # Commit the strategy_run (and its embedding) now so PolicyManager.activate(),
+        # which opens its OWN connection, can satisfy the policies.strategy_run_id FK.
+        if strategy_run_id is not None:
+            conn.commit()
+
         for proposal in strategy_out.get("policy_updates", []):
             gr, modified, gr_notes = guardrail_check(
                 proposal, active_policies, world_state, last_applied

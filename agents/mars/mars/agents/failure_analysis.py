@@ -71,8 +71,22 @@ ask you to produce the final diagnosis as a structured JSON object.\
 _FINAL_PROMPT = """\
 Based on your investigation, produce the diagnosis as a JSON object.
 Cite only facts you actually retrieved from the tools — never invent
-counts, incidents, or precedents.  Evidence refs must point to entries
-in the data you collected (e.g. 'mission_failures[0]', 'zone_state.occupancy').\
+counts, incidents, or precedents.
+
+Every evidence ref MUST be a dotted path into the data you collected and
+MUST begin with one of these EXACT top-level keys:
+  trigger_event, mission_failures, zone_state, robot_history,
+  retrieved_precedents, active_policies
+Index list entries like 'mission_failures[0]' and fields like
+'zone_state.current_occupancy'. Do NOT invent any other top-level name
+(no 'health_at_failure', 'distribution', 'fleet_metrics', etc.) — robot
+health and counts live inside the keys above.
+
+For scope 'zone_wide' or 'fleet_wide', cite at least TWO distinct
+mission_failures[N] entries as evidence.
+
+If retrieved_precedents is empty, set relied_on_precedents to [] and do
+NOT claim precedent support — base confidence on the direct evidence only.\
 """
 
 _OUTPUT_SCHEMA: dict[str, Any] = {
@@ -238,6 +252,14 @@ class FailureAnalysisAgent:
             except Exception:
                 log.exception("[investigator] final structured output failed — using fallback")
                 diagnosis = dict(_FALLBACK_DIAGNOSIS)
+
+        log.info(
+            "[investigator] diagnosis cause=%s scope=%s persistence=%s "
+            "affected_zone=%s confidence=%.2f",
+            diagnosis.get("cause"), diagnosis.get("scope"),
+            diagnosis.get("persistence"), diagnosis.get("affected_zone"),
+            diagnosis.get("confidence", -1.0),
+        )
 
         # Attach transcript (same key conventions as old _input_bundle)
         diagnosis["_tool_transcript"] = transcript

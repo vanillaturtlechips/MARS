@@ -353,7 +353,7 @@ def run_demo() -> None:
 
     # -- Process events from the queue --
     results: list[dict] = []
-    deadline = time.time() + 8.0  # wait up to 8 s for all events
+    deadline = time.time() + 90.0  # real LLM investigations are ~15s each; allow all 4
 
     print()
     while time.time() < deadline:
@@ -510,11 +510,14 @@ def _make_hot_state() -> HotState:
 
 
 def _make_llm():
-    from mars.config import ANTHROPIC_API_KEY
+    from mars.config import ANTHROPIC_API_KEY, OPENAI_API_KEY, LLM_PROVIDER
+    if LLM_PROVIDER == "openai" and OPENAI_API_KEY:
+        log.info("LLM: OpenAI (real, backup provider)")
+        return get_llm_client("openai")
     if ANTHROPIC_API_KEY:
         log.info("LLM: Anthropic Claude (real)")
         return get_llm_client("anthropic")
-    log.warning("LLM: ANTHROPIC_API_KEY not set — using mock LLM (canned output)")
+    log.warning("LLM: no usable provider key — using mock LLM (canned output)")
     from tests.conftest import ZONE_WIDE_DIAGNOSIS, AVOID_ZONE_STRATEGY
     from mars.llm.client import MockLLMClient
 

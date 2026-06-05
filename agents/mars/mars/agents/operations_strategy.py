@@ -36,6 +36,19 @@ For each policy:
 Also produce confidence (0-1, trust-bounded as above), evidence (grounded with
 refs), and relied_on_precedents.
 
+Every evidence ref MUST be a dotted path into the bundle you were given and
+MUST begin with one of these EXACT top-level keys:
+  incident_analysis, fleet_analysis, operational_metrics,
+  active_policies, retrieved_precedents, retrieval_trust
+For example 'incident_analysis.scope', 'incident_analysis.affected_zone',
+'active_policies[0].type'. Do NOT invent other names — there is NO
+'mission_failures', 'zone_state', 'trigger_event', or 'fleet_metrics' in
+this bundle; the failure details live inside incident_analysis, and live
+operational numbers inside operational_metrics.
+
+If retrieved_precedents is empty or retrieval_trust.set_level is "LOW",
+set relied_on_precedents to [] and do NOT claim precedent support.
+
 Output ONLY the JSON object. No prose.\
 """
 
