@@ -440,6 +440,12 @@ def run_demo() -> None:
     _print_summary(results, policy_manager, scheduling_svc, conn_main)
     conn_main.close()
 
+    # --ros2-keepout: keep the latched mask alive so Nav2 holds the keepout.
+    if _ros2_keepout and _keepout_pub is not None:
+        print("\n  [ros2-keepout] holding keepout mask on /keepout_filter_mask "
+              "(Ctrl+C to release)...")
+        _keepout_pub.spin()
+
 
 def _print_event_result(event: dict, result: dict) -> None:
     robot = event.get("robot_id", "?")
@@ -512,12 +518,6 @@ def _print_summary(
         print("  (No avoid_zone policy applied — check logs above for details.)")
 
     print(_DIVIDER)
-
-    # --ros2-keepout: keep the latched mask alive so Nav2 holds the keepout.
-    if _ros2_keepout and _keepout_pub is not None:
-        print("\n  [ros2-keepout] holding keepout mask on /keepout_filter_mask "
-              "(Ctrl+C to release)...")
-        _keepout_pub.spin()
 
 
 # ---------------------------------------------------------------------------
