@@ -37,7 +37,8 @@ fi
 
 echo "==[3/4] uv + py3.11 Isaac Sim 5.1 venv =="
 command -v uv >/dev/null 2>&1 || pip install uv -q
-uv venv --python 3.11 "$VENV"
+[ -d "$VENV" ] || uv venv --python 3.11 "$VENV"   # create only if missing (idempotent)
+export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-600}"  # pypi.nvidia.com is slow
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 uv pip install \
