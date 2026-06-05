@@ -55,13 +55,24 @@ og.Controller.edit(
     },
 )
 
-carb.log_warn("[smoke] ROS2 bridge enabled; publishing /clock. Ctrl+C to stop.")
+import omni.timeline  # noqa: E402
+
 world.reset()
+
+# CRITICAL: OnPlaybackTick only fires while the timeline is PLAYING. Without
+# this the ROS2 publisher node exists (topic is advertised, publisher count=1)
+# but never executes, so zero messages are sent and `ros2 topic echo` hangs.
+timeline = omni.timeline.get_timeline_interface()
+timeline.play()
+
+carb.log_warn("[smoke] timeline playing; publishing /clock. Ctrl+C to stop.")
 
 try:
     while simulation_app.is_running():
-        world.step(render=False)
+        # render=True pumps the action graph each frame (OnPlaybackTick).
+        world.step(render=True)
 except KeyboardInterrupt:
     pass
 finally:
+    timeline.stop()
     simulation_app.close()
