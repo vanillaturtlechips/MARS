@@ -88,8 +88,10 @@ _ROBOTS = ["R1", "R2", "R3", "R4", "R5"]
 # Zone polygons are in meters in the map frame (matches mission destinations
 # x∈[1,5]). Used by ZoneResolver and by the Nav2 keepout mask publisher.
 _ZONES = [
+    # Wall across the corridor at x≈4 (away from the robot's start at origin) so
+    # the Nav2 keepout demo shows a clean detour rather than blocking the start.
     {"zone_id": "receiving_dock",  "display_name": "Receiving Dock",  "is_charger_zone": False, "is_mandatory": False,
-     "polygon": [{"x": 0.0, "y": -1.0}, {"x": 4.0, "y": -1.0}, {"x": 4.0, "y": 2.0}, {"x": 0.0, "y": 2.0}]},
+     "polygon": [{"x": 3.5, "y": -2.5}, {"x": 4.5, "y": -2.5}, {"x": 4.5, "y": 2.5}, {"x": 3.5, "y": 2.5}]},
     {"zone_id": "charging_bay",    "display_name": "Charging Bay",    "is_charger_zone": True,  "is_mandatory": False,
      "polygon": [{"x": 4.0, "y": -1.0}, {"x": 7.0, "y": -1.0}, {"x": 7.0, "y": 2.0}, {"x": 4.0, "y": 2.0}]},
     {"zone_id": "storage_area_a",  "display_name": "Storage Area A",  "is_charger_zone": False, "is_mandatory": False,
@@ -344,10 +346,18 @@ def run_demo() -> None:
     goal_to_mission = wire_sim(sim, aggregator)
     sim.start()
 
-    # -- Keepout: avoid_zone policy → Nav2 KeepoutFilter mask (no-op in mock,
-    #    real OccupancyGrid publish in the ROS2 adapter). Registered here so
-    #    the mask is rebuilt whenever PolicyManager activates an avoid_zone.
-    keepout_service = KeepoutService(sim, conn_factory)
+    # -- Keepout: avoid_zone policy → Nav2 KeepoutFilter mask.
+    #    Default: MockSim (no physical effect, logs only).
+    #    --ros2-keepout: publish a real OccupancyGrid on /keepout_filter_mask so
+    #    a running Nav2 reroutes the live robot (full loop brain→mask→reroute).
+    _ros2_keepout = "--ros2-keepout" in sys.argv
+    _keepout_pub = None
+    if _ros2_keepout:
+        from mars.ros.ros2_keepout_publisher import Ros2KeepoutPublisher
+        _keepout_pub = Ros2KeepoutPublisher()
+        keepout_service = KeepoutService(_keepout_pub, conn_factory)
+    else:
+        keepout_service = KeepoutService(sim, conn_factory)
     policy_manager.register_consumer(keepout_service.on_policy_change)
 
     # -- Dispatch goals so robots have something to abort --
@@ -502,6 +512,12 @@ def _print_summary(
         print("  (No avoid_zone policy applied — check logs above for details.)")
 
     print(_DIVIDER)
+
+    # --ros2-keepout: keep the latched mask alive so Nav2 holds the keepout.
+    if _ros2_keepout and _keepout_pub is not None:
+        print("\n  [ros2-keepout] holding keepout mask on /keepout_filter_mask "
+              "(Ctrl+C to release)...")
+        _keepout_pub.spin()
 
 
 # ---------------------------------------------------------------------------
