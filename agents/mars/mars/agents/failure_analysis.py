@@ -253,12 +253,21 @@ class FailureAnalysisAgent:
                 log.exception("[investigator] final structured output failed — using fallback")
                 diagnosis = dict(_FALLBACK_DIAGNOSIS)
 
-        # Deterministic guard: the agent cannot have "relied on precedents" if
-        # search_incidents returned none. Clearing it stops the DecisionValidator
-        # from degrading an otherwise-grounded diagnosis (relied_on_precedents
-        # non-empty + LOW retrieval_trust + high confidence).
-        if not tool_results.get("search_incidents"):
-            diagnosis["relied_on_precedents"] = []
+        # Deterministic guard against hallucinated precedent reliance.
+        # With the mock embedder the RAG store is zero-vector noise — any
+        # "precedents" are meaningless — and search_incidents can still return
+        # stale rows, so checking emptiness isn't enough. If the embedder is the
+        # mock, the diagnosis cannot legitimately rely on precedents; clear the
+        # field so a directly-grounded diagnosis isn't degraded by the
+        # (relied_on_precedents non-empty + LOW trust + high confidence) rule.
+        try:
+            from mars.llm.client import MockEmbedder
+            _emb = getattr(self._tools, "_embedder", None)
+            if isinstance(_emb, MockEmbedder) or not tool_results.get("search_incidents"):
+                diagnosis["relied_on_precedents"] = []
+        except Exception:
+            if not tool_results.get("search_incidents"):
+                diagnosis["relied_on_precedents"] = []
 
         log.info(
             "[investigator] diagnosis cause=%s scope=%s persistence=%s "
