@@ -22,6 +22,9 @@ import carb  # noqa: E402
 ap = argparse.ArgumentParser()
 ap.add_argument("--warehouse", action="store_true",
                 help="load full_warehouse.usd (downloads from Isaac cloud)")
+ap.add_argument("--obstacle", action="store_true",
+                help="spawn a blocking box in receiving_dock (x~4) so a goal "
+                     "there aborts — used to trigger a real failure")
 args, _ = ap.parse_known_args()
 
 from isaacsim.core.utils.extensions import enable_extension  # noqa: E402
@@ -49,6 +52,18 @@ if args.warehouse:
 
 carb.log_warn(f"[1b] loading iw_hub: {IW_HUB_USD}")
 add_reference_to_stage(IW_HUB_USD, ROBOT_PRIM)
+
+# Blocking box in receiving_dock (x~4) — robot can't reach a goal there, Nav2
+# aborts (progress checker) -> a real failure for the supervisor to react to.
+if args.obstacle:
+    import numpy as np
+    from isaacsim.core.api.objects import FixedCuboid
+    world.scene.add(FixedCuboid(
+        prim_path="/World/dock_block", name="dock_block",
+        position=np.array([4.0, 0.0, 0.5]),
+        scale=np.array([1.0, 3.0, 1.0]),
+    ))
+    carb.log_warn("[obstacle] spawned blocking box at (4,0) size (1,3,1)")
 
 # ------------------------------------------------------------------
 # OmniGraph: clock + odometry(map->base_link) publishing
