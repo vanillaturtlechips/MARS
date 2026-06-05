@@ -33,7 +33,10 @@ from mars.services.keepout_service import KeepoutService  # noqa: E402
 from mars.ros.ros2_keepout_publisher import Ros2KeepoutPublisher  # noqa: E402
 
 ZONE = "receiving_dock"
-NAV_STATUS_TOPIC = "/navigate_to_pose/_action/status"
+# Listen to the CONTROLLER action (follow_path): it aborts immediately on
+# "Failed to make progress". The top-level navigate_to_pose stays EXECUTING
+# while bt_navigator runs recovery/retries, so it doesn't report ABORTED fast.
+NAV_STATUS_TOPIC = "/follow_path/_action/status"
 STATUS_ABORTED = 6
 
 
