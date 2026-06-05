@@ -64,6 +64,10 @@ STATUS_SUCCEEDED = 4
 STATUS_CANCELED  = 5
 STATUS_ABORTED   = 6
 
+# Topic the Nav2 KeepoutFilter mask is published on (matches the
+# costmap_filter_info_server config in deploy/nav2).
+KEEPOUT_MASK_TOPIC = "/keepout_filter_mask"
+
 
 class ROS2SimAdapter:
     """
@@ -93,6 +97,7 @@ class ROS2SimAdapter:
 
         self._subs:           list = []
         self._action_clients: dict[str, object] = {}
+        self._keepout_pub = None   # created in _setup (latched OccupancyGrid)
 
         self._setup()
 
@@ -165,6 +170,41 @@ class ROS2SimAdapter:
         cancel_future.add_done_callback(
             lambda _: log.info("[ros2_adapter] cancel_goal sent robot=%s goal=%s", robot_id, goal_id)
         )
+
+    def publish_keepout_mask(self, grid: dict) -> None:
+        """
+        Publish a Nav2 KeepoutFilter mask (nav_msgs/OccupancyGrid) built from
+        avoid_zone polygons.  `grid` is the rclpy-free dict from
+        mars.ros.keepout.build_occupancy_grid_dict; we copy it into a real
+        message.  Latched topic, so Nav2 picks up the latest mask.
+        """
+        if self._keepout_pub is None:
+            log.warning("[ros2_adapter] keepout publisher not ready — mask dropped")
+            return
+        from nav_msgs.msg import OccupancyGrid
+        from geometry_msgs.msg import Pose, Point, Quaternion
+
+        info = grid["info"]
+        origin = info["origin"]
+        msg = OccupancyGrid()
+        msg.header.frame_id = grid["header"]["frame_id"]
+        msg.header.stamp = self._node.get_clock().now().to_msg()
+        msg.info.resolution = float(info["resolution"])
+        msg.info.width = int(info["width"])
+        msg.info.height = int(info["height"])
+        msg.info.origin = Pose(
+            position=Point(
+                x=float(origin["position"]["x"]),
+                y=float(origin["position"]["y"]),
+                z=float(origin["position"]["z"]),
+            ),
+            orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+        )
+        msg.data = [int(v) for v in grid["data"]]
+        self._keepout_pub.publish(msg)
+        keepout_cells = sum(1 for v in grid["data"] if v >= 100)
+        log.info("[ros2_adapter] published keepout mask: %dx%d, %d keepout cells",
+                 msg.info.width, msg.info.height, keepout_cells)
 
     # ------------------------------------------------------------------
     # SensorInterface
@@ -286,8 +326,24 @@ class ROS2SimAdapter:
             )
         )
 
+        # Keepout filter mask publisher — latched (transient_local) so Nav2's
+        # KeepoutFilter / costmap_filter_info_server receive it even if they
+        # subscribe after we publish.  Global (frame "map"), shared by all
+        # robots' global costmaps via the same mask topic.
+        from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+        from nav_msgs.msg import OccupancyGrid
+        latched = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+        )
+        self._keepout_pub = self._node.create_publisher(
+            OccupancyGrid, KEEPOUT_MASK_TOPIC, latched
+        )
+
         log.info(
-            "[ros2_adapter] setup complete for %d robot(s)", len(self._robot_ids)
+            "[ros2_adapter] setup complete for %d robot(s); keepout mask on %s",
+            len(self._robot_ids), KEEPOUT_MASK_TOPIC,
         )
 
     # ------------------------------------------------------------------
