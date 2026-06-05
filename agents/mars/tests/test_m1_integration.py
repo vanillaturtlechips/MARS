@@ -23,6 +23,8 @@ from mars.blackboard.hot_state import HotState
 from mars.orchestrator.orchestrator import Orchestrator, fast_disposition, slow_disposition
 from mars.orchestrator.strategy_trigger import StrategyTrigger
 from mars.agents.failure_analysis import FailureAnalysisAgent
+from mars.agents.tools import MockInvestigatorTools
+from mars.llm.client import ToolCallMockClient
 from mars.agents.operations_strategy import OperationsStrategyAgent
 from mars.validators.retrieval_validator import validate_retrieval_set
 from mars.validators.decision_validator import validate_diagnosis, validate_strategy, DVResult
@@ -253,10 +255,19 @@ def _make_components(bb, hot_state, llm, embedder):
         embedder=embedder,
     )
 
+    # Investigator uses ToolCallMockClient + MockInvestigatorTools backed by bb.
+    # failures_getter uses a live reference so pre-seeded failures are visible.
+    investigator_llm   = ToolCallMockClient(canned_diagnosis=ZONE_WIDE_DIAGNOSIS)
+    investigator_tools = MockInvestigatorTools(
+        failures_getter=lambda: list(bb.failures.values()),
+        zone_states={"Receiving Dock": {"zone": "Receiving Dock", "occupancy": 4,
+                                         "health_status": "ok", "recent_failure_count": 4}},
+    )
+
     orchestrator = Orchestrator(
         blackboard_queries=bb,
         hot_state=hot_state,
-        failure_analysis_agent=FailureAnalysisAgent(llm),
+        failure_analysis_agent=FailureAnalysisAgent(investigator_llm, investigator_tools),
         retrieval_validator_fn=validate_retrieval_set,
         decision_validator_fn=validate_diagnosis,
         strategy_trigger_fn=strategy_trigger.evaluate,
@@ -340,23 +351,25 @@ class TestM1VerticalSlice:
 
         assert events[0]["fault_flag"] is None
 
-    def test_failure_analysis_agent_output_shape(self, mock_llm_multi):
-        """Agent returns a dict with required keys."""
+    def test_failure_analysis_agent_output_shape(self):
+        """Agent (ReAct investigator) returns a dict with required output keys."""
         from mars.agents.failure_analysis import FailureAnalysisAgent
 
-        agent = FailureAnalysisAgent(mock_llm_multi)
-        event = _make_failure("R1", 0, 4)
-        out = agent.analyze(
-            trigger_event=event,
-            mission_failures=[event],
-            robot_state={"robot_id": "R1", "battery_pct": 75},
-            zone_state={"zone": "receiving_dock", "occupancy": 4},
-            retrieved_precedents=[],
-            retrieval_trust={"set_level": "LOW", "support_count": 0},
+        event  = _make_failure("R1", 0, 4)
+        # Seed 4 failures so the tool call returns them → transcript populated
+        mock_tools = MockInvestigatorTools(failures=[
+            _make_failure(rid, 2, 4)
+            for rid in ["R1", "R2", "R3", "R4"]
+        ])
+        agent = FailureAnalysisAgent(
+            ToolCallMockClient(canned_diagnosis=ZONE_WIDE_DIAGNOSIS),
+            mock_tools,
         )
+        out = agent.analyze(trigger_event=event)
         assert out["scope"] == "zone_wide"
         assert out["cause"] == "zone_congestion"
         assert 0.0 <= out["confidence"] <= 1.0
+        assert "_tool_transcript" in out
 
     def test_decision_validator_passes_zone_wide_diagnosis(self):
         """Well-formed diagnosis with 4 distinct mission_failures refs → PASS."""

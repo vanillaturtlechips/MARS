@@ -8,15 +8,17 @@ module will pick it up without a code change.
 
 ## 1. Embedding provider & dimension
 
+**Updated 2026-06-04 (implement-changes change-set).**
+
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Embedding model | `voyage-3` (Voyage AI) | Voyage AI is Anthropic's recommended embedding provider for Claude-stack applications. voyage-3 produces 1024-dimensional embeddings with strong retrieval quality. Chosen over OpenAI because it is designed to pair with Claude and avoids a cross-provider dependency. |
-| `EMBEDDING_DIM` | `1024` | Must match the model. **A mismatch fails at INSERT time** — if you change the model, update this variable and re-run the migration. voyage-3-lite is also 1024 dims; voyage-3-large is 2048 dims. |
-| Embedding key | `VOYAGE_API_KEY` | Obtained from voyageai.com. The OpenAI key in `.env` is now optional (kept only if you switch the provider back). |
-| LLM provider | `claude-sonnet-4-6` (Anthropic) | Specified in `.env`; swappable via `get_llm_client()` factory. |
-| `LLM_TEMPERATURE` | `0.0` | Architecture doc says "low temperature for stable, defensible outputs." 0.0 maximises reproducibility for diagnostic / strategic calls. |
+| Active LLM provider | `openai` (`gpt-4.1-mini`) | Switched from Anthropic Claude to OpenAI. `OPENAI_MODEL=gpt-4.1-mini` from `.env`. Anthropic kept as a named fallback (`LLM_PROVIDER=anthropic`). |
+| Embedding model | `text-embedding-3-small` (OpenAI) | Switched from Voyage AI voyage-3 (1024 dims) to OpenAI text-embedding-3-small (1536 dims) to use a single API provider for both chat and embeddings. |
+| `EMBEDDING_DIM` | `1536` | Must match the `vector(N)` column in `0001_initial.sql`. **A mismatch fails at INSERT time.** `text-embedding-3-small` → 1536, `text-embedding-3-large` → 3072. |
+| Schema change | `0001_initial.sql` edited in place (1024→1536) | DB not yet applied to any shared instance; fresh apply is correct. Old Voyage vectors (1024-dim) cannot be reused — re-embed all source rows when switching on a live DB. |
+| `LLM_TEMPERATURE` | `0.0` | Low temperature for stable, defensible outputs. |
 
-**To switch back to OpenAI embeddings:** set `EMBEDDING_DIM=1536`, `VOYAGE_API_KEY=` (blank), add `OPENAI_API_KEY`, and call `get_embedder("openai")` in the application entry point.
+Voyage AI key kept in config as an optional fallback. To revert to Voyage: set `LLM_PROVIDER=voyage` (or blank), set `EMBEDDING_DIM=1024`, update schema column, re-embed.
 
 ---
 
@@ -163,3 +165,24 @@ Three tables now store every agent run uniformly:
 `policies.strategy_run_id` is now a real FK → `strategy_runs`.  All three tables record PASS/DEGRADE/REJECT runs, making restraint and rejected outputs auditable and retrievable via RAG.
 
 `incident_embeddings.source_type='strategy'` points `source_id` at `strategy_runs.strategy_run_id` (not `policies.policy_id` as in the original draft).
+
+---
+
+## 15. Failure Analysis Investigator (implement-changes change-set, 2026-06-04)
+
+The Failure Analysis Agent was refactored from a single-shot LLM call with a pre-assembled bundle into a **read-only ReAct tool-calling loop**.
+
+| Decision | Value | Rationale |
+|----------|-------|-----------|
+| Tool loop driver | `OpenAIInvestigatorClient.chat_with_tools()` | OpenAI native tool calling; maps cleanly to the ReAct pattern. |
+| Tools | `query_failures`, `get_zone_state`, `get_robot_history`, `search_incidents`, `get_active_policies` | Five read-only tools; `search_incidents` integrates the Retrieval Validator per-call instead of as a pre-stage. |
+| `INVESTIGATOR_MAX_TOOL_CALLS` | `10` | Prevents runaway tool loops; conservative for a warehouse with ≤20 robots. |
+| `INVESTIGATOR_MAX_ITERATIONS` | `5` | Max conversation turns before forcing the final step. |
+| `INVESTIGATOR_TIMEOUT_SEC` | `30` | Wall-clock limit for the full investigation. |
+| Non-convergence fallback | `cause=unknown, confidence=0.1` | Always returns a valid diagnosis so the DV can DEGRADE and the orchestrator falls back to a safe default. |
+| Transcript key mapping | `query_failures → mission_failures`, `get_zone_state → zone_state`, etc. | The flattened transcript uses the same dict keys the DV's ref resolver already handles; no changes to `_resolve_ref` or existing evidence refs. |
+| Read-only DB role | `mars_reader` (created by `0002_readonly_role.sql`) | Tools physically cannot write; enforcement is at the DB level, not convention. `DB_READONLY_DSN` in config points to this role. |
+| Orchestrator slow path | Bundle pre-assembly removed | Orchestrator now passes only `trigger_event` to the investigator; the investigator assembles its own evidence via tool calls. `retrieval_validator_fn` parameter kept (still used by strategy/fleet agents). |
+| Output contract | **Unchanged** | Same diagnosis dict shape; `slow_disposition()`, Strategy Trigger Rules, and all downstream consumers are unmodified. |
+
+**Vertical slice verification:** synthetic failure → router (SLOW) → investigator calls `query_failures` tool → transcript populated → diagnosis → DV grounds refs against transcript → PASS → strategy trigger → guardrail → avoid_zone activated → scheduler defers dock missions. All 125 tests pass.

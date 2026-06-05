@@ -1,0 +1,8 @@
+.env
+.venv
+build/
+install/
+log/
+*.egg-info/
+__pycache__/
+.claude
