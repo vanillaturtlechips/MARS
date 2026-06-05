@@ -193,7 +193,9 @@ class ROS2SimAdapter:
             from rclpy.action import ActionClient
             from action_msgs.msg import GoalStatusArray
             from nav2_msgs.action import NavigateToPose
-            from nav2_msgs.msg import NavigateToPoseFeedback
+            # NOTE: the action feedback type is NavigateToPose.Impl.FeedbackMessage
+            # (used below). There is no nav2_msgs/msg/NavigateToPoseFeedback — importing
+            # it would raise ImportError and silently no-op the whole adapter.
             from sensor_msgs.msg import BatteryState
             from nav_msgs.msg import Odometry
             from tf2_msgs.msg import TFMessage
