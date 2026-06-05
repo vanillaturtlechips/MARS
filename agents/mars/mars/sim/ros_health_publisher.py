@@ -76,14 +76,11 @@ def main() -> None:
         raise SystemExit(1)
 
     rclpy.init()
-    node = rclpy.create_node(
-        "mars_sim_health",
-        parameter_overrides=[
-            rclpy.parameter.Parameter(
-                "use_sim_time", rclpy.parameter.Parameter.Type.BOOL, True
-            ),
-        ],
-    )
+    # use_sim_time는 기본 False(wall clock). True면 /clock 이 있어야만 타이머가 도는데,
+    # Isaac Sim 없이 standalone 실행 시 /clock 이 없어 1Hz 타이머가 영영 안 돈다(발행 0건).
+    # Isaac Sim(+/clock)과 함께 돌릴 때만 override:
+    #   python3 -m mars.sim.ros_health_publisher --ros-args -p use_sim_time:=true
+    node = rclpy.create_node("mars_sim_health")
     node.declare_parameter("robot_ids", _DEFAULT_ROBOTS)
     robot_ids = list(node.get_parameter("robot_ids").value) or _DEFAULT_ROBOTS
 
