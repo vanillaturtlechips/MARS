@@ -54,6 +54,13 @@ incident_analysis.scope and incident_analysis.affected_zone for a zone issue.
 If retrieved_precedents is empty or retrieval_trust.set_level is "LOW",
 set relied_on_precedents to [] and do NOT claim precedent support.
 
+When you recommend ANY policy you MUST include at least one evidence item with
+a valid ref (e.g. incident_analysis.scope, incident_analysis.affected_zone) —
+never return an empty evidence list alongside a non-empty policy_updates.
+Base confidence on the incident diagnosis, not only on precedents: a zone_wide
+incident with high incident_analysis.confidence warrants confidence >= 0.6 even
+when retrieved_precedents is empty.
+
 Output ONLY the JSON object. No prose.\
 """
 

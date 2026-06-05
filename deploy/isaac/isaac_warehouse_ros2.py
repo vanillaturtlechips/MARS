@@ -124,7 +124,7 @@ set_target_prims(
 # Separate graph + try/except so a node/port typo can't break the verified
 # odom/tf graph above. iw_hub drive wheels: left_wheel_joint, right_wheel_joint.
 # ------------------------------------------------------------------
-WHEEL_RADIUS = 0.125   # m (iw_hub approx — tune later)
+WHEEL_RADIUS = 0.08    # m — tuned so cmd≈actual (0.125 gave 0.3cmd→0.19actual)
 WHEEL_BASE   = 0.54    # m distance between drive wheels (approx)
 try:
     og.Controller.edit(
