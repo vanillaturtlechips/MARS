@@ -75,6 +75,7 @@ global_costmap:
       filters: ["keepout_filter"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map              # absolute so namespaced costmaps share the global map
         map_subscribe_transient_local: true
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
