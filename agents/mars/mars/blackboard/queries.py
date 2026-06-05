@@ -225,6 +225,7 @@ def upsert_zone(conn, zone: dict[str, Any]) -> None:
             VALUES (%(zone_id)s, %(display_name)s, %(polygon)s::jsonb, %(is_mandatory)s, %(is_charger_zone)s)
             ON CONFLICT (zone_id) DO UPDATE SET
                 display_name   = EXCLUDED.display_name,
+                polygon        = EXCLUDED.polygon,
                 is_mandatory   = EXCLUDED.is_mandatory,
                 is_charger_zone = EXCLUDED.is_charger_zone
             """,
@@ -236,6 +237,22 @@ def upsert_zone(conn, zone: dict[str, Any]) -> None:
                 "is_charger_zone": zone.get("is_charger_zone", False),
             },
         )
+
+
+def get_zone_polygons(conn, zone_ids: list[str]) -> dict[str, list]:
+    """
+    Return {zone_id: polygon} for the given zone_ids, where polygon is the
+    stored JSONB list of vertices (each {x, y} or [x, y]).  Zones with no
+    polygon or unknown ids are omitted.  Used by the keepout publisher.
+    """
+    if not zone_ids:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT zone_id, polygon FROM zones WHERE zone_id = ANY(%s)",
+            (list(zone_ids),),
+        )
+        return {row[0]: row[1] for row in cur.fetchall() if row[1]}
 
 
 def upsert_charger(conn, charger: dict[str, Any]) -> None:

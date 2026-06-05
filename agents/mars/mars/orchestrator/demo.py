@@ -67,6 +67,7 @@ from mars.validators.decision_validator import validate_diagnosis, validate_stra
 from mars.guardrail.guardrail import check as guardrail_check
 from mars.policy.policy_manager import PolicyManager
 from mars.services.scheduling import SchedulingService
+from mars.services.keepout_service import KeepoutService
 from mars.services.charging import ChargingService
 from mars.services.ros_executor import ROSExecutor
 from mars.outcome.evaluator import OutcomeEvaluator
@@ -84,10 +85,15 @@ from mars.config import (
 
 _ROBOTS = ["R1", "R2", "R3", "R4", "R5"]
 
+# Zone polygons are in meters in the map frame (matches mission destinations
+# x∈[1,5]). Used by ZoneResolver and by the Nav2 keepout mask publisher.
 _ZONES = [
-    {"zone_id": "receiving_dock",  "display_name": "Receiving Dock",  "is_charger_zone": False, "is_mandatory": False},
-    {"zone_id": "charging_bay",    "display_name": "Charging Bay",    "is_charger_zone": True,  "is_mandatory": False},
-    {"zone_id": "storage_area_a",  "display_name": "Storage Area A",  "is_charger_zone": False, "is_mandatory": False},
+    {"zone_id": "receiving_dock",  "display_name": "Receiving Dock",  "is_charger_zone": False, "is_mandatory": False,
+     "polygon": [{"x": 0.0, "y": -1.0}, {"x": 4.0, "y": -1.0}, {"x": 4.0, "y": 2.0}, {"x": 0.0, "y": 2.0}]},
+    {"zone_id": "charging_bay",    "display_name": "Charging Bay",    "is_charger_zone": True,  "is_mandatory": False,
+     "polygon": [{"x": 4.0, "y": -1.0}, {"x": 7.0, "y": -1.0}, {"x": 7.0, "y": 2.0}, {"x": 4.0, "y": 2.0}]},
+    {"zone_id": "storage_area_a",  "display_name": "Storage Area A",  "is_charger_zone": False, "is_mandatory": False,
+     "polygon": [{"x": 7.0, "y": -1.0}, {"x": 10.0, "y": -1.0}, {"x": 10.0, "y": 2.0}, {"x": 7.0, "y": 2.0}]},
 ]
 
 _CHARGERS = [
@@ -337,6 +343,12 @@ def run_demo() -> None:
     sim = MockSim(robot_ids=_ROBOTS, tick_hz=20.0)
     goal_to_mission = wire_sim(sim, aggregator)
     sim.start()
+
+    # -- Keepout: avoid_zone policy → Nav2 KeepoutFilter mask (no-op in mock,
+    #    real OccupancyGrid publish in the ROS2 adapter). Registered here so
+    #    the mask is rebuilt whenever PolicyManager activates an avoid_zone.
+    keepout_service = KeepoutService(sim, conn_factory)
+    policy_manager.register_consumer(keepout_service.on_policy_change)
 
     # -- Dispatch goals so robots have something to abort --
     dispatch_demo_goals(sim, conn_main, goal_to_mission)
