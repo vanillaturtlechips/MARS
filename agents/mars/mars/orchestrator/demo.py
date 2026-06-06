@@ -90,10 +90,10 @@ _ROBOTS = ["R1", "R2", "R3", "R4", "R5"]
 _ZONES = [
     # Wall across the corridor at x≈4 (away from the robot's start at origin) so
     # the Nav2 keepout demo shows a clean detour rather than blocking the start.
-    # keepout around the obstacle at (8,13) INSIDE the warehouse aisle x≈8
-    # (real shelves flank it at x≈5.5 and 10.4; the box blocks that aisle).
+    # keepout around the obstacle at (-8,15) INSIDE the real warehouse aisle x≈-8
+    # (real shelves flank it at x≈-10.5 and -5.5; the box blocks that aisle).
     {"zone_id": "receiving_dock",  "display_name": "Receiving Dock",  "is_charger_zone": False, "is_mandatory": False,
-     "polygon": [{"x": 7.0, "y": 12.0}, {"x": 9.0, "y": 12.0}, {"x": 9.0, "y": 14.0}, {"x": 7.0, "y": 14.0}]},
+     "polygon": [{"x": -9.0, "y": 14.0}, {"x": -7.0, "y": 14.0}, {"x": -7.0, "y": 16.0}, {"x": -9.0, "y": 16.0}]},
     {"zone_id": "charging_bay",    "display_name": "Charging Bay",    "is_charger_zone": True,  "is_mandatory": False,
      "polygon": [{"x": 4.0, "y": -1.0}, {"x": 7.0, "y": -1.0}, {"x": 7.0, "y": 2.0}, {"x": 4.0, "y": 2.0}]},
     {"zone_id": "storage_area_a",  "display_name": "Storage Area A",  "is_charger_zone": False, "is_mandatory": False,

@@ -31,9 +31,9 @@ bringup(){
   echo "  waiting for Isaac up (cold ~2-3min)..."; local i=0
   until [ -f /tmp/keepout_isaac_ready ]; do sleep 3; i=$((i+3)); kill -0 "$ISAAC_PID" 2>/dev/null || { echo "  Isaac died ($L/isaac.log)"; return 1; }; [ $i -ge 600 ] && { echo "  Isaac timeout"; return 1; }; done
   bash -c "source $RENV; \
-    ros2 run tf2_ros static_transform_publisher --x 8 --y 5 --z 0 --frame-id map --child-frame-id R1/odom & \
-    ros2 run tf2_ros static_transform_publisher --x 11 --y 5 --z 0 --frame-id map --child-frame-id R2/odom & \
-    ros2 run tf2_ros static_transform_publisher --x 5 --y 5 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
+    ros2 run tf2_ros static_transform_publisher --x -8 --y 5 --z 0 --frame-id map --child-frame-id R1/odom & \
+    ros2 run tf2_ros static_transform_publisher --x -5 --y 5 --z 0 --frame-id map --child-frame-id R2/odom & \
+    ros2 run tf2_ros static_transform_publisher --x -11 --y 5 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
   sleep 5
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
   grepwait "$L/nav2_global.log" "Managed nodes are active" 120 || return 1
@@ -61,23 +61,19 @@ demo1(){
   grepwait "$L/bridge.log" "listening for aborts" 60 || true
   sleep 3
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
-  echo "  R1 drives UP the aisle (x=8) toward the box at (8,13) -> rams it, stuck"
-  goal R1 8 18
+  echo "  R1 drives UP the real aisle x=-8 toward the box at (-8,15) -> rams it, stuck between the shelves"
+  goal R1 -8 22
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
   touch /tmp/keepout_zone_go    # agent flagged the box -> red slab appears on camera
-  echo "  R1 CORRECTS its path: detours left (x=6) around the box, then continues"
-  goal R1 6 13;  sleep 11
-  goal R1 6 17;  sleep 11
-  goal R1 8 19;  sleep 10
-  goal R1 11 19; sleep 8        # park aside, clear the lane for the others
-  echo "  R2,R3 take the SAME corrected path around the box"
-  goal R2 6 12;  sleep 11
-  goal R2 6 17;  sleep 11
-  goal R2 8 19;  sleep 10
-  goal R2 10 19; sleep 8        # park
-  goal R3 6 11;  sleep 11
-  goal R3 6 16;  sleep 11
-  goal R3 8 18;  sleep 14
+  echo "  R1 CORRECTS its path: backs south, takes the next aisle x=-3"
+  goal R1 -8 7;  sleep 10       # back out of the blocked aisle to the open south
+  goal R1 -3 7;  sleep 9        # over to the next aisle entrance
+  goal R1 -3 22; sleep 14       # up the clear aisle x=-3 (parks north)
+  echo "  R2,R3 take the SAME corrected path (up aisle x=-3, avoiding the banned aisle)"
+  goal R2 -3 7;  sleep 9
+  goal R2 -3 19; sleep 14
+  goal R3 -3 7;  sleep 9
+  goal R3 -3 15; sleep 16
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }

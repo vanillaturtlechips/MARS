@@ -38,10 +38,10 @@ ap.add_argument("--record", type=str, default="",
 # default cam sits INSIDE the verified-open lane volume (robots run x[-3,3] y[-8,5])
 # so it never lands in a warehouse wall; elevated, looking north up the lane.
 # cam_5 from cam_sweep (south overview): frames the dock + 3 robots + detour well.
-# south view looking NORTH up the aisle (x=8) between the shelves (x=3.5/12.5);
-# frames the box at (8,13), the robots, and the left detour at x=6.
-ap.add_argument("--cam-eye", type=str, default="8,-10,10", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="8,12,1", help="record camera look-at x,y,z")
+# south view looking NORTH into the real aisles x=-8 (box/stuck robot) and x=-3
+# (reroute), framed by the warehouse shelves at x=-10.5,-5.5,-0.5.
+ap.add_argument("--cam-eye", type=str, default="-5.5,-3,11", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="-5.5,16,1", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
@@ -73,15 +73,16 @@ CARDBOX_USD  = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_Car
 CHARGER_USD  = f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd"
 RACK_USD     = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_RackPile_06.usd"  # the stocked shelf full_warehouse itself uses
 
-# Coordinates read off the occupancy map. The only two CLEAR straight aisles
-# between the real shelves are x≈8 (flanked by shelves x≈5.5 & 10.4) and x≈13
-# (flanked by x≈10.4 & 15.4); both run y≈9..18. Robots start in the open band
-# just south of the shelf fronts and drive UP into the aisles.
-#   demo1: R1 goes up aisle-8, rams the box (8,13) BETWEEN the shelves and is
-#   stuck; the agent bans aisle-8; R2,R3 are rerouted up the clear aisle-13.
-ROBOTS = [("R1", 8.0, 5.0), ("R2", 11.0, 5.0), ("R3", 5.0, 5.0)]
-DOCK_XY = (8.0, 13.0)       # obstacle box / keepout center — inside aisle-8, between the shelves
-CHARGER_XY = (12.0, 3.0)    # charging station in the open band (south of the shelves)
+# Coordinates read DIRECTLY from full_warehouse.usd (not the wrong occupancy map).
+# Real shelf rows run along Y (Y≈8.5..25) at x≈-20.5,-15.5,-10.5,-5.5,-0.5,4.5;
+# clear aisles between them at x≈-8, -3, +2; the south area (Y<8.5) is open floor.
+# Robots spawn in the open south and drive UP into the real aisles.
+#   demo1: R1 goes up aisle x=-8, rams the box (-8,15) BETWEEN the REAL shelves
+#   (x=-10.5 & -5.5) and is stuck; agent flags it; R1 corrects its path (back
+#   south, up the next aisle x=-3); R2,R3 take that same corrected path.
+ROBOTS = [("R1", -8.0, 5.0), ("R2", -5.0, 5.0), ("R3", -11.0, 5.0)]
+DOCK_XY = (-8.0, 15.0)      # obstacle box / keepout — inside real aisle x=-8, between real shelves
+CHARGER_XY = (0.0, 3.0)     # charging station in the open south area
 WHEEL_RADIUS = 0.08
 WHEEL_BASE = 0.54
 
@@ -118,16 +119,8 @@ UsdGeom.Imageable(stage.GetPrimAtPath("/World/dock_collider")).MakeInvisible()
 _place("/World/dock_box", CARDBOX_USD, _dx, _dy, 0.0)
 carb.log_warn(f"[multi] obstacle: real SM_CardBoxA at {DOCK_XY} (collider 1.2x0.8x0.5)")
 
-# Stocked shelves (SM_RackPile_06 — the asset full_warehouse itself uses) flanking
-# the aisle so the obstacle box sits BETWEEN real shelving. We place our own at
-# known coords (the occupancy map's shelf positions didn't match the render).
-# Rows at x=3.5 and x=12.5 (a wide, safe aisle); the robot lane is x=8 and the
-# left detour is x=6, both well clear of the shelves. yaw=90 turns each rack so
-# its long side runs ALONG the aisle (forming a wall).
-for _ry in (10.0, 13.0, 16.0):
-    _place(f"/World/shelf_L_{int(_ry)}", RACK_USD, 3.0, _ry, 0.0, yaw=90.0)
-    _place(f"/World/shelf_R_{int(_ry)}", RACK_USD, 13.0, _ry, 0.0, yaw=90.0)
-carb.log_warn("[multi] placed SM_RackPile shelves flanking aisle x=8 (box between them)")
+# No added shelves: the box sits in the REAL warehouse aisle x=-8, flanked by
+# full_warehouse's own shelves at x=-10.5 and -5.5 (Y 8.5..25).
 
 # Charging station: real NVIDIA packing table at the R3-lane mouth.
 _place("/World/charger", CHARGER_USD, *CHARGER_XY, 0.0)

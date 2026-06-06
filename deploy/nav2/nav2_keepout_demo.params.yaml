@@ -12,13 +12,12 @@
 map_server:
   ros__parameters:
     use_sim_time: true
-    # all-free map: the generated warehouse_map.pgm did NOT match the rendered
-    # warehouse (its occupied cells blocked open floor), so we navigate on a bare
-    # free map and confine the demo to render-open floor. Physical blocking comes
-    # from the placed obstacle box + shelves (Isaac colliders), and reroute uses
-    # the agent keepout + explicit waypoints. Revert to warehouse_map.yaml once
-    # the occupancy map is regenerated correctly.
-    yaml_filename: "/workspace/MARS/deploy/nav2/allfree_map.yaml"
+    # warehouse_real.yaml: occupancy built from the REAL shelf/wall positions read
+    # out of full_warehouse.usd (deploy/nav2/make_real_map.py). The old
+    # warehouse_map.pgm was offset/wrong (shelves where the render had open floor),
+    # which is why earlier demos landed outside the building. Shelf rows at
+    # x≈-20.5/-15.5/-10.5/-5.5/-0.5/4.5 (Y 8.5..25), clear aisles between them.
+    yaml_filename: "/workspace/MARS/deploy/nav2/warehouse_real.yaml"
 
 planner_server:
   ros__parameters:
