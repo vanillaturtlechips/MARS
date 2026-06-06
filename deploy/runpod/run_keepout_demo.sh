@@ -35,6 +35,10 @@ rm -rf /tmp/keepout_frames    # clear old frames so the readiness-wait only sees
 sleep 3
 command -v ffmpeg >/dev/null || apt-get install -y ffmpeg >/dev/null 2>&1 || true
 service postgresql start >/dev/null 2>&1 || true
+# Clear accumulated RAG/incident history. Stale incidents from a prior run make
+# the investigator cite 'retrieved_precedents[0]' which doesn't resolve in the
+# bundle -> decision_validator REJECT -> no avoid_zone. Fresh DB each run = PASS.
+su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
 
 say "1. Isaac (+record) — wait for play (heavy USD, up to ~3 min)"
 bash -c "source $IENV && cd $REPO && exec stdbuf -oL -eL python -u deploy/isaac/isaac_multi_robot_ros2.py --warehouse --record '$OUT'" > "$L/isaac.log" 2>&1 &
