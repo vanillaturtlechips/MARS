@@ -38,7 +38,7 @@ service postgresql start >/dev/null 2>&1 || true
 say "1. Isaac (+record) — wait for play (heavy USD, up to ~3 min)"
 bash -c "source $IENV && cd $REPO && exec python deploy/isaac/isaac_multi_robot_ros2.py --warehouse --record '$OUT'" > "$L/isaac.log" 2>&1 &
 ISAAC_PID=$!
-waitfor "$L/isaac.log" "timeline playing" 240 || { echo "Isaac failed; see $L/isaac.log"; exit 1; }
+waitfor "$L/isaac.log" "timeline playing" 600 || { echo "Isaac failed; see $L/isaac.log"; exit 1; }
 sleep 3
 
 say "2. static tf (spawn offsets map->R*/odom)"
