@@ -295,6 +295,20 @@ if args.record:
     set_camera_view(eye=eye, target=tgt, camera_prim_path="/World/RecordCam")  # correct aim
     for _ in range(20):
         world.step(render=True)
+    # one-time TOP-DOWN calibration still of the whole scene (warehouse + robots at
+    # their known spawns + shelves + box) so the world<->render layout can be read
+    # directly instead of guessed. Saved once, then the demo camera is restored.
+    from PIL import Image as _ImgTD
+    set_camera_view(eye=[0.0, 0.0, 60.0], target=[0.0, 0.0, 0.0], camera_prim_path="/World/RecordCam")
+    for _ in range(15):
+        world.step(render=True)
+    _td = _cam.get_rgba()
+    if _td is not None and _td.size > 0:
+        _ImgTD.fromarray(_td[:, :, :3]).save("/tmp/keepout_topdown.png")
+        carb.log_warn("[multi] saved top-down calibration -> /tmp/keepout_topdown.png")
+    set_camera_view(eye=eye, target=tgt, camera_prim_path="/World/RecordCam")
+    for _ in range(15):
+        world.step(render=True)
     _frame_dir = "/tmp/keepout_frames"          # fixed path so the runner can encode it
     os.system(f"rm -rf {_frame_dir} && mkdir -p {_frame_dir}")
     _rec = {"cam": _cam, "dir": _frame_dir, "i": 0}
