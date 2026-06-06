@@ -74,10 +74,12 @@ sleep 3; goal R1 3 -8
 echo "   letting R1 detour + arrive (40s)..."
 sleep 40
 
-say "8. finalize -> encode mp4"
-kill -INT "$ISAAC_PID" 2>/dev/null
-waitfor "$L/isaac.log" "encoding" 30 || true
-for i in $(seq 1 40); do [ -f "$OUT" ] && break; sleep 2; done
+say "8. finalize -> encode mp4 (runner does it; Isaac intercepts SIGINT so we don't rely on its finally)"
+kill -INT "$ISAAC_PID" 2>/dev/null; sleep 8
+FR=/tmp/keepout_frames
+N=$(ls "$FR"/frame_*.png 2>/dev/null | wc -l)
+echo "captured $N frames in $FR"
+[ "$N" -gt 0 ] && ffmpeg -y -framerate 20 -i "$FR/frame_%06d.png" -pix_fmt yuv420p "$OUT" >/dev/null 2>&1
 
 say "DONE"
 if [ -f "$OUT" ]; then echo "VIDEO: $OUT  ($(du -h "$OUT" | cut -f1))"; else echo "[!] no mp4 — see $L/isaac.log"; fi

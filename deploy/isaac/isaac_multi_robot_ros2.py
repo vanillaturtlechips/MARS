@@ -229,13 +229,15 @@ if args.record:
             w = (m[1, 0] - m[0, 1]) / s; x = (m[0, 2] + m[2, 0]) / s; y = (m[1, 2] + m[2, 1]) / s; z = 0.25 * s
         return [w, x, y, z]
 
+    from isaacsim.core.utils.viewports import set_camera_view  # noqa: E402
     eye = _xyz(args.cam_eye); tgt = _xyz(args.cam_target)
-    _cam = Camera(prim_path="/World/RecordCam", position=_np.array(eye),
-                  orientation=_np.array(_lookat_quat(eye, tgt)), resolution=(1280, 720))
+    _cam = Camera(prim_path="/World/RecordCam", resolution=(1280, 720))
     _cam.initialize()
+    set_camera_view(eye=eye, target=tgt, camera_prim_path="/World/RecordCam")  # correct aim
     for _ in range(20):
         world.step(render=True)
-    _frame_dir = tempfile.mkdtemp(prefix="keepout_frames_")
+    _frame_dir = "/tmp/keepout_frames"          # fixed path so the runner can encode it
+    os.system(f"rm -rf {_frame_dir} && mkdir -p {_frame_dir}")
     _rec = {"cam": _cam, "dir": _frame_dir, "i": 0}
     carb.log_warn(f"[multi] recording -> {args.record}  (frames in {_frame_dir})")
 
