@@ -38,10 +38,10 @@ ap.add_argument("--record", type=str, default="",
 # default cam sits INSIDE the verified-open lane volume (robots run x[-3,3] y[-8,5])
 # so it never lands in a warehouse wall; elevated, looking north up the lane.
 # cam_5 from cam_sweep (south overview): frames the dock + 3 robots + detour well.
-# south overview looking NORTH up the aisles: frames the action band (y -1..7),
-# the obstacle/charger, and the real shelves behind (y>8.6). x centered on 3.
-ap.add_argument("--cam-eye", type=str, default="3,-10,8", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="3,5,0.8", help="record camera look-at x,y,z")
+# elevated south view looking NORTH up the two aisles (x≈8 and x≈13): frames the
+# robots driving up between the real shelves and the stuck robot at the box (8,13).
+ap.add_argument("--cam-eye", type=str, default="9.5,-6,12", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="9.5,11,1", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
@@ -72,14 +72,15 @@ WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_wareho
 CARDBOX_USD  = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_CardBoxA_01.usd"
 CHARGER_USD  = f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd"
 
-# Spawns are aligned to the REAL warehouse aisles read off the occupancy map:
-# shelves sit at x≈-4.4, 0.5, 5.5, 10.4 (y 8.6..20), so the clear lanes between
-# them are x≈-2, 3, 8. Robots start at y=7 (just south of the shelf fronts) so
-# the shelves fill the backdrop; the demo action happens in the open band south
-# of them (y<8.6) where there is room to detour around a keepout.
-ROBOTS = [("R1", -2.0, 7.0), ("R2", 3.0, 7.0), ("R3", 8.0, 7.0)]
-DOCK_XY = (3.0, 3.0)        # obstacle box / keepout center (R2's lane mouth)
-CHARGER_XY = (8.0, 1.0)     # charging station (R3's lane mouth, open band)
+# Coordinates read off the occupancy map. The only two CLEAR straight aisles
+# between the real shelves are x≈8 (flanked by shelves x≈5.5 & 10.4) and x≈13
+# (flanked by x≈10.4 & 15.4); both run y≈9..18. Robots start in the open band
+# just south of the shelf fronts and drive UP into the aisles.
+#   demo1: R1 goes up aisle-8, rams the box (8,13) BETWEEN the shelves and is
+#   stuck; the agent bans aisle-8; R2,R3 are rerouted up the clear aisle-13.
+ROBOTS = [("R1", 8.0, 5.0), ("R2", 11.0, 5.0), ("R3", 5.0, 5.0)]
+DOCK_XY = (8.0, 13.0)       # obstacle box / keepout center — inside aisle-8, between the shelves
+CHARGER_XY = (12.0, 3.0)    # charging station in the open band (south of the shelves)
 WHEEL_RADIUS = 0.08
 WHEEL_BASE = 0.54
 
@@ -123,11 +124,11 @@ carb.log_warn(f"[multi] charging station: real packing_table at {CHARGER_XY}")
 # — only demo1 does this, so it stays hidden in the charging demos).
 world.scene.add(VisualCuboid(
     prim_path="/World/keepout_zone", name="keepout_zone",
-    position=np.array([_dx, _dy, 0.06]), scale=np.array([1.6, 1.6, 0.12]),
+    position=np.array([_dx, _dy, 0.06]), scale=np.array([2.0, 2.0, 0.12]),
     color=np.array([0.9, 0.05, 0.05]),
 ))
 UsdGeom.Imageable(stage.GetPrimAtPath("/World/keepout_zone")).MakeInvisible()
-carb.log_warn("[multi] keepout slab 1.6x1.6 created (hidden until avoid_zone)")
+carb.log_warn("[multi] keepout slab 2x2 created in aisle-8 (hidden until avoid_zone)")
 
 
 def spawn_robot(name: str, x: float, y: float) -> str:

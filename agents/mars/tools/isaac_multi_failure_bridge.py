@@ -33,7 +33,7 @@ from mars.ros.ros2_keepout_publisher import Ros2KeepoutPublisher  # noqa: E402
 
 ROBOTS = ["R1", "R2", "R3"]
 ZONE = "receiving_dock"
-THRESHOLD = 2          # distinct robots aborting in the dock before declaring zone_wide
+THRESHOLD = 1          # one robot stuck in the aisle is enough to ban it (hazard report -> fleet avoids)
 STATUS_ABORTED = 6
 
 
