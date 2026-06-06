@@ -31,14 +31,23 @@ say "0. kill stale + deps"
 pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2
 pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f static_transform_publisher
 pkill -9 -f "action send_goal"; pkill -9 -f keepout_publish_test
+rm -rf /tmp/keepout_frames    # clear old frames so the readiness-wait only sees this run's
 sleep 3
 command -v ffmpeg >/dev/null || apt-get install -y ffmpeg >/dev/null 2>&1 || true
 service postgresql start >/dev/null 2>&1 || true
 
 say "1. Isaac (+record) — wait for play (heavy USD, up to ~3 min)"
-bash -c "source $IENV && cd $REPO && exec python deploy/isaac/isaac_multi_robot_ros2.py --warehouse --record '$OUT'" > "$L/isaac.log" 2>&1 &
+bash -c "source $IENV && cd $REPO && exec stdbuf -oL -eL python -u deploy/isaac/isaac_multi_robot_ros2.py --warehouse --record '$OUT'" > "$L/isaac.log" 2>&1 &
 ISAAC_PID=$!
-waitfor "$L/isaac.log" "timeline playing" 600 || { echo "Isaac failed; see $L/isaac.log"; exit 1; }
+# Isaac buffers its log, so grepping it for readiness is unreliable. Wait on the
+# camera's frame files instead (they appear once it's up AND recording).
+echo "waiting for Isaac to come up + record (cold pod can be ~2-3 min)..."
+i=0; until ls /tmp/keepout_frames/frame_*.png >/dev/null 2>&1; do
+  sleep 3; i=$((i+3))
+  kill -0 "$ISAAC_PID" 2>/dev/null || { echo "Isaac died; see $L/isaac.log"; exit 1; }
+  [ $i -ge 600 ] && { echo "Isaac timeout; see $L/isaac.log"; exit 1; }
+done
+echo "[ok] Isaac up + recording"
 sleep 3
 
 say "2. static tf (spawn offsets map->R*/odom)"
@@ -49,17 +58,17 @@ bash -c "source $RENV && \
 sleep 3
 
 say "3. global Nav2 (map_server first)"
-bash -c "source $RENV && cd $REPO && exec ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
+bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
 waitfor "$L/nav2_global.log" "Managed nodes are active" 90 || exit 1
 
 say "4. per-robot Nav2 (R1/R2/R3)"
 for r in R1 R2 R3; do
-  bash -c "source $RENV && cd $REPO && exec ros2 launch deploy/nav2/bringup_robot_ns.launch.py namespace:=$r" > "$L/nav2_$r.log" 2>&1 &
+  bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_robot_ns.launch.py namespace:=$r" > "$L/nav2_$r.log" 2>&1 &
   waitfor "$L/nav2_$r.log" "Managed nodes are active" 150 || exit 1
 done
 
 say "5. brain bridge (ALL agents)"
-bash -c "source $RENV && cd $REPO/agents/mars && exec python3 -m tools.isaac_multi_failure_bridge" > "$L/bridge.log" 2>&1 &
+bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_multi_failure_bridge" > "$L/bridge.log" 2>&1 &
 waitfor "$L/bridge.log" "listening for aborts" 60 || exit 1
 sleep 3
 
