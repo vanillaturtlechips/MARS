@@ -49,6 +49,7 @@ if args.record:
     enable_extension("isaacsim.sensors.camera")
 simulation_app.update()
 
+import os  # noqa: E402
 import numpy as np  # noqa: E402
 import omni.usd  # noqa: E402
 import omni.graph.core as og  # noqa: E402
@@ -89,6 +90,22 @@ if not args.no_obstacle:
         scale=np.array([1.2, 0.8, 0.5]),   # robot-sized dock obstacle (iw_hub ~1m), not a giant wall
     ))
     carb.log_warn("[multi] spawned dock blocking box (0,0) size (1.2,0.8,0.5)")
+
+    # Visual-only red slab over the receiving_dock keepout polygon
+    # (x[-1.5,1.5] y[-1,1], matches the Nav2 keepout mask). Hidden until the
+    # supervisory agent declares avoid_zone (runner touches /tmp/keepout_zone_go),
+    # so the recording shows the agent's decision: robots fail -> red zone appears
+    # -> the next robot reroutes around it. No collider (Nav2 has no obstacle
+    # layer; the keepout filter is what actually reroutes).
+    from isaacsim.core.api.objects import VisualCuboid
+    world.scene.add(VisualCuboid(
+        prim_path="/World/keepout_zone", name="keepout_zone",
+        position=np.array([0.0, 0.0, 0.06]),
+        scale=np.array([3.0, 2.0, 0.12]),
+        color=np.array([0.9, 0.05, 0.05]),
+    ))
+    UsdGeom.Imageable(stage.GetPrimAtPath("/World/keepout_zone")).MakeInvisible()
+    carb.log_warn("[multi] keepout zone slab created (hidden until avoid_zone)")
 
 
 def spawn_robot(name: str, x: float, y: float) -> str:
@@ -251,9 +268,16 @@ if args.record:
 open("/tmp/keepout_isaac_ready", "w").close()
 
 _step = 0
+# reveal the red keepout slab once the agent declares avoid_zone (demo1 only;
+# the runner touches this marker right after the bridge logs avoid_zone=True).
+_keepout_pending = not args.no_obstacle
 try:
     while simulation_app.is_running():
         world.step(render=True)
+        if _keepout_pending and os.path.exists("/tmp/keepout_zone_go"):
+            UsdGeom.Imageable(stage.GetPrimAtPath("/World/keepout_zone")).MakeVisible()
+            _keepout_pending = False
+            carb.log_warn("[multi] keepout zone revealed (agent avoid_zone active)")
         if _rec is not None:
             _step += 1
             # only capture once the runner touches the GO marker (right before goals),

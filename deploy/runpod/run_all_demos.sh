@@ -25,7 +25,7 @@ killall_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkil
 
 # bringup <isaac extra args> ; sets ISAAC_PID. returns 1 on failure.
 bringup(){
-  killall_; rm -rf "$FR" /tmp/keepout_isaac_ready /tmp/keepout_record_go
+  killall_; rm -rf "$FR" /tmp/keepout_isaac_ready /tmp/keepout_record_go /tmp/keepout_zone_go
   bash -c "source $IENV && cd $REPO && exec stdbuf -oL -eL python -u deploy/isaac/isaac_multi_robot_ros2.py --warehouse $1" > "$L/isaac.log" 2>&1 &
   ISAAC_PID=$!
   echo "  waiting for Isaac up (cold ~2-3min)..."; local i=0
@@ -64,27 +64,32 @@ demo1(){
   echo "  trigger: R2,R3 into dock (0,0) -> fail"
   goal R2 0 -8; sleep 5; goal R3 0 -8
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
+  touch /tmp/keepout_zone_go    # agent declared avoid_zone -> reveal the red keepout slab on camera
   echo "  reroute: R1 across the dock"; sleep 3; goal R1 3 -8; sleep 40
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }
-demo2(){
-  say "DEMO 2 — charging (reserve charger for critical, delay low-priority)"
-  bringup "--no-obstacle --record /workspace/demo2_charging.mp4" || { echo "  DEMO2 skipped (bringup failed)"; return 1; }
+# charge_demo <scenario> <mp4> : bring up, then let the REAL charging bridge
+# decide the serve order and drive the robots. The bridge runs in the foreground
+# so we only stop Isaac once its sequence is done.
+charge_demo(){
+  local scn="$1" out="$2"
+  killall_
+  timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
+  bringup "--no-obstacle --record $out" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
-  echo "  reserve (-3,-8) for critical R1; R3 -> (3,-8); R2 delayed"
-  goal R1 -3 -8; sleep 2; goal R3 3 -8; sleep 18; goal R2 -3 -8; sleep 35
+  echo "  running real charging arbitration bridge (scenario=$scn)"
+  bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
-  enc /workspace/demo2_charging.mp4
+  enc "$out"
+}
+demo2(){
+  say "DEMO 2 — charging (agent reserves the one charger for the CRITICAL robot, delays the low one)"
+  charge_demo charging /workspace/demo2_charging.mp4
 }
 demo3(){
-  say "DEMO 3 — priority (two robots want the same spot; agent orders them)"
-  bringup "--no-obstacle --record /workspace/demo3_priority.mp4" || { echo "  DEMO3 skipped (bringup failed)"; return 1; }
-  touch /tmp/keepout_record_go
-  echo "  R2 priority to (0,-6); R3 yields then goes"
-  goal R2 0 -6; sleep 14; goal R2 0 -8; sleep 3; goal R3 0 -6; sleep 35
-  kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
-  enc /workspace/demo3_priority.mp4
+  say "DEMO 3 — priority (two robots want the same charger; the queue serializes them, no deadlock)"
+  charge_demo priority /workspace/demo3_priority.mp4
 }
 
 command -v ffmpeg >/dev/null || apt-get install -y ffmpeg >/dev/null 2>&1 || true
@@ -102,3 +107,4 @@ killall_
 say "DONE"
 ls -lh /workspace/demo1_keepout.mp4 /workspace/demo2_charging.mp4 /workspace/demo3_priority.mp4 2>/dev/null
 echo "agent pipeline (demo1): grep -aE 'investigator|decision_validator|strategy|guardrail|policy_manager|keepout|avoid_zone' $L/bridge.log"
+echo "agent arbitration (demo2/3): grep -aE 'charging-svc|serve order|granted|fleet-llm' $L/charge_charging.log $L/charge_priority.log"
