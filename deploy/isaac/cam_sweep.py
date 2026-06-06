@@ -1,17 +1,20 @@
 """
-Camera contact sheet: load the warehouse + dock box + 3 robots at their spawns,
-then capture ONE still from each of several camera presets to /tmp/cam_sweep/.
-Look at the PNGs, pick the best preset #, and use its eye/target for the demo.
+Camera contact sheet for the REAL-aisle demo scene. Loads full_warehouse + the
+3 robots + the obstacle box (in the real aisle x=-8, between the real shelves at
+x=-10.5/-5.5) at a mid-scenario pose (R1 stuck at the box, R2/R3 rerouted up the
+next aisle x=-3) and captures 10 camera angles to /tmp/cam_sweep/cam_1..10.png.
+
+Look at the PNGs, pick the best cam_N, and tell me — that eye/target becomes the
+demo camera (--cam-eye / --cam-target in isaac_multi_robot_ros2.py).
 
   source deploy/isaac/env_isaac.sh
   python deploy/isaac/cam_sweep.py
-  # then view /tmp/cam_sweep/cam_*.png  (scp or open)
+  # then view /tmp/cam_sweep/cam_*.png
 """
-import sys as _sys  # noqa
 from isaacsim import SimulationApp
 simulation_app = SimulationApp({"headless": True, "enable_cameras": True})
 
-import os, math  # noqa: E402
+import os  # noqa: E402
 import numpy as np  # noqa: E402
 import carb  # noqa: E402
 from isaacsim.core.utils.extensions import enable_extension  # noqa: E402
@@ -21,7 +24,7 @@ simulation_app.update()
 import omni.usd  # noqa: E402
 from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.utils.stage import add_reference_to_stage  # noqa: E402
-from isaacsim.core.api.objects import FixedCuboid  # noqa: E402
+from isaacsim.core.api.objects import FixedCuboid, VisualCuboid  # noqa: E402
 from isaacsim.sensors.camera import Camera  # noqa: E402
 from isaacsim.core.utils.viewports import set_camera_view  # noqa: E402
 from pxr import UsdGeom, Gf  # noqa: E402
@@ -29,28 +32,25 @@ from pxr import UsdGeom, Gf  # noqa: E402
 _CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 IW_HUB = f"{_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub.usd"
 WAREHOUSE = f"{_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
-# robots in the dock region (not at north spawn) so stills show the real moment,
-# but spaced >2m apart and CLEAR of the box (x[-0.6,0.6] y[-0.4,0.4]) so physics
-# doesn't explode from interpenetration.
-ROBOTS = [("R1", -2.2, 1.2), ("R2", 0.0, 1.6), ("R3", 2.2, -0.6)]
-
-# (eye, target) presets — closer + lower so the small dock + robots fill the frame
-PRESETS = [
-    ((0, -6, 3.5),  (0, -0.3, 0.4)),  # 0: south, low, close
-    ((0, -8, 5),    (0, -0.3, 0.4)),  # 1: south, mid
-    ((3.5, -6, 4),  (0, -0.3, 0.4)),  # 2: slight SE corner, low
-    ((-3.5, -6, 4), (0, -0.3, 0.4)),  # 3: slight SW corner, low
-    ((0, -1, 9),    (0, -0.5, 0)),    # 4: top-down (lower, z=9)
-    ((0, -10, 7),   (0, -0.3, 0.5)),  # 5: south overview
-]
+CARDBOX = f"{_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_CardBoxA_01.usd"
+DOCK = (-8.0, 15.0)
+# mid-scenario pose: R1 stuck at the box; R2,R3 rerouted up the next aisle x=-3
+ROBOTS = [("R1", -8.0, 13.6), ("R2", -3.0, 16.0), ("R3", -3.0, 10.0)]
 
 world = World(stage_units_in_meters=1.0)
 world.scene.add_default_ground_plane()
 stage = omni.usd.get_context().get_stage()
 add_reference_to_stage(WAREHOUSE, "/World/Warehouse")
-world.scene.add(FixedCuboid(prim_path="/World/dock_block", name="dock_block",
-                            position=np.array([0.0, 0.0, 0.25]),
-                            scale=np.array([1.2, 0.8, 0.5])))   # match the demo's small dock box
+
+# obstacle: invisible collider + real cardbox visual + red keepout slab
+world.scene.add(FixedCuboid(prim_path="/World/dock_collider", name="dock_collider",
+                            position=np.array([DOCK[0], DOCK[1], 0.25]), scale=np.array([1.2, 0.8, 0.5])))
+UsdGeom.Imageable(stage.GetPrimAtPath("/World/dock_collider")).MakeInvisible()
+add_reference_to_stage(CARDBOX, "/World/dock_box")
+UsdGeom.Xformable(stage.GetPrimAtPath("/World/dock_box")).AddTranslateOp().Set(Gf.Vec3d(DOCK[0], DOCK[1], 0.0))
+world.scene.add(VisualCuboid(prim_path="/World/keepout_zone", name="keepout_zone",
+                             position=np.array([DOCK[0], DOCK[1], 0.06]), scale=np.array([2.0, 2.0, 0.12]),
+                             color=np.array([0.9, 0.05, 0.05])))
 for name, x, y in ROBOTS:
     p = f"/World/{name}"
     add_reference_to_stage(IW_HUB, p)
@@ -59,19 +59,32 @@ for name, x, y in ROBOTS:
 world.reset()
 cam = Camera(prim_path="/World/SweepCam", resolution=(1280, 720))
 cam.initialize()
-# default aperture came out ~2.1 (≈5° telephoto = everything looks zoomed in).
-# set the standard ~20.955 aperture -> ~47° FOV so the whole scene fits.
 cam.set_focal_length(24.0)
-cam.set_horizontal_aperture(20.955)
-for _ in range(30):
+cam.set_horizontal_aperture(20.955)   # ~47 deg FOV
+for _ in range(40):
     world.step(render=True)
+
+# (eye, target) presets around the aisle x=-8 action (box at -8,15; shelves
+# x=-10.5/-5.5; reroute aisle x=-3; robots came from the open south y<8.5).
+PRESETS = [
+    ((-8, 2, 3),    (-8, 18, 1.5)),   # 1: straight down aisle x=-8, low
+    ((-8, 4, 7),    (-8, 20, 1.0)),   # 2: down aisle x=-8, mid height
+    ((-5.5, -6, 14),(-5.5, 15, 1.0)), # 3: elevated overview of both aisles
+    ((-1, -2, 7),   (-8, 15, 1.0)),   # 4: 3/4 from south-east
+    ((-15, -2, 7),  (-6, 15, 1.0)),   # 5: 3/4 from south-west
+    ((-3, 2, 4),    (-3, 18, 1.5)),   # 6: down the reroute aisle x=-3
+    ((-8, 7, 9),    (-8, 22, 1.0)),   # 7: high, looking down aisle x=-8
+    ((-18, 14, 6),  (-5, 15, 1.0)),   # 8: side view across the aisles
+    ((-8, 10, 3),   (-8, 16, 1.0)),   # 9: close on the box / stuck robot
+    ((-7, -10, 12), (-7, 14, 1.0)),   # 10: wide south overview
+]
 
 from PIL import Image  # noqa: E402
 out = "/tmp/cam_sweep"
 os.system(f"rm -rf {out} && mkdir -p {out}")
-for i, (eye, tgt) in enumerate(PRESETS):
+for i, (eye, tgt) in enumerate(PRESETS, 1):
     set_camera_view(eye=list(eye), target=list(tgt), camera_prim_path="/World/SweepCam")
-    for _ in range(8):
+    for _ in range(10):
         world.step(render=True)
     rgba = cam.get_rgba()
     if rgba is not None and rgba.size > 0:
@@ -80,5 +93,5 @@ for i, (eye, tgt) in enumerate(PRESETS):
     else:
         carb.log_warn(f"[sweep] cam_{i}: no image")
 
-carb.log_warn(f"[sweep] done. view {out}/cam_*.png")
+carb.log_warn(f"[sweep] done -> {out}/cam_1..10.png")
 simulation_app.close()
