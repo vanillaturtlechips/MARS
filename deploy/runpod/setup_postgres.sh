@@ -34,6 +34,14 @@ su - postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='${DB_NAME}
     || su - postgres -c "psql -c \"CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};\""
 su - postgres -c "psql -d ${DB_NAME} -c 'CREATE EXTENSION IF NOT EXISTS vector;'"
 
+echo "==[5/5] supervisor python deps =="
+# Install into SYSTEM python3 (py3.10), NOT a venv: the bridge / ros2_node need
+# rclpy and psycopg (anthropic, pgvector, redis) in the SAME interpreter, and
+# rclpy lives in system py3.10. Without this the bridge dies with
+# "ModuleNotFoundError: No module named 'psycopg'".
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+python3 -m pip install -r "$REPO/agents/mars/requirements.txt"
+
 echo
 echo "verify:"
 su - postgres -c "psql -d ${DB_NAME} -c \"SELECT extname FROM pg_extension WHERE extname='vector';\""
