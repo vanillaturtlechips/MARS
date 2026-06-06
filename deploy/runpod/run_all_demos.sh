@@ -38,8 +38,14 @@ bringup(){
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
   grepwait "$L/nav2_global.log" "Managed nodes are active" 120 || return 1
   for r in R1 R2 R3; do
-    bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_robot_ns.launch.py namespace:=$r" > "$L/nav2_$r.log" 2>&1 &
-    grepwait "$L/nav2_$r.log" "Managed nodes are active" 300 || return 1
+    local ok=0
+    for attempt in 1 2; do
+      bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_robot_ns.launch.py namespace:=$r" > "$L/nav2_$r.log" 2>&1 &
+      if grepwait "$L/nav2_$r.log" "Managed nodes are active" 200; then ok=1; break; fi
+      echo "  $r nav2 attempt $attempt timed out (contention); retrying"
+      pkill -9 -f "namespace:=$r"; pkill -9 -f "__ns:=/$r"; sleep 4
+    done
+    [ "$ok" = 1 ] || return 1
     sleep 5
   done
 }
