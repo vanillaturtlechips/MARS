@@ -35,8 +35,10 @@ ap.add_argument("--no-obstacle", action="store_true",
                 help="skip the dock blocking box (default: spawn it)")
 ap.add_argument("--record", type=str, default="",
                 help="if set, capture an offscreen camera to this .mp4 (headless, like the RL render scripts)")
-ap.add_argument("--cam-eye", type=str, default="12,-1.5,11", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="0,-1.5,0", help="record camera look-at x,y,z")
+# default cam sits INSIDE the verified-open lane volume (robots run x[-3,3] y[-8,5])
+# so it never lands in a warehouse wall; elevated, looking north up the lane.
+ap.add_argument("--cam-eye", type=str, default="0,-7,5", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="0,3,1", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
