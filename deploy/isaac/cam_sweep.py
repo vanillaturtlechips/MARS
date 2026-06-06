@@ -29,9 +29,10 @@ from pxr import UsdGeom, Gf  # noqa: E402
 _CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 IW_HUB = f"{_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub.usd"
 WAREHOUSE = f"{_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
-# place robots where the ACTION is (clustered at the dock), not at north spawn,
-# so the stills show the real moment: R2/R3 stuck at the box, R1 mid-detour.
-ROBOTS = [("R1", -1.8, 0.8), ("R2", 0.0, 0.6), ("R3", 1.3, -0.2)]
+# robots in the dock region (not at north spawn) so stills show the real moment,
+# but spaced >2m apart and CLEAR of the box (x[-0.6,0.6] y[-0.4,0.4]) so physics
+# doesn't explode from interpenetration.
+ROBOTS = [("R1", -2.2, 1.2), ("R2", 0.0, 1.6), ("R3", 2.2, -0.6)]
 
 # (eye, target) presets — closer + lower so the small dock + robots fill the frame
 PRESETS = [
