@@ -38,10 +38,11 @@ ap.add_argument("--record", type=str, default="",
 # default cam sits INSIDE the verified-open lane volume (robots run x[-3,3] y[-8,5])
 # so it never lands in a warehouse wall; elevated, looking north up the lane.
 # cam_5 from cam_sweep (south overview): frames the dock + 3 robots + detour well.
-# south view looking NORTH into the real aisles x=-8 (box/stuck robot) and x=-3
-# (reroute), framed by the warehouse shelves at x=-10.5,-5.5,-0.5.
-ap.add_argument("--cam-eye", type=str, default="-5.5,-3,11", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="-5.5,16,1", help="record camera look-at x,y,z")
+# elevated south view looking DOWN into the real aisles x=-8 (box/stuck robot)
+# and x=-3 (reroute). High enough (z=16) to see over the 3 m shelves into both
+# aisle floors; centered between them but the line of sight clears the shelf tops.
+ap.add_argument("--cam-eye", type=str, default="-5.5,-9,16", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="-5.5,15,1", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
