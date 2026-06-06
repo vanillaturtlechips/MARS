@@ -235,6 +235,8 @@ if args.record:
     eye = _xyz(args.cam_eye); tgt = _xyz(args.cam_target)
     _cam = Camera(prim_path="/World/RecordCam", resolution=(1280, 720))
     _cam.initialize()
+    _cam.set_focal_length(24.0)          # default aperture is ~2.1 (≈5° telephoto);
+    _cam.set_horizontal_aperture(20.955) # standard ~20.955 -> ~47° FOV, whole scene fits
     set_camera_view(eye=eye, target=tgt, camera_prim_path="/World/RecordCam")  # correct aim
     for _ in range(20):
         world.step(render=True)

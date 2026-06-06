@@ -56,6 +56,10 @@ for name, x, y in ROBOTS:
 world.reset()
 cam = Camera(prim_path="/World/SweepCam", resolution=(1280, 720))
 cam.initialize()
+# default aperture came out ~2.1 (≈5° telephoto = everything looks zoomed in).
+# set the standard ~20.955 aperture -> ~47° FOV so the whole scene fits.
+cam.set_focal_length(24.0)
+cam.set_horizontal_aperture(20.955)
 for _ in range(30):
     world.step(render=True)
 
