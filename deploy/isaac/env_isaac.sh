@@ -6,6 +6,13 @@
 
 source /workspace/isaac_venv311/bin/activate
 
+# Accept the Omniverse Kit EULA non-interactively. First `import isaacsim`
+# bootstraps the Kit kernel, which otherwise prompts "Do you accept the EULA?"
+# on stdin — inside a script stdin is not a TTY, so it gets EOF and dies with
+# "Unable to bootstrap inner kit kernel: EOF when reading a line".
+export OMNI_KIT_ACCEPT_EULA=YES
+export OMNI_KIT_ALLOW_ROOT=1   # running as root in the container
+
 # Strip any auto-sourced system ROS2 (py3.10) — it shadows Isaac's internal rclpy.
 unset AMENT_PREFIX_PATH ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION \
       COLCON_PREFIX_PATH AMENT_CURRENT_PREFIX

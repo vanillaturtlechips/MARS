@@ -12,6 +12,10 @@ VENV="${VENV:-/workspace/isaac_venv311}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-/workspace/.uv_cache}"
 export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-900}"
 export UV_CONCURRENT_DOWNLOADS="${UV_CONCURRENT_DOWNLOADS:-1}"   # one file at a time = no contention/restart
+# First isaacsim import bootstraps Kit, which prompts for the EULA on stdin;
+# non-interactive here -> "EOF when reading a line" crash. Accept via env vars.
+export OMNI_KIT_ACCEPT_EULA=YES
+export OMNI_KIT_ALLOW_ROOT=1
 
 command -v uv >/dev/null 2>&1 || pip install uv -q
 [ -d "$VENV" ] || uv venv --python 3.11 "$VENV"

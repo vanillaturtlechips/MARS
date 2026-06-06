@@ -48,6 +48,10 @@ uv pip install \
     --extra-index-url https://pypi.nvidia.com
 
 echo "==[4/4] verify =="
+# First isaacsim import bootstraps Kit, which prompts for the EULA on stdin;
+# non-interactive here -> EOF crash. Accept it via env vars.
+export OMNI_KIT_ACCEPT_EULA=YES
+export OMNI_KIT_ALLOW_ROOT=1
 python - <<'PY'
 import isaacsim  # noqa: F401
 print("  isaacsim import OK")
