@@ -17,9 +17,14 @@ Verify (other shell, env_ros2.sh):
     ros2 topic echo /R2/odom --once
     ros2 run tf2_ros tf2_echo map R2/base_link
 """
+import sys as _sys
 from isaacsim import SimulationApp
 
-simulation_app = SimulationApp({"headless": True})
+# Camera/RTX recording (--record) needs the camera render pipeline enabled at
+# app launch; with only {"headless": True} the offscreen camera hangs at NGX/RTX
+# init. enable_cameras (what IsaacLab's render scripts set) fixes it. Off for
+# non-record runs so the plain path stays light.
+simulation_app = SimulationApp({"headless": True, "enable_cameras": "--record" in _sys.argv})
 
 import argparse  # noqa: E402
 import carb  # noqa: E402
