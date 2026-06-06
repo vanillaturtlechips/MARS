@@ -37,8 +37,8 @@ ap.add_argument("--record", type=str, default="",
                 help="if set, capture an offscreen camera to this .mp4 (headless, like the RL render scripts)")
 # default cam sits INSIDE the verified-open lane volume (robots run x[-3,3] y[-8,5])
 # so it never lands in a warehouse wall; elevated, looking north up the lane.
-ap.add_argument("--cam-eye", type=str, default="0,-7,5", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="0,3,1", help="record camera look-at x,y,z")
+ap.add_argument("--cam-eye", type=str, default="0,-12,8", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="0,-1,0.5", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
