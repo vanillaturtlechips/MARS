@@ -61,19 +61,17 @@ demo1(){
   grepwait "$L/bridge.log" "listening for aborts" 60 || true
   sleep 3
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
-  echo "  R1 drives UP the real aisle x=-8 toward the box at (-8,15) -> rams it, stuck between the shelves"
-  goal R1 -8 22
+  echo "  R1,R2,R3 head into the aisle together; R1 leads up aisle x=-8"
+  goal R1 -8 22                 # R1 up aisle x=-8 (rams the box at -8,15)
+  sleep 3; goal R2 -5 8         # R2,R3 edge in behind, staying in the open south
+  sleep 1; goal R3 -11 8
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
-  touch /tmp/keepout_zone_go    # agent flagged the box -> red slab appears on camera
-  echo "  R1 CORRECTS its path: backs south, takes the next aisle x=-3"
-  goal R1 -8 7;  sleep 10       # back out of the blocked aisle to the open south
-  goal R1 -3 7;  sleep 9        # over to the next aisle entrance
-  goal R1 -3 22; sleep 14       # up the clear aisle x=-3 (parks north)
-  echo "  R2,R3 take the SAME corrected path (up aisle x=-3, avoiding the banned aisle)"
-  goal R2 -3 7;  sleep 9
-  goal R2 -3 19; sleep 14
-  goal R3 -3 7;  sleep 9
-  goal R3 -3 15; sleep 16
+  touch /tmp/keepout_zone_go    # agent flagged the aisle -> red slab appears
+  echo "  R1 stuck at the box -> R2,R3 divert to the SIDE aisles (x=-3 right, x=-13 left)"
+  goal R2 -3 7;   sleep 9
+  goal R2 -3 20;  sleep 2
+  goal R3 -13 7;  sleep 9
+  goal R3 -13 20; sleep 22
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }
