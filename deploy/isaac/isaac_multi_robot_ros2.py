@@ -38,8 +38,10 @@ ap.add_argument("--record", type=str, default="",
 # default cam sits INSIDE the verified-open lane volume (robots run x[-3,3] y[-8,5])
 # so it never lands in a warehouse wall; elevated, looking north up the lane.
 # cam_5 from cam_sweep (south overview): frames the dock + 3 robots + detour well.
-ap.add_argument("--cam-eye", type=str, default="0,-10,7", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="0,-0.3,0.5", help="record camera look-at x,y,z")
+# south overview looking NORTH up the aisles: frames the action band (y -1..7),
+# the obstacle/charger, and the real shelves behind (y>8.6). x centered on 3.
+ap.add_argument("--cam-eye", type=str, default="3,-10,8", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="3,5,0.8", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
@@ -65,12 +67,19 @@ except ImportError:
 _ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 IW_HUB_USD   = f"{_ISAAC_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub.usd"
 WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
+# real NVIDIA props (no standalone shelf asset exists — the shelves come from
+# full_warehouse itself; these are the obstacle box + the charging station).
+CARDBOX_USD  = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_CardBoxA_01.usd"
+CHARGER_USD  = f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd"
 
-# (name, spawn x, spawn y) — a ROW across x at the north end; all three drive
-# south (-y) down separate 3 m-apart lanes so they never touch (no obstacle
-# layer = robots are invisible to each other). The keepout wall is dropped
-# across the middle of the lanes; robots whose lane it blocks detour around it.
-ROBOTS = [("R1", -3.0, 5.0), ("R2", 0.0, 5.0), ("R3", 3.0, 5.0)]
+# Spawns are aligned to the REAL warehouse aisles read off the occupancy map:
+# shelves sit at x≈-4.4, 0.5, 5.5, 10.4 (y 8.6..20), so the clear lanes between
+# them are x≈-2, 3, 8. Robots start at y=7 (just south of the shelf fronts) so
+# the shelves fill the backdrop; the demo action happens in the open band south
+# of them (y<8.6) where there is room to detour around a keepout.
+ROBOTS = [("R1", -2.0, 7.0), ("R2", 3.0, 7.0), ("R3", 8.0, 7.0)]
+DOCK_XY = (3.0, 3.0)        # obstacle box / keepout center (R2's lane mouth)
+CHARGER_XY = (8.0, 1.0)     # charging station (R3's lane mouth, open band)
 WHEEL_RADIUS = 0.08
 WHEEL_BASE = 0.54
 
@@ -82,30 +91,43 @@ if args.warehouse:
     carb.log_warn("[multi] loading full_warehouse.usd ...")
     add_reference_to_stage(WAREHOUSE_USD, "/World/Warehouse")
 
-if not args.no_obstacle:
-    from isaacsim.core.api.objects import FixedCuboid
-    world.scene.add(FixedCuboid(
-        prim_path="/World/dock_block", name="dock_block",
-        position=np.array([0.0, 0.0, 0.25]),
-        scale=np.array([1.2, 0.8, 0.5]),   # robot-sized dock obstacle (iw_hub ~1m), not a giant wall
-    ))
-    carb.log_warn("[multi] spawned dock blocking box (0,0) size (1.2,0.8,0.5)")
+# ---- demo props: SAME scene for all three demos (shelves come from the
+# warehouse; here we add the obstacle box + the charging station) ----
+from isaacsim.core.api.objects import FixedCuboid, VisualCuboid
 
-    # Visual-only red slab over the receiving_dock keepout polygon
-    # (x[-1.5,1.5] y[-1,1], matches the Nav2 keepout mask). Hidden until the
-    # supervisory agent declares avoid_zone (runner touches /tmp/keepout_zone_go),
-    # so the recording shows the agent's decision: robots fail -> red zone appears
-    # -> the next robot reroutes around it. No collider (Nav2 has no obstacle
-    # layer; the keepout filter is what actually reroutes).
-    from isaacsim.core.api.objects import VisualCuboid
-    world.scene.add(VisualCuboid(
-        prim_path="/World/keepout_zone", name="keepout_zone",
-        position=np.array([0.0, 0.0, 0.06]),
-        scale=np.array([3.0, 2.0, 0.12]),
-        color=np.array([0.9, 0.05, 0.05]),
-    ))
-    UsdGeom.Imageable(stage.GetPrimAtPath("/World/keepout_zone")).MakeInvisible()
-    carb.log_warn("[multi] keepout zone slab created (hidden until avoid_zone)")
+def _place(prim_path: str, usd: str, x: float, y: float, z: float = 0.0) -> None:
+    add_reference_to_stage(usd, prim_path)
+    xf = UsdGeom.Xformable(stage.GetPrimAtPath(prim_path))
+    xf.ClearXformOpOrder()
+    xf.AddTranslateOp().Set(Gf.Vec3d(float(x), float(y), float(z)))
+
+_dx, _dy = DOCK_XY
+# Obstacle: an INVISIBLE collider (guarantees the robot physically stalls -> a
+# real follow_path abort, like the original FixedCuboid) with the REAL NVIDIA
+# cardboard box as the visible obstacle on top. Nav2 has no obstacle layer, so
+# the box is invisible to planning until the agent publishes the keepout mask.
+world.scene.add(FixedCuboid(
+    prim_path="/World/dock_collider", name="dock_collider",
+    position=np.array([_dx, _dy, 0.25]), scale=np.array([1.2, 0.8, 0.5]),
+))
+UsdGeom.Imageable(stage.GetPrimAtPath("/World/dock_collider")).MakeInvisible()
+_place("/World/dock_box", CARDBOX_USD, _dx, _dy, 0.0)
+carb.log_warn(f"[multi] obstacle: real SM_CardBoxA at {DOCK_XY} (collider 1.2x0.8x0.5)")
+
+# Charging station: real NVIDIA packing table at the R3-lane mouth.
+_place("/World/charger", CHARGER_USD, *CHARGER_XY, 0.0)
+carb.log_warn(f"[multi] charging station: real packing_table at {CHARGER_XY}")
+
+# Small red keepout slab (1.6x1.6) over the receiving_dock polygon center (3,3).
+# Hidden until the agent declares avoid_zone (runner touches /tmp/keepout_zone_go
+# — only demo1 does this, so it stays hidden in the charging demos).
+world.scene.add(VisualCuboid(
+    prim_path="/World/keepout_zone", name="keepout_zone",
+    position=np.array([_dx, _dy, 0.06]), scale=np.array([1.6, 1.6, 0.12]),
+    color=np.array([0.9, 0.05, 0.05]),
+))
+UsdGeom.Imageable(stage.GetPrimAtPath("/World/keepout_zone")).MakeInvisible()
+carb.log_warn("[multi] keepout slab 1.6x1.6 created (hidden until avoid_zone)")
 
 
 def spawn_robot(name: str, x: float, y: float) -> str:
@@ -268,9 +290,10 @@ if args.record:
 open("/tmp/keepout_isaac_ready", "w").close()
 
 _step = 0
-# reveal the red keepout slab once the agent declares avoid_zone (demo1 only;
-# the runner touches this marker right after the bridge logs avoid_zone=True).
-_keepout_pending = not args.no_obstacle
+# reveal the red keepout slab once the agent declares avoid_zone; the runner
+# touches this marker right after the bridge logs avoid_zone=True (demo1 only,
+# so the slab stays hidden in the charging demos).
+_keepout_pending = True
 try:
     while simulation_app.is_running():
         world.step(render=True)

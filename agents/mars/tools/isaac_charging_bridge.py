@@ -36,12 +36,12 @@ from mars.blackboard.db import connect, apply_migrations  # noqa: E402
 from mars.orchestrator import demo as demopkg             # noqa: E402
 from mars.services.charging import ChargingService        # noqa: E402
 
-# Physical poses live in the KNOWN-OPEN lane the robots already drive (x[-3,3]
-# y[-8,5]). The DB charger zone (x[4,7]) may sit inside a warehouse wall, so we
-# use a reachable lane pose as the physical "charging bay". The ORDER robots use
-# it is the real supervisory decision; these coordinates are just where it is.
-CHARGER_POSE = (0.0, -7.0)
-PARK_POSES = {"R1": (-3.0, -8.0), "R2": (-3.0, -8.0), "R3": (3.0, -8.0)}
+# The charging station (real packing_table) sits at (8,1) in the R3-lane mouth;
+# robots dock in FRONT of it at (8,3). Park spots are north (y=6) so leaving the
+# charger never crosses the obstacle box at (3,3). The ORDER robots take the one
+# charger is the real supervisory decision; these are just where it physically is.
+CHARGER_POSE = (8.0, 3.0)
+PARK_POSES = {"R1": (-2.0, 6.0), "R2": (0.0, 6.0), "R3": (13.0, 6.0)}
 
 
 def decide_order(scenario: str, conn) -> tuple[list[tuple[str, str]], list[dict]]:

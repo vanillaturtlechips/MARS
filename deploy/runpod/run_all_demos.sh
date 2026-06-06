@@ -31,9 +31,9 @@ bringup(){
   echo "  waiting for Isaac up (cold ~2-3min)..."; local i=0
   until [ -f /tmp/keepout_isaac_ready ]; do sleep 3; i=$((i+3)); kill -0 "$ISAAC_PID" 2>/dev/null || { echo "  Isaac died ($L/isaac.log)"; return 1; }; [ $i -ge 600 ] && { echo "  Isaac timeout"; return 1; }; done
   bash -c "source $RENV; \
-    ros2 run tf2_ros static_transform_publisher --x -3 --y 5 --z 0 --frame-id map --child-frame-id R1/odom & \
-    ros2 run tf2_ros static_transform_publisher --x 0 --y 5 --z 0 --frame-id map --child-frame-id R2/odom & \
-    ros2 run tf2_ros static_transform_publisher --x 3 --y 5 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
+    ros2 run tf2_ros static_transform_publisher --x -2 --y 7 --z 0 --frame-id map --child-frame-id R1/odom & \
+    ros2 run tf2_ros static_transform_publisher --x 3 --y 7 --z 0 --frame-id map --child-frame-id R2/odom & \
+    ros2 run tf2_ros static_transform_publisher --x 8 --y 7 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
   sleep 5
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
   grepwait "$L/nav2_global.log" "Managed nodes are active" 120 || return 1
@@ -61,11 +61,13 @@ demo1(){
   grepwait "$L/bridge.log" "listening for aborts" 60 || true
   sleep 3
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
-  echo "  trigger: R2,R3 into dock (0,0) -> fail"
-  goal R2 0 -8; sleep 5; goal R3 0 -8
+  echo "  trigger: R2,R3 down the center lane (x=3) into the box at (3,3) -> fail"
+  goal R2 3 -1                       # R2 already in lane x=3: straight down through the box
+  sleep 5; goal R3 3 6; sleep 12; goal R3 3 -1   # R3 merges into lane x=3, then down through the box
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
   touch /tmp/keepout_zone_go    # agent declared avoid_zone -> reveal the red keepout slab on camera
-  echo "  reroute: R1 across the dock"; sleep 3; goal R1 3 -8; sleep 40
+  echo "  reroute: R1 down the same lane -> detours around the red keepout"
+  sleep 3; goal R1 3 6; sleep 12; goal R1 3 -1; sleep 40
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }
@@ -76,7 +78,7 @@ charge_demo(){
   local scn="$1" out="$2"
   killall_
   timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
-  bringup "--no-obstacle --record $out" || { echo "  bringup failed for $scn"; return 1; }
+  bringup "--record $out" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
