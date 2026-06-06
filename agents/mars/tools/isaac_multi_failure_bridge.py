@@ -42,8 +42,11 @@ def _failure_event(robot: str, spread: int) -> dict:
         "event_type": "navigation.aborted", "robot_id": robot,
         "mission_id": f"{robot}-dock", "goal_id": f"{robot}-goal", "zone": ZONE,
         "nav_outcome": "aborted", "goal_status": 6,
-        "health_at_failure": {"battery_pct": 80, "estop_active": False, "fault_codes": []},
-        "fault_flag": None,
+        # the dock is physically blocked (obstacle in the path) — record the REAL
+        # cause so the investigator sees a zone obstruction, not a per-robot glitch.
+        "failure_reason": "path blocked by obstacle in zone; controller could not make progress",
+        "health_at_failure": {"battery_pct": 80, "estop_active": False, "fault_codes": ["NAV_PATH_BLOCKED"]},
+        "fault_flag": "path_blocked",
         "distribution": {"per_robot_zone_spread": 1, "per_zone_robot_spread": spread},
         "failures_for_this_mission": 1,
     }
