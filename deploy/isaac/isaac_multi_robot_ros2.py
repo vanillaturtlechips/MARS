@@ -86,7 +86,7 @@ def spawn_robot(name: str, x: float, y: float) -> str:
     return prim_path
 
 
-def build_robot_graph(name: str, prim_path: str, sx: float, sy: float) -> None:
+def build_robot_graph(name: str, prim_path: str) -> None:
     ns = f"/{name}"
     g = f"/{name}_Graph"
     og.Controller.edit(
@@ -104,17 +104,15 @@ def build_robot_graph(name: str, prim_path: str, sx: float, sy: float) -> None:
                 ("BreakAng", "omni.graph.nodes.BreakVector3"),
                 ("DiffCtrl", "isaacsim.robot.wheeled_robots.DifferentialController"),
                 ("ArtCtrl", "isaacsim.core.nodes.IsaacArticulationController"),
-                # IsaacComputeOdometry zeroes at the robot's spawn, so the raw
-                # tf would say every robot is at (0,0). Add the spawn offset so
-                # map->base_link is the TRUE global pose (Nav2 has no odom frame).
-                ("OdomOffset", "omni.graph.nodes.Add"),
             ],
             og.Controller.Keys.SET_VALUES: [
-                ("OdomOffset.inputs:b", [float(sx), float(sy), 0.0]),
+                # IsaacComputeOdometry zeroes at spawn, so publish odom->base_link
+                # (per-robot odom frame). A static_transform_publisher supplies the
+                # map->{name}/odom spawn offset; tf2 chains map->base_link for Nav2.
                 ("PublishOdom.inputs:nodeNamespace", ns),
-                ("PublishOdom.inputs:odomFrameId", "map"),
+                ("PublishOdom.inputs:odomFrameId", f"{name}/odom"),
                 ("PublishOdom.inputs:chassisFrameId", f"{name}/base_link"),
-                ("PublishRawTF.inputs:parentFrameId", "map"),
+                ("PublishRawTF.inputs:parentFrameId", f"{name}/odom"),
                 ("PublishRawTF.inputs:childFrameId", f"{name}/base_link"),
                 ("SubTwist.inputs:nodeNamespace", ns),
                 ("SubTwist.inputs:topicName", "cmd_vel"),
@@ -138,8 +136,7 @@ def build_robot_graph(name: str, prim_path: str, sx: float, sy: float) -> None:
                 ("ComputeOdom.outputs:angularVelocity", "PublishOdom.inputs:angularVelocity"),
                 ("ComputeOdom.outputs:position", "PublishOdom.inputs:position"),
                 ("ComputeOdom.outputs:orientation", "PublishOdom.inputs:orientation"),
-                ("ComputeOdom.outputs:position", "OdomOffset.inputs:a"),
-                ("OdomOffset.outputs:sum", "PublishRawTF.inputs:translation"),
+                ("ComputeOdom.outputs:position", "PublishRawTF.inputs:translation"),
                 ("ComputeOdom.outputs:orientation", "PublishRawTF.inputs:rotation"),
                 ("SubTwist.outputs:linearVelocity", "BreakLin.inputs:tuple"),
                 ("SubTwist.outputs:angularVelocity", "BreakAng.inputs:tuple"),
@@ -176,7 +173,7 @@ og.Controller.edit(
 
 for _name, _x, _y in ROBOTS:
     _prim = spawn_robot(_name, _x, _y)
-    build_robot_graph(_name, _prim, _x, _y)
+    build_robot_graph(_name, _prim)
 
 world.reset()
 
