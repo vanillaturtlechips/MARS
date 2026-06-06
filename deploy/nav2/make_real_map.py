@@ -15,8 +15,10 @@ Output is committed so map_server can load it without re-running.
 """
 import os
 
-OX, OY, RES, W, H = -30.0, -25.0, 0.1, 400, 600   # covers x[-30,10] y[-25,35]
-SHELF_ROWS_X = (-20.5, -15.5, -10.5, -5.5, -0.5, 4.5)
+# Cover only the demo area (aisles x=-13,-8,-3 + shelves between) so each robot's
+# global costmap stays small — the full 40x60 map OOM-killed (-9) the nav2 stack.
+OX, OY, RES, W, H = -18.0, -2.0, 0.1, 200, 300   # covers x[-18,2] y[-2,28]
+SHELF_ROWS_X = (-15.5, -10.5, -5.5, -0.5)
 SHELF_Y = (8.5, 25.2)
 SHELF_HALF_W = 0.7
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,11 +37,6 @@ def build() -> bytearray:
 
     for rx in SHELF_ROWS_X:
         occ(rx - SHELF_HALF_W, rx + SHELF_HALF_W, *SHELF_Y)
-    # perimeter walls (approx from floor extent)
-    occ(-26.5, -26.0, -24, 31)
-    occ(5.0, 5.5, -24, 31)
-    occ(-26.5, 5.5, -24, -23.5)
-    occ(-26.5, 5.5, 30.6, 31.1)
     return grid
 
 
