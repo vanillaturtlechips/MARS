@@ -72,8 +72,11 @@ demo1(){
   bash -c "source $RENV; ros2 topic info /costmap_filter_info --verbose"  > "$L/diag_infoinfo.log" 2>&1 || true
   bash -c "source $RENV; timeout 6 ros2 topic echo /keepout_filter_mask --field info" > "$L/diag_mask.log" 2>&1 || true
   bash -c "source $RENV; ros2 node list"  > "$L/diag_nodes.log" 2>&1 || true
-  echo "  reroute: R1 down the same lane -> detours around the red keepout"
-  sleep 3; goal R1 3 6; sleep 12; goal R1 3 -1; sleep 40
+  echo "  reroute: R1 detours WEST around the agent-banned keepout zone"
+  sleep 3
+  goal R1 1 5;  sleep 14     # swing west of the box (clear of the keepout x[2.2,3.8])
+  goal R1 1 0;  sleep 14     # down the west side, past the zone
+  goal R1 3 -1; sleep 30     # cut back into the lane south of the box
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }

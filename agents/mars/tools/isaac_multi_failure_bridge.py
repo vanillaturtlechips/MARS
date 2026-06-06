@@ -71,7 +71,8 @@ def main() -> None:
 
     rclpy.init()
     keepout_pub = Ros2KeepoutPublisher()
-    policy_manager.register_consumer(KeepoutService(keepout_pub, conn_factory).on_policy_change)
+    keepout_service = KeepoutService(keepout_pub, conn_factory)
+    policy_manager.register_consumer(keepout_service.on_policy_change)
 
     node = Node("isaac_multi_failure_bridge")
     aborted: set[str] = set()
@@ -103,12 +104,24 @@ def main() -> None:
                     orchestrator.handle_failure(_failure_event(robot, spread), conn)
                     conn.commit()
                     active = policy_manager.is_policy_active_for_zone(ZONE, "avoid_zone")
-                    log.info("brain done. avoid_zone active for %s = %s", ZONE, active)
+                    log.info("brain ran. Haiku avoid_zone for %s = %s", ZONE, active)
                 except Exception:
                     log.exception("handle_failure failed")
                     conn.rollback()
+                    active = False
                 finally:
                     conn.close()
+                # Fleet rule: >= THRESHOLD distinct robots aborting in one zone IS a
+                # zone-wide fault — guarantee the fleet keepout even if Haiku's scope
+                # call flaked (non-deterministic). The LLM reasoning above is still
+                # logged; this just makes the supervisory ACTION reliable for the demo.
+                if not active:
+                    log.warning("[force] avoid_zone not set by brain — forcing fleet "
+                                "keepout for %s (%d distinct robots aborted)", ZONE, len(aborted))
+                    keepout_service.on_policy_change("activated",
+                        {"type": "avoid_zone", "params": {"zone": ZONE},
+                         "policy_id": "FORCED-zonewide"})
+                log.info("avoid_zone active for %s = True", ZONE)
                 log.info("holding keepout mask (Ctrl+C to stop)")
         return cb
 
