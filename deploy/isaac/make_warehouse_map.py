@@ -28,7 +28,11 @@ import carb  # noqa: E402
 RES = 0.05                       # m per cell
 SIZE_M = 40.0                    # 40 x 40 m area
 ORIGIN_XY = (-20.0, -20.0)       # lower-left corner in map frame (yaml origin)
-SLICE_Z = 0.30                   # horizontal raycast height: catches walls/racks at robot-body height
+# Union of horizontal raycast slices. A single z=0.3 slice misses shelf BODIES
+# that sit above/below it (it only caught walls + thin rack legs -> robots still
+# rammed invisible shelves). Generate at several heights spanning the robot's
+# full body and mark a cell occupied if ANY slice hits it.
+SLICE_ZS = [0.10, 0.30, 0.50, 0.80, 1.20]
 # pixel values for the PGM (Nav2 trinary: 0=occupied/black, 255=free/white, 205=unknown/grey)
 PGM_OCC, PGM_FREE, PGM_UNK = 0, 255, 205
 # omap writes these tag values into the buffer per cell type; we remap them to PGM above
@@ -69,17 +73,30 @@ stage_id = omni.usd.get_context().get_stage_id()
 gen = _omap.Generator(physx, stage_id)
 # update_settings(cell_size, occupied_value, unoccupied_value, unknown_value)
 gen.update_settings(RES, TAG_OCC, TAG_FREE, TAG_UNK)
-# set_transform(origin, min_bound, max_bound): region = [origin+min, origin+max], slice at origin.z
 half = SIZE_M / 2.0
-center = (ORIGIN_XY[0] + half, ORIGIN_XY[1] + half, SLICE_Z)   # (0,0,z) for a -20..20 map
-gen.set_transform(center, (-half, -half, 0.0), (half, half, 0.0))
-carb.log_warn(f"[omap] generating 2D occupancy: center={center} extent=+/-{half}m z={SLICE_Z} res={RES}")
-gen.generate2d()
 
-buf = gen.get_buffer()
-dims = gen.get_dimensions()      # (width, height[, depth])
-w, h = int(dims[0]), int(dims[1])
-carb.log_warn(f"[omap] dims={dims} buffer_len={len(buf)} (expect ~{int(SIZE_M/RES)}^2)")
+# Generate one slice per height and OR the occupied cells together.
+union = None
+w = h = None
+for z in SLICE_ZS:
+    # set_transform(origin, min_bound, max_bound): region = [origin+min, origin+max], slice at origin.z
+    center = (ORIGIN_XY[0] + half, ORIGIN_XY[1] + half, z)     # (0,0,z) for a -20..20 map
+    gen.set_transform(center, (-half, -half, 0.0), (half, half, 0.0))
+    gen.generate2d()
+    buf = gen.get_buffer()
+    dims = gen.get_dimensions()
+    w, h = int(dims[0]), int(dims[1])
+    occ = sum(1 for x in buf if x == TAG_OCC)
+    carb.log_warn(f"[omap]   slice z={z}: dims={dims} occupied={occ}")
+    if union is None:
+        union = list(buf)
+    else:
+        for i, x in enumerate(buf):
+            if x == TAG_OCC:
+                union[i] = TAG_OCC
+
+buf = union
+carb.log_warn(f"[omap] unioned {len(SLICE_ZS)} slices -> dims=({w},{h}) buffer_len={len(buf)} (expect ~{int(SIZE_M/RES)}^2)")
 
 # remap omap tags -> PGM pixel values
 def to_pgm(v):
