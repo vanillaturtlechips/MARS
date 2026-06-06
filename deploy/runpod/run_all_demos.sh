@@ -47,7 +47,9 @@ enc(){ pkill -9 -f "action send_goal"; sleep 2; local n; n=$(ls "$FR"/frame_*.pn
 
 demo1(){
   say "DEMO 1 — keepout (agents flag a failing zone, fleet avoids it)"
-  su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
+  killall_   # kill any stale bridge FIRST so it isn't holding a lock on the tables
+  # lock_timeout so a held lock can never hang the truncate (it errors out, we continue)
+  timeout 20 su - postgres -c "psql -d warehouse -c \"SET lock_timeout='5s';\" -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
   bringup "--record /workspace/demo1_keepout.mp4" || { echo "  DEMO1 skipped (bringup failed)"; return 1; }
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_multi_failure_bridge" > "$L/bridge.log" 2>&1 &
   grepwait "$L/bridge.log" "listening for aborts" 60 || true
