@@ -11,7 +11,7 @@ DB_NAME="${DB_NAME:-warehouse}"
 
 echo "==[1/4] apt packages =="
 apt-get update -qq
-apt-get install -y postgresql postgresql-server-dev-all build-essential git make gcc >/dev/null
+apt-get install -y postgresql postgresql-server-dev-all build-essential git make gcc python3-pip >/dev/null
 
 echo "==[2/4] pgvector (build + install) =="
 if ! find /usr/lib/postgresql -name 'vector.so' 2>/dev/null | grep -q .; then
