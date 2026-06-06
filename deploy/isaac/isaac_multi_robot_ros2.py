@@ -28,10 +28,17 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--warehouse", action="store_true")
 ap.add_argument("--no-obstacle", action="store_true",
                 help="skip the dock blocking box (default: spawn it)")
+ap.add_argument("--record", type=str, default="",
+                help="if set, capture an offscreen camera to this .mp4 (headless, like the RL render scripts)")
+ap.add_argument("--cam-eye", type=str, default="12,-1.5,11", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="0,-1.5,0", help="record camera look-at x,y,z")
+ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
 from isaacsim.core.utils.extensions import enable_extension  # noqa: E402
 enable_extension("isaacsim.ros2.bridge")
+if args.record:
+    enable_extension("isaacsim.sensors.camera")
 simulation_app.update()
 
 import numpy as np  # noqa: E402
@@ -182,11 +189,71 @@ timeline = omni.timeline.get_timeline_interface()
 timeline.play()
 carb.log_warn(f"[multi] timeline playing; {len(ROBOTS)} robots publishing. Ctrl+C to stop.")
 
+# ---- offscreen recording: headless camera -> PNG frames -> ffmpeg mp4 (RL-style) ----
+_rec = None
+if args.record:
+    import os, math, tempfile, subprocess  # noqa: E402
+    import numpy as _np  # noqa: E402
+    from isaacsim.sensors.camera import Camera  # noqa: E402
+
+    def _xyz(s):
+        return [float(v) for v in s.split(",")]
+
+    def _lookat_quat(eye, tgt):
+        e = _np.array(eye, float); t = _np.array(tgt, float)
+        f = t - e; f /= (_np.linalg.norm(f) + 1e-9)
+        up = _np.array([0.0, 0.0, 1.0])
+        r = _np.cross(f, up)
+        if _np.linalg.norm(r) < 1e-6:
+            up = _np.array([0.0, 1.0, 0.0]); r = _np.cross(f, up)
+        r /= (_np.linalg.norm(r) + 1e-9)
+        u = _np.cross(r, f)
+        m = _np.array([[r[0], u[0], -f[0]], [r[1], u[1], -f[1]], [r[2], u[2], -f[2]]])
+        tr = m[0, 0] + m[1, 1] + m[2, 2]
+        if tr > 0:
+            s = math.sqrt(tr + 1.0) * 2; w = 0.25 * s
+            x = (m[2, 1] - m[1, 2]) / s; y = (m[0, 2] - m[2, 0]) / s; z = (m[1, 0] - m[0, 1]) / s
+        elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+            s = math.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2
+            w = (m[2, 1] - m[1, 2]) / s; x = 0.25 * s; y = (m[0, 1] + m[1, 0]) / s; z = (m[0, 2] + m[2, 0]) / s
+        elif m[1, 1] > m[2, 2]:
+            s = math.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2
+            w = (m[0, 2] - m[2, 0]) / s; x = (m[0, 1] + m[1, 0]) / s; y = 0.25 * s; z = (m[1, 2] + m[2, 1]) / s
+        else:
+            s = math.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2
+            w = (m[1, 0] - m[0, 1]) / s; x = (m[0, 2] + m[2, 0]) / s; y = (m[1, 2] + m[2, 1]) / s; z = 0.25 * s
+        return [w, x, y, z]
+
+    eye = _xyz(args.cam_eye); tgt = _xyz(args.cam_target)
+    _cam = Camera(prim_path="/World/RecordCam", position=_np.array(eye),
+                  orientation=_np.array(_lookat_quat(eye, tgt)), resolution=(1280, 720))
+    _cam.initialize()
+    for _ in range(20):
+        world.step(render=True)
+    _frame_dir = tempfile.mkdtemp(prefix="keepout_frames_")
+    _rec = {"cam": _cam, "dir": _frame_dir, "i": 0}
+    carb.log_warn(f"[multi] recording -> {args.record}  (frames in {_frame_dir})")
+
+_step = 0
 try:
     while simulation_app.is_running():
         world.step(render=True)
+        if _rec is not None:
+            _step += 1
+            if _step % 3 == 0:                         # ~throttle to a third of sim rate
+                rgba = _rec["cam"].get_rgba()
+                if rgba is not None and rgba.size > 0:
+                    from PIL import Image as _Img
+                    _Img.fromarray(rgba[:, :, :3]).save(
+                        os.path.join(_rec["dir"], f"frame_{_rec['i']:06d}.png"))
+                    _rec["i"] += 1
 except KeyboardInterrupt:
     pass
 finally:
+    if _rec is not None and _rec["i"] > 0:
+        carb.log_warn(f"[multi] encoding {_rec['i']} frames -> {args.record}")
+        subprocess.run(["ffmpeg", "-y", "-framerate", str(args.fps),
+                        "-i", os.path.join(_rec["dir"], "frame_%06d.png"),
+                        "-pix_fmt", "yuv420p", args.record])
     timeline.stop()
     simulation_app.close()
