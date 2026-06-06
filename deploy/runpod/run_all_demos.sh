@@ -25,11 +25,11 @@ killall_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkil
 
 # bringup <isaac extra args> ; sets ISAAC_PID. returns 1 on failure.
 bringup(){
-  killall_; rm -rf "$FR"
+  killall_; rm -rf "$FR" /tmp/keepout_isaac_ready /tmp/keepout_record_go
   bash -c "source $IENV && cd $REPO && exec stdbuf -oL -eL python -u deploy/isaac/isaac_multi_robot_ros2.py --warehouse $1" > "$L/isaac.log" 2>&1 &
   ISAAC_PID=$!
-  echo "  waiting for Isaac+record (cold ~2-3min)..."; local i=0
-  until ls "$FR"/frame_*.png >/dev/null 2>&1; do sleep 3; i=$((i+3)); kill -0 "$ISAAC_PID" 2>/dev/null || { echo "  Isaac died ($L/isaac.log)"; return 1; }; [ $i -ge 600 ] && { echo "  Isaac timeout"; return 1; }; done
+  echo "  waiting for Isaac up (cold ~2-3min)..."; local i=0
+  until [ -f /tmp/keepout_isaac_ready ]; do sleep 3; i=$((i+3)); kill -0 "$ISAAC_PID" 2>/dev/null || { echo "  Isaac died ($L/isaac.log)"; return 1; }; [ $i -ge 600 ] && { echo "  Isaac timeout"; return 1; }; done
   bash -c "source $RENV; \
     ros2 run tf2_ros static_transform_publisher --x -3 --y 5 --z 0 --frame-id map --child-frame-id R1/odom & \
     ros2 run tf2_ros static_transform_publisher --x 0 --y 5 --z 0 --frame-id map --child-frame-id R2/odom & \
@@ -47,13 +47,14 @@ enc(){ pkill -9 -f "action send_goal"; sleep 2; local n; n=$(ls "$FR"/frame_*.pn
 
 demo1(){
   say "DEMO 1 — keepout (agents flag a failing zone, fleet avoids it)"
-  killall_   # kill any stale bridge FIRST so it isn't holding a lock on the tables
-  # lock_timeout so a held lock can never hang the truncate (it errors out, we continue)
-  timeout 20 su - postgres -c "psql -d warehouse -c \"SET lock_timeout='5s';\" -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
+  killall_   # kill stale bridge FIRST so nothing holds a lock on the tables
+  # simple form (worked in run_keepout); killall above prevents the lock hang, timeout is a safety net
+  timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
   bringup "--record /workspace/demo1_keepout.mp4" || { echo "  DEMO1 skipped (bringup failed)"; return 1; }
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_multi_failure_bridge" > "$L/bridge.log" 2>&1 &
   grepwait "$L/bridge.log" "listening for aborts" 60 || true
   sleep 3
+  touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
   echo "  trigger: R2,R3 into dock (0,0) -> fail"
   goal R2 0 -8; sleep 5; goal R3 0 -8
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
@@ -64,6 +65,7 @@ demo1(){
 demo2(){
   say "DEMO 2 — charging (reserve charger for critical, delay low-priority)"
   bringup "--no-obstacle --record /workspace/demo2_charging.mp4" || { echo "  DEMO2 skipped (bringup failed)"; return 1; }
+  touch /tmp/keepout_record_go
   echo "  reserve (-3,-8) for critical R1; R3 -> (3,-8); R2 delayed"
   goal R1 -3 -8; sleep 2; goal R3 3 -8; sleep 18; goal R2 -3 -8; sleep 35
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
@@ -72,6 +74,7 @@ demo2(){
 demo3(){
   say "DEMO 3 — priority (two robots want the same spot; agent orders them)"
   bringup "--no-obstacle --record /workspace/demo3_priority.mp4" || { echo "  DEMO3 skipped (bringup failed)"; return 1; }
+  touch /tmp/keepout_record_go
   echo "  R2 priority to (0,-6); R3 yields then goes"
   goal R2 0 -6; sleep 14; goal R2 0 -8; sleep 3; goal R3 0 -6; sleep 35
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6

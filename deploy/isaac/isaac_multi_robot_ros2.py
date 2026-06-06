@@ -247,13 +247,20 @@ if args.record:
     _rec = {"cam": _cam, "dir": _frame_dir, "i": 0}
     carb.log_warn(f"[multi] recording -> {args.record}  (frames in {_frame_dir})")
 
+# readiness marker for the runner (file, not buffered log). written once Isaac is
+# up + playing — BEFORE the runner brings up Nav2, so Nav2 starts without camera load.
+open("/tmp/keepout_isaac_ready", "w").close()
+
 _step = 0
 try:
     while simulation_app.is_running():
         world.step(render=True)
         if _rec is not None:
             _step += 1
-            if _step % 3 == 0:                         # ~throttle to a third of sim rate
+            # only capture once the runner touches the GO marker (right before goals),
+            # so the heavy camera render doesn't starve Nav2's lifecycle handshakes.
+            import os as _os
+            if _step % 3 == 0 and _os.path.exists("/tmp/keepout_record_go"):
                 rgba = _rec["cam"].get_rgba()
                 if rgba is not None and rgba.size > 0:
                     from PIL import Image as _Img
