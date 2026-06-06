@@ -50,8 +50,11 @@ _ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/
 IW_HUB_USD   = f"{_ISAAC_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub.usd"
 WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
 
-# (name, spawn x, spawn y) — spread along y so all three can be sent into the dock.
-ROBOTS = [("R1", 0.0, 2.0), ("R2", 0.0, 0.0), ("R3", 0.0, -2.0)]
+# (name, spawn x, spawn y) — a ROW across x at the north end; all three drive
+# south (-y) down separate 3 m-apart lanes so they never touch (no obstacle
+# layer = robots are invisible to each other). The keepout wall is dropped
+# across the middle of the lanes; robots whose lane it blocks detour around it.
+ROBOTS = [("R1", -3.0, 5.0), ("R2", 0.0, 5.0), ("R3", 3.0, 5.0)]
 WHEEL_RADIUS = 0.08
 WHEEL_BASE = 0.54
 
