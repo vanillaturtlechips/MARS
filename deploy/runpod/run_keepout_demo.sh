@@ -51,11 +51,13 @@ echo "[ok] Isaac up + recording"
 sleep 3
 
 say "2. static tf (spawn offsets map->R*/odom)"
-bash -c "source $RENV && \
+# NOTE: 'source && a & b &' only sources for 'a'; use ';' so all three inherit ROS2.
+bash -c "source $RENV; \
   ros2 run tf2_ros static_transform_publisher --x -3 --y 5 --z 0 --frame-id map --child-frame-id R1/odom & \
   ros2 run tf2_ros static_transform_publisher --x 0 --y 5 --z 0 --frame-id map --child-frame-id R2/odom & \
-  ros2 run tf2_ros static_transform_publisher --x 3 --y 5 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
-sleep 3
+  ros2 run tf2_ros static_transform_publisher --x 3 --y 5 --z 0 --frame-id map --child-frame-id R3/odom & \
+  wait" > "$L/stf.log" 2>&1 &
+sleep 5
 
 say "3. global Nav2 (map_server first)"
 bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
