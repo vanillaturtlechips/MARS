@@ -91,7 +91,7 @@ _ZONES = [
     # Wall across the corridor at x≈4 (away from the robot's start at origin) so
     # the Nav2 keepout demo shows a clean detour rather than blocking the start.
     {"zone_id": "receiving_dock",  "display_name": "Receiving Dock",  "is_charger_zone": False, "is_mandatory": False,
-     "polygon": [{"x": 3.5, "y": -2.5}, {"x": 4.5, "y": -2.5}, {"x": 4.5, "y": 2.5}, {"x": 3.5, "y": 2.5}]},
+     "polygon": [{"x": -1.5, "y": -1.0}, {"x": 1.5, "y": -1.0}, {"x": 1.5, "y": 1.0}, {"x": -1.5, "y": 1.0}]},
     {"zone_id": "charging_bay",    "display_name": "Charging Bay",    "is_charger_zone": True,  "is_mandatory": False,
      "polygon": [{"x": 4.0, "y": -1.0}, {"x": 7.0, "y": -1.0}, {"x": 7.0, "y": 2.0}, {"x": 4.0, "y": 2.0}]},
     {"zone_id": "storage_area_a",  "display_name": "Storage Area A",  "is_charger_zone": False, "is_mandatory": False,

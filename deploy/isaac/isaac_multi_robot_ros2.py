@@ -77,10 +77,10 @@ if not args.no_obstacle:
     from isaacsim.core.api.objects import FixedCuboid
     world.scene.add(FixedCuboid(
         prim_path="/World/dock_block", name="dock_block",
-        position=np.array([4.0, 0.0, 0.5]),
-        scale=np.array([1.0, 5.0, 1.0]),   # spans the dock width (y -2.5..2.5)
+        position=np.array([0.0, 0.0, 0.5]),
+        scale=np.array([3.0, 1.5, 1.0]),   # receiving_dock at origin: x[-1.5,1.5] y[-0.75,0.75]
     ))
-    carb.log_warn("[multi] spawned dock blocking box (4,0) size (1,5,1)")
+    carb.log_warn("[multi] spawned dock blocking box (0,0) size (3,1.5,1)")
 
 
 def spawn_robot(name: str, x: float, y: float) -> str:
