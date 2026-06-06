@@ -66,6 +66,12 @@ demo1(){
   sleep 5; goal R3 3 6; sleep 12; goal R3 3 -1   # R3 merges into lane x=3, then down through the box
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
   touch /tmp/keepout_zone_go    # agent declared avoid_zone -> reveal the red keepout slab on camera
+  # ---- keepout diagnostics: is the mask on the bus + are the robot costmaps subscribed? ----
+  echo "  [diag] probing /keepout_filter_mask + /costmap_filter_info"
+  bash -c "source $RENV; ros2 topic info /keepout_filter_mask --verbose"  > "$L/diag_maskinfo.log" 2>&1 || true
+  bash -c "source $RENV; ros2 topic info /costmap_filter_info --verbose"  > "$L/diag_infoinfo.log" 2>&1 || true
+  bash -c "source $RENV; timeout 6 ros2 topic echo /keepout_filter_mask --field info" > "$L/diag_mask.log" 2>&1 || true
+  bash -c "source $RENV; ros2 node list"  > "$L/diag_nodes.log" 2>&1 || true
   echo "  reroute: R1 down the same lane -> detours around the red keepout"
   sleep 3; goal R1 3 6; sleep 12; goal R1 3 -1; sleep 40
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
@@ -78,7 +84,8 @@ charge_demo(){
   local scn="$1" out="$2"
   killall_
   timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
-  bringup "--record $out" || { echo "  bringup failed for $scn"; return 1; }
+  # wider, slightly right-of-center view so the charging station at x=8 is in frame
+  bringup "--record $out --cam-eye 4,-13,9 --cam-target 4,4,0.6" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
