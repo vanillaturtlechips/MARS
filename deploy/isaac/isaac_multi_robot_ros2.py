@@ -38,10 +38,10 @@ ap.add_argument("--record", type=str, default="",
 # default cam sits INSIDE the verified-open lane volume (robots run x[-3,3] y[-8,5])
 # so it never lands in a warehouse wall; elevated, looking north up the lane.
 # cam_5 from cam_sweep (south overview): frames the dock + 3 robots + detour well.
-# elevated south view looking NORTH up the two aisles (x≈8 and x≈13): frames the
-# robots driving up between the real shelves and the stuck robot at the box (8,13).
-ap.add_argument("--cam-eye", type=str, default="9.5,-6,12", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="9.5,11,1", help="record camera look-at x,y,z")
+# south view looking NORTH up aisle-8: frames R1 stuck at the box between our
+# pallet racks (x=6/10), plus R2,R3 rerouting to the right (x=13).
+ap.add_argument("--cam-eye", type=str, default="9,-8,9", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="8.5,11,1", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
@@ -71,6 +71,7 @@ WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_wareho
 # full_warehouse itself; these are the obstacle box + the charging station).
 CARDBOX_USD  = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_CardBoxA_01.usd"
 CHARGER_USD  = f"{_ISAAC_CLOUD}/Isaac/Props/PackingTable/packing_table.usd"
+RACK_USD     = f"{_ISAAC_CLOUD}/Isaac/Props/Pallet/pallet_holder.usd"  # real NVIDIA pallet rack = shelving
 
 # Coordinates read off the occupancy map. The only two CLEAR straight aisles
 # between the real shelves are x≈8 (flanked by shelves x≈5.5 & 10.4) and x≈13
@@ -114,6 +115,16 @@ world.scene.add(FixedCuboid(
 UsdGeom.Imageable(stage.GetPrimAtPath("/World/dock_collider")).MakeInvisible()
 _place("/World/dock_box", CARDBOX_USD, _dx, _dy, 0.0)
 carb.log_warn(f"[multi] obstacle: real SM_CardBoxA at {DOCK_XY} (collider 1.2x0.8x0.5)")
+
+# Real NVIDIA pallet racks flanking the aisle (x=6 and x=10) so the obstacle box
+# sits BETWEEN shelving (the requested warehouse look). We don't trust the
+# occupancy map's shelf positions (they didn't match the render) — we place our
+# own. Robots drive the clear x=8 lane (2 m from each rack) and only the box
+# stops them.
+for _ry in (10.5, 13.0, 15.5):
+    _place(f"/World/rack_L_{int(_ry*10)}", RACK_USD, 6.0, _ry, 0.0)
+    _place(f"/World/rack_R_{int(_ry*10)}", RACK_USD, 10.0, _ry, 0.0)
+carb.log_warn("[multi] placed real pallet racks flanking aisle x=8 (box between them)")
 
 # Charging station: real NVIDIA packing table at the R3-lane mouth.
 _place("/World/charger", CHARGER_USD, *CHARGER_XY, 0.0)
