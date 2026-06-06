@@ -70,7 +70,8 @@ waitfor "$L/nav2_global.log" "Managed nodes are active" 90 || exit 1
 say "4. per-robot Nav2 (R1/R2/R3)"
 for r in R1 R2 R3; do
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_robot_ns.launch.py namespace:=$r" > "$L/nav2_$r.log" 2>&1 &
-  waitfor "$L/nav2_$r.log" "Managed nodes are active" 150 || exit 1
+  waitfor "$L/nav2_$r.log" "Managed nodes are active" 300 || exit 1
+  sleep 5   # let load settle before the next robot's lifecycle handshake
 done
 
 say "5. brain bridge (ALL agents)"
