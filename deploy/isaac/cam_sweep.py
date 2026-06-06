@@ -29,16 +29,18 @@ from pxr import UsdGeom, Gf  # noqa: E402
 _CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
 IW_HUB = f"{_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub.usd"
 WAREHOUSE = f"{_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
-ROBOTS = [("R1", -3.0, 5.0), ("R2", 0.0, 5.0), ("R3", 3.0, 5.0)]
+# place robots where the ACTION is (clustered at the dock), not at north spawn,
+# so the stills show the real moment: R2/R3 stuck at the box, R1 mid-detour.
+ROBOTS = [("R1", -1.8, 0.8), ("R2", 0.0, 0.6), ("R3", 1.3, -0.2)]
 
-# (eye, target) presets to try
+# (eye, target) presets — closer + lower so the small dock + robots fill the frame
 PRESETS = [
-    ((0, -11, 7),   (0, 1, 0.8)),    # 0: south, look north up the lane
-    ((0, -12, 11),  (0, -1, 0.5)),   # 1: south, higher, look at dock
-    ((0, -1.5, 14), (0, -1.5, 0)),   # 2: top-down (mid height)
-    ((0, -1.5, 22), (0, -1.5, 0)),   # 3: top-down (high)
-    ((4, -10, 8),   (0, -1, 0.8)),   # 4: 3/4 from +x/south corner
-    ((-4, -10, 8),  (0, -1, 0.8)),   # 5: 3/4 from -x/south corner
+    ((0, -6, 3.5),  (0, -0.3, 0.4)),  # 0: south, low, close
+    ((0, -8, 5),    (0, -0.3, 0.4)),  # 1: south, mid
+    ((3.5, -6, 4),  (0, -0.3, 0.4)),  # 2: slight SE corner, low
+    ((-3.5, -6, 4), (0, -0.3, 0.4)),  # 3: slight SW corner, low
+    ((0, -1, 9),    (0, -0.5, 0)),    # 4: top-down (lower, z=9)
+    ((0, -10, 7),   (0, -0.3, 0.5)),  # 5: south overview
 ]
 
 world = World(stage_units_in_meters=1.0)
@@ -46,8 +48,8 @@ world.scene.add_default_ground_plane()
 stage = omni.usd.get_context().get_stage()
 add_reference_to_stage(WAREHOUSE, "/World/Warehouse")
 world.scene.add(FixedCuboid(prim_path="/World/dock_block", name="dock_block",
-                            position=np.array([0.0, 0.0, 0.5]),
-                            scale=np.array([3.0, 1.5, 1.0])))
+                            position=np.array([0.0, 0.0, 0.25]),
+                            scale=np.array([1.2, 0.8, 0.5])))   # match the demo's small dock box
 for name, x, y in ROBOTS:
     p = f"/World/{name}"
     add_reference_to_stage(IW_HUB, p)
