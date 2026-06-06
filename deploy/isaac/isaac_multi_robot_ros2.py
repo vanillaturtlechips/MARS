@@ -37,10 +37,9 @@ ap.add_argument("--record", type=str, default="",
                 help="if set, capture an offscreen camera to this .mp4 (headless, like the RL render scripts)")
 # default cam sits INSIDE the verified-open lane volume (robots run x[-3,3] y[-8,5])
 # so it never lands in a warehouse wall; elevated, looking north up the lane.
-# top-down over the lane: the dock box doesn't occlude the detour (low angles put
-# the box in the foreground and hide R1's swerve). z=16 + ~47deg FOV covers x[-3,3] y[-8,5].
-ap.add_argument("--cam-eye", type=str, default="0,-1.5,16", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="0,-1.5,0", help="record camera look-at x,y,z")
+# cam_5 from cam_sweep (south overview): frames the dock + 3 robots + detour well.
+ap.add_argument("--cam-eye", type=str, default="0,-10,7", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="0,-0.3,0.5", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
