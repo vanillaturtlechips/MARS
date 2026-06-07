@@ -102,7 +102,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     # 4. LLM + Embedder
     # ------------------------------------------------------------------
-    from mars.llm.client import get_llm_client, get_embedder
+    from mars.llm.client import get_llm_client, get_investigator_client, get_embedder
     from mars.config import ANTHROPIC_API_KEY, VOYAGE_API_KEY
     llm      = get_llm_client("anthropic") if ANTHROPIC_API_KEY else get_llm_client("mock")
     embedder = get_embedder("voyage") if VOYAGE_API_KEY else get_embedder("mock")
@@ -111,6 +111,8 @@ def main() -> None:
     # 5. Supervisory components
     # ------------------------------------------------------------------
     from mars.agents.failure_analysis import FailureAnalysisAgent
+    from mars.agents.tools import InvestigatorTools
+    from mars.blackboard.db import connect_readonly
     from mars.agents.fleet_state import FleetStateAgent
     from mars.agents.operations_strategy import OperationsStrategyAgent
     from mars.orchestrator.orchestrator import Orchestrator
@@ -134,6 +136,9 @@ def main() -> None:
     charging_svc   = ChargingService(conn_factory, chargers_raw)
     policy_manager.register_consumer(scheduling_svc.on_policy_change)
     policy_manager.register_consumer(charging_svc.on_policy_change)
+    # avoid_zone → Nav2 KeepoutFilter mask. The adapter (created below) is the
+    # NavigationInterface whose publish_keepout_mask emits a real OccupancyGrid.
+    from mars.services.keepout_service import KeepoutService
 
     strategy_trigger = StrategyTrigger(
         ops_strategy_agent=OperationsStrategyAgent(llm),
@@ -152,10 +157,12 @@ def main() -> None:
         conn_factory=conn_factory,
         outcome_evaluator=outcome_evaluator,
     )
+    investigator_tools = InvestigatorTools(connect_readonly(), embedder)
     orchestrator = Orchestrator(
         blackboard_queries=Q,
         hot_state=hot_state,
-        failure_analysis_agent=FailureAnalysisAgent(llm),
+        failure_analysis_agent=FailureAnalysisAgent(
+            get_investigator_client(), investigator_tools),
         retrieval_validator_fn=validate_retrieval_set,
         decision_validator_fn=validate_diagnosis,
         strategy_trigger_fn=strategy_trigger.evaluate,
@@ -184,6 +191,11 @@ def main() -> None:
                 aggregator._zone_map[row[0]] = row[1]
 
     adapter = ROS2SimAdapter(node, _ROBOT_IDS, zone_resolver)
+
+    # Now that the adapter (NavigationInterface) exists, wire avoid_zone →
+    # keepout mask publishing into the PolicyManager.
+    keepout_service = KeepoutService(adapter, conn_factory)
+    policy_manager.register_consumer(keepout_service.on_policy_change)
 
     for robot_id in _ROBOT_IDS:
         # Aggregator pose callback resolves zone via ZoneResolver

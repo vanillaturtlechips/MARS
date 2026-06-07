@@ -1,0 +1,29 @@
+# ADD-IN snippet for your Nav2 bringup params (ROS2 Humble).
+#
+# Merge the `filters` list and `keepout_filter` block into EACH robot's
+# global_costmap.  The KeepoutFilter subscribes to /costmap_filter_info (from
+# costmap_filter_info_server) which points it at /keepout_filter_mask (published
+# dynamically by the MARS supervisor).  When the agents activate an avoid_zone,
+# the masked cells become lethal in the global costmap and the planner routes
+# around the zone.
+#
+# Note (Humble): `filters` is a SEPARATE list from `plugins`. Keep your existing
+# plugins; just add the filters list + the keepout_filter block.
+#
+# Per-robot namespacing: with robots under /R1, /R2, ... the global_costmap key
+# is typically `/<robot_id>/global_costmap/global_costmap`. The filter_info /
+# mask topics are GLOBAL (leading slash) and shared by all robots.
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      # --- keep your existing plugins, e.g.: ---
+      # plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      #
+      # --- ADD: costmap filters ---
+      filters: ["keepout_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/costmap_filter_info"

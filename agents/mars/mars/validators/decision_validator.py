@@ -65,7 +65,12 @@ def _resolve_ref(ref: str, bundle: dict[str, Any]) -> bool:
     for segment in ref.split("."):
         if "[" in segment:
             name, rest = segment.split("[", 1)
-            idx = int(rest.rstrip("]"))
+            try:
+                idx = int(rest.rstrip("]"))
+            except ValueError:
+                # Malformed index (e.g. "field[]" or "field[x]") — the ref
+                # cannot be resolved, so it fails grounding rather than crashing.
+                return False
             parts.append((name, idx))
         else:
             parts.append((segment, None))

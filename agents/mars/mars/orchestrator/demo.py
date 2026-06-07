@@ -51,11 +51,12 @@ log = logging.getLogger("demo")
 # Mars imports
 # ---------------------------------------------------------------------------
 import mars.blackboard.queries as Q
-from mars.blackboard.db import apply_migrations, connect, ping
+from mars.blackboard.db import apply_migrations, connect, connect_readonly, ping
 from mars.blackboard.hot_state import HotState
 from mars.aggregator.aggregator import Aggregator
 from mars.router.router import route, Path
 from mars.agents.failure_analysis import FailureAnalysisAgent
+from mars.agents.tools import InvestigatorTools
 from mars.agents.fleet_state import FleetStateAgent
 from mars.agents.operations_strategy import OperationsStrategyAgent
 from mars.orchestrator.orchestrator import Orchestrator, fast_disposition
@@ -66,12 +67,13 @@ from mars.validators.decision_validator import validate_diagnosis, validate_stra
 from mars.guardrail.guardrail import check as guardrail_check
 from mars.policy.policy_manager import PolicyManager
 from mars.services.scheduling import SchedulingService
+from mars.services.keepout_service import KeepoutService
 from mars.services.charging import ChargingService
 from mars.services.ros_executor import ROSExecutor
 from mars.outcome.evaluator import OutcomeEvaluator
 from mars.sim.mock_sim import MockSim
 from mars.sim.fault_injector import FaultInjector
-from mars.llm.client import get_llm_client, get_embedder
+from mars.llm.client import get_llm_client, get_investigator_client, get_embedder
 from mars.config import (
     FAILURE_WINDOW_SECONDS,
     ROUTER_SCOPE_HINT,
@@ -83,10 +85,19 @@ from mars.config import (
 
 _ROBOTS = ["R1", "R2", "R3", "R4", "R5"]
 
+# Zone polygons are in meters in the map frame (matches mission destinations
+# x∈[1,5]). Used by ZoneResolver and by the Nav2 keepout mask publisher.
 _ZONES = [
-    {"zone_id": "receiving_dock",  "display_name": "Receiving Dock",  "is_charger_zone": False, "is_mandatory": False},
-    {"zone_id": "charging_bay",    "display_name": "Charging Bay",    "is_charger_zone": True,  "is_mandatory": False},
-    {"zone_id": "storage_area_a",  "display_name": "Storage Area A",  "is_charger_zone": False, "is_mandatory": False},
+    # Wall across the corridor at x≈4 (away from the robot's start at origin) so
+    # the Nav2 keepout demo shows a clean detour rather than blocking the start.
+    # keepout around the obstacle at (-8,15) INSIDE the real warehouse aisle x≈-8
+    # (real shelves flank it at x≈-10.5 and -5.5; the box blocks that aisle).
+    {"zone_id": "receiving_dock",  "display_name": "Receiving Dock",  "is_charger_zone": False, "is_mandatory": False,
+     "polygon": [{"x": -9.0, "y": 14.0}, {"x": -7.0, "y": 14.0}, {"x": -7.0, "y": 16.0}, {"x": -9.0, "y": 16.0}]},
+    {"zone_id": "charging_bay",    "display_name": "Charging Bay",    "is_charger_zone": True,  "is_mandatory": False,
+     "polygon": [{"x": 4.0, "y": -1.0}, {"x": 7.0, "y": -1.0}, {"x": 7.0, "y": 2.0}, {"x": 4.0, "y": 2.0}]},
+    {"zone_id": "storage_area_a",  "display_name": "Storage Area A",  "is_charger_zone": False, "is_mandatory": False,
+     "polygon": [{"x": 7.0, "y": -1.0}, {"x": 10.0, "y": -1.0}, {"x": 10.0, "y": 2.0}, {"x": 7.0, "y": 2.0}]},
 ]
 
 _CHARGERS = [
@@ -159,10 +170,16 @@ def build_components(conn_factory, hot_state, llm, embedder) -> dict[str, Any]:
         interval_sec=60.0,   # real production interval; demo calls run_once() directly
     )
 
+    # Read-only investigator: real ReAct tool-loop over the blackboard.
+    # connect_readonly() uses DB_READONLY_DSN (set == DB_DSN locally to skip
+    # the mars_reader role). embedder powers the search_incidents tool.
+    investigator_tools = InvestigatorTools(connect_readonly(), embedder)
+
     orchestrator = Orchestrator(
         blackboard_queries=Q,
         hot_state=hot_state,
-        failure_analysis_agent=FailureAnalysisAgent(llm),
+        failure_analysis_agent=FailureAnalysisAgent(
+            get_investigator_client(), investigator_tools),
         retrieval_validator_fn=validate_retrieval_set,
         decision_validator_fn=validate_diagnosis,
         strategy_trigger_fn=strategy_trigger.evaluate,
@@ -331,6 +348,20 @@ def run_demo() -> None:
     goal_to_mission = wire_sim(sim, aggregator)
     sim.start()
 
+    # -- Keepout: avoid_zone policy → Nav2 KeepoutFilter mask.
+    #    Default: MockSim (no physical effect, logs only).
+    #    --ros2-keepout: publish a real OccupancyGrid on /keepout_filter_mask so
+    #    a running Nav2 reroutes the live robot (full loop brain→mask→reroute).
+    _ros2_keepout = "--ros2-keepout" in sys.argv
+    _keepout_pub = None
+    if _ros2_keepout:
+        from mars.ros.ros2_keepout_publisher import Ros2KeepoutPublisher
+        _keepout_pub = Ros2KeepoutPublisher()
+        keepout_service = KeepoutService(_keepout_pub, conn_factory)
+    else:
+        keepout_service = KeepoutService(sim, conn_factory)
+    policy_manager.register_consumer(keepout_service.on_policy_change)
+
     # -- Dispatch goals so robots have something to abort --
     dispatch_demo_goals(sim, conn_main, goal_to_mission)
 
@@ -346,7 +377,7 @@ def run_demo() -> None:
 
     # -- Process events from the queue --
     results: list[dict] = []
-    deadline = time.time() + 8.0  # wait up to 8 s for all events
+    deadline = time.time() + 90.0  # real LLM investigations are ~15s each; allow all 4
 
     print()
     while time.time() < deadline:
@@ -410,6 +441,12 @@ def run_demo() -> None:
     # -- Summary --
     _print_summary(results, policy_manager, scheduling_svc, conn_main)
     conn_main.close()
+
+    # --ros2-keepout: keep the latched mask alive so Nav2 holds the keepout.
+    if _ros2_keepout and _keepout_pub is not None:
+        print("\n  [ros2-keepout] holding keepout mask on /keepout_filter_mask "
+              "(Ctrl+C to release)...")
+        _keepout_pub.spin()
 
 
 def _print_event_result(event: dict, result: dict) -> None:
@@ -503,11 +540,14 @@ def _make_hot_state() -> HotState:
 
 
 def _make_llm():
-    from mars.config import ANTHROPIC_API_KEY
+    from mars.config import ANTHROPIC_API_KEY, OPENAI_API_KEY, LLM_PROVIDER
+    if LLM_PROVIDER == "openai" and OPENAI_API_KEY:
+        log.info("LLM: OpenAI (real, backup provider)")
+        return get_llm_client("openai")
     if ANTHROPIC_API_KEY:
         log.info("LLM: Anthropic Claude (real)")
         return get_llm_client("anthropic")
-    log.warning("LLM: ANTHROPIC_API_KEY not set — using mock LLM (canned output)")
+    log.warning("LLM: no usable provider key — using mock LLM (canned output)")
     from tests.conftest import ZONE_WIDE_DIAGNOSIS, AVOID_ZONE_STRATEGY
     from mars.llm.client import MockLLMClient
 

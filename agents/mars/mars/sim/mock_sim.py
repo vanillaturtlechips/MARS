@@ -91,6 +91,10 @@ class MockSim(NavigationInterface, SensorInterface):
         self._pose_cbs:       dict[str, list[Callable]] = {}
         self._nav_status_cbs: dict[str, list[Callable]] = {}
 
+        # Keepout masks published via publish_keepout_mask (recorded for tests)
+        self.last_keepout_grid: dict | None = None
+        self.keepout_grids: list[dict] = []
+
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -129,6 +133,16 @@ class MockSim(NavigationInterface, SensorInterface):
         )
         self._fire(self._nav_status_cbs.get(robot_id, []), status)
         log.info("[sim] %s goal %s canceled", robot_id, goal_id)
+
+    def publish_keepout_mask(self, grid: dict) -> None:
+        # Record for tests/inspection; no physical effect in the mock.
+        self.last_keepout_grid = grid
+        self.keepout_grids.append(grid)
+        keepout_cells = sum(1 for v in grid.get("data", []) if v >= 100)
+        log.info("[sim] keepout mask published: %d keepout cells (grid %dx%d)",
+                 keepout_cells,
+                 grid.get("info", {}).get("width", 0),
+                 grid.get("info", {}).get("height", 0))
 
     # ------------------------------------------------------------------
     # SensorInterface

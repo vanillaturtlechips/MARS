@@ -100,6 +100,21 @@ class NavigationInterface(ABC):
         """Cancel an active goal."""
         ...
 
+    # Concrete default (NOT abstract) so existing implementers keep working.
+    # The real ROS2 adapter overrides this to publish a Nav2 KeepoutFilter
+    # mask; the mock sim overrides it to record the call for tests.
+    def publish_keepout_mask(self, grid: dict) -> None:
+        """
+        Publish/refresh the Nav2 KeepoutFilter mask.
+
+        `grid` is a nav_msgs/OccupancyGrid-shaped dict (see
+        mars.ros.keepout.build_occupancy_grid_dict): header, info
+        (resolution/width/height/origin) and a row-major `data` list where
+        100 marks keepout cells.  Default is a no-op (navigation backends
+        without a costmap filter simply ignore avoid_zone at the Nav2 layer).
+        """
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Sensor publishing interface

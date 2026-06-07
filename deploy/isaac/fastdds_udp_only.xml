@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+FastDDS profile: UDPv4 transport only (shared-memory disabled).
+
+Isaac Sim ships its own FastDDS build; the system ROS 2 Humble has a different
+one. On the same host they discover each other (topic appears in `ros2 topic
+list`) but data sent over the shared-memory transport is dropped because the
+two FastDDS versions use incompatible SHM segments — so `ros2 topic echo` hangs
+with no messages.
+
+Forcing UDPv4-only on BOTH sides (set FASTRTPS_DEFAULT_PROFILES_FILE to this
+file in the Isaac process AND in every ros2 CLI / supervisor shell) makes data
+flow over UDP, which is version-compatible.
+-->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>udp_only_transport</transport_id>
+        <type>UDPv4</type>
+        <!-- Big socket buffers: maps + 3x global/local costmaps are large
+             OccupancyGrid messages. FastDDS fragments them into ~64KB UDP
+             datagrams; with the default (small) buffers, 3 concurrent Nav2
+             stacks drop fragments under load -> messages never reassemble ->
+             follow_path ACK / costmap-clear service / lifecycle bond all time
+             out and robots never drive (single stack works, 3 don't). 16MB
+             clears it. NOTE: the kernel net.core.{r,w}mem_max must be >= this
+             or the OS clamps the request (run_all_demos.sh raises it). -->
+        <sendBufferSize>16777216</sendBufferSize>
+        <receiveBufferSize>16777216</receiveBufferSize>
+        <maxMessageSize>65500</maxMessageSize>
+      </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="udp_only_participant" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>udp_only_transport</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

@@ -132,7 +132,10 @@ def get_investigator_client(provider: str | None = None):
     if p == "openai":
         from mars.llm.openai_client import OpenAIInvestigatorClient
         return OpenAIInvestigatorClient()
-    if p in ("mock", "anthropic"):
+    if p == "anthropic":
+        from mars.llm.anthropic_client import AnthropicInvestigatorClient
+        return AnthropicInvestigatorClient()
+    if p == "mock":
         return ToolCallMockClient()
     raise ValueError(f"Unknown investigator provider: {p!r}")
 

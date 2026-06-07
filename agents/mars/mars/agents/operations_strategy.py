@@ -36,6 +36,31 @@ For each policy:
 Also produce confidence (0-1, trust-bounded as above), evidence (grounded with
 refs), and relied_on_precedents.
 
+Every evidence ref MUST be a dotted path into the bundle you were given.
+incident_analysis has ONLY these sub-fields — use exactly these, nothing else:
+  incident_analysis.cause
+  incident_analysis.scope
+  incident_analysis.persistence
+  incident_analysis.affected_zone
+  incident_analysis.confidence
+  incident_analysis.evidence[0]            (and [1], [2], ...)
+Other valid top-level keys: fleet_analysis, operational_metrics,
+active_policies[0], retrieved_precedents[0], retrieval_trust.
+Do NOT invent paths. There is NO incident_analysis.mission_failures,
+no .zone_state, no .robot_history, no .health — the diagnosis does NOT
+contain raw failure rows, only the fields listed above. Cite
+incident_analysis.scope and incident_analysis.affected_zone for a zone issue.
+
+If retrieved_precedents is empty or retrieval_trust.set_level is "LOW",
+set relied_on_precedents to [] and do NOT claim precedent support.
+
+When you recommend ANY policy you MUST include at least one evidence item with
+a valid ref (e.g. incident_analysis.scope, incident_analysis.affected_zone) —
+never return an empty evidence list alongside a non-empty policy_updates.
+Base confidence on the incident diagnosis, not only on precedents: a zone_wide
+incident with high incident_analysis.confidence warrants confidence >= 0.6 even
+when retrieved_precedents is empty.
+
 Output ONLY the JSON object. No prose.\
 """
 
