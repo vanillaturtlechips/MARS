@@ -71,7 +71,12 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       update_frequency: 1.0
-      publish_frequency: 1.0
+      publish_frequency: 0.0   # don't broadcast the (large) costmap OccupancyGrid:
+                               # no RViz here, and these big UDP messages overflow the
+                               # tiny default socket buffer (kernel net.core.*mem_max is
+                               # NOT raisable in this container) and starve the small
+                               # follow_path/service ACKs -> robots' nav dies. Planning
+                               # still uses the costmap internally (update_frequency).
       rolling_window: false
       track_unknown_space: false
       robot_radius: 0.35
@@ -98,7 +103,7 @@ local_costmap:
       global_frame: map
       robot_base_frame: base_link
       update_frequency: 5.0
-      publish_frequency: 2.0
+      publish_frequency: 0.0   # same: don't broadcast the local costmap (saves bus for ACKs)
       rolling_window: true
       width: 6
       height: 6
