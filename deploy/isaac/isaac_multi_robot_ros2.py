@@ -41,8 +41,8 @@ ap.add_argument("--record", type=str, default="",
 # cam_1 (picked from the sweep): low, looking straight NORTH up aisle x=-8 — the
 # robots come in toward this view, R1 rams the box ahead, R2/R3 peel off to the
 # side aisles (x=-3 right, x=-13 left).
-ap.add_argument("--cam-eye", type=str, default="-8,2,3", help="record camera position x,y,z")
-ap.add_argument("--cam-target", type=str, default="-8,18,1.5", help="record camera look-at x,y,z")
+ap.add_argument("--cam-eye", type=str, default="-8,-2,7", help="record camera position x,y,z")
+ap.add_argument("--cam-target", type=str, default="-8,12,0.5", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
 args, _ = ap.parse_known_args()
 
@@ -81,7 +81,10 @@ RACK_USD     = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_Rac
 #   demo1: R1 goes up aisle x=-8, rams the box (-8,15) BETWEEN the REAL shelves
 #   (x=-10.5 & -5.5) and is stuck; agent flags it; R1 corrects its path (back
 #   south, up the next aisle x=-3); R2,R3 take that same corrected path.
-ROBOTS = [("R1", -8.0, 5.0), ("R2", -5.0, 5.0), ("R3", -11.0, 5.0)]
+# y=8 is open floor just SOUTH of the shelf rows (shelves start y=8.5), so x=-5/-11
+# don't clip the shelves at x=-5.5/-10.5; and y=8 is inside the down-aisle camera's
+# floor view (cam eye -8,-2,7 sees floor from y≈6.75). Box only ~7m up aisle x=-8.
+ROBOTS = [("R1", -8.0, 8.0), ("R2", -5.0, 8.0), ("R3", -11.0, 8.0)]
 DOCK_XY = (-8.0, 15.0)      # obstacle box / keepout — inside real aisle x=-8, between real shelves
 CHARGER_XY = (0.0, 3.0)     # charging station in the open south area
 WHEEL_RADIUS = 0.08
