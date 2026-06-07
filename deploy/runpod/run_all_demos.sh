@@ -21,10 +21,14 @@ WANT="${1:-all}"
 say(){ echo -e "\n########## $* ##########"; }
 grepwait(){ local f="$1" pat="$2" to="${3:-300}" i=0; while ! grep -q "$pat" "$f" 2>/dev/null; do sleep 2; i=$((i+2)); [ $i -ge "$to" ] && { echo "[TIMEOUT] $pat ($f)"; return 1; }; done; echo "[ok] $pat"; }
 goal(){ bash -c "source $RENV; ros2 action send_goal /$1/navigate_to_pose nav2_msgs/action/NavigateToPose \"{pose: {header: {frame_id: map}, pose: {position: {x: $2, y: $3}, orientation: {w: 1.0}}}}\"" >> "$L/goals.log" 2>&1 & }
-killall_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f static_transform_publisher; pkill -9 -f "action send_goal"; pkill -9 -f "topic echo"; sleep 3; }
+killall_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f static_transform_publisher; pkill -9 -f "action send_goal"; pkill -9 -f "topic echo"; pkill -9 -f follow_waypoints; sleep 3; }
 # background odom logger: prove whether each robot PHYSICALLY moves (position in the
 # R*/odom frame, zeroed at spawn -> grows as the robot drives). Files: $L/odom_R*.log
 odomlog(){ for r in R1 R2 R3; do bash -c "source $RENV; exec stdbuf -oL ros2 topic echo /$r/odom --field pose.pose.position" > "$L/odom_$r.log" 2>&1 & done; }
+# follow <ns> <wp_odom...> : drive a NON-Nav2 robot along odom-frame waypoints via
+# direct cmd_vel (closed loop on /<ns>/odom). Lets demo1 run only ONE Nav2 stack
+# (the hero R1) so the multi-stack FastDDS discovery contention can't kill robots.
+follow(){ local ns="$1"; shift; bash -c "source $RENV && cd $REPO && exec python3 -u deploy/isaac/follow_waypoints.py $ns $*" > "$L/follow_$ns.log" 2>&1 & }
 
 # bringup <isaac extra args> ; sets ISAAC_PID. returns 1 on failure.
 bringup(){
@@ -40,7 +44,10 @@ bringup(){
   sleep 5
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
   grepwait "$L/nav2_global.log" "Managed nodes are active" 120 || return 1
-  for r in R1 R2 R3; do
+  # which robots get a full Nav2 stack. demo1 sets this to just "R1" (the hero whose
+  # real failure drives avoid_zone); R2/R3 are follower-driven so we don't pay the
+  # multi-stack DDS contention. charge demos leave the default (all three).
+  for r in ${NAV_ROBOTS:-R1 R2 R3}; do
     local ok=0
     for attempt in 1 2; do
       bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_robot_ns.launch.py namespace:=$r" > "$L/nav2_$r.log" 2>&1 &
@@ -59,29 +66,32 @@ demo1(){
   killall_   # kill stale bridge FIRST so nothing holds a lock on the tables
   # simple form (worked in run_keepout); killall above prevents the lock hang, timeout is a safety net
   timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
-  bringup "--record /workspace/demo1_keepout.mp4" || { echo "  DEMO1 skipped (bringup failed)"; return 1; }
+  # ONLY R1 gets a Nav2 stack (its real failure drives avoid_zone); R2/R3 are
+  # follower-driven. One Nav2 stack = no multi-stack FastDDS discovery contention.
+  NAV_ROBOTS="R1" bringup "--record /workspace/demo1_keepout.mp4" || { echo "  DEMO1 skipped (bringup failed)"; return 1; }
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_multi_failure_bridge" > "$L/bridge.log" 2>&1 &
   grepwait "$L/bridge.log" "listening for aborts" 60 || true
   sleep 3
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
   odomlog                          # diag: record each robot's odom position for the whole demo
   echo "  R1,R2,R3 head into the aisle together; R1 leads up aisle x=-8"
-  # R1 leads up the center; R2 (right) and R3 (left) follow a bit -> a loose line
-  # advancing toward the box.
+  # R1 (Nav2) leads up the center to the box; R2 (right) and R3 (left) follow up a
+  # bit via direct cmd_vel -> a loose line advancing together. Waypoints are in each
+  # robot's odom frame (= world - spawn): R2 spawn (-7,8), R3 spawn (-9,8); 0,3 = up 3m.
   goal R1 -8 17                 # R1 leads up to the box at (-8,15)
-  sleep 1; goal R2 -7 11        # R2 follows up on the RIGHT
-  sleep 1; goal R3 -9 11        # R3 follows up on the LEFT
+  sleep 1; follow R2 0,3        # R2 follows up on the RIGHT  (world -7,11)
+  follow R3 0,3                 # R3 follows up on the LEFT   (world -9,11)
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
   touch /tmp/keepout_zone_go    # agent flagged the aisle -> red slab appears
   sleep 4                       # let the red zone register before the fleet reacts
   echo "  R1 stuck at the box -> R2,R3 BOTH reroute LEFT (the right aisle x=-3 is blocked too)"
-  # Explicit waypoints (Nav2's own reroute around the keepout is unreliable here).
-  # BOTH head to the LEFT aisle x=-13: retreat south to the open floor, west along it,
-  # then up. R2 trails R3 by ~1m on the westward lane to hold a gap (there is NO robot-
-  # robot avoidance) and stops below R3 in the aisle.
-  goal R3 -9 7;   goal R2 -7 7;   sleep 12
-  goal R3 -13 7;  goal R2 -12 7;  sleep 22
-  goal R3 -13 15; goal R2 -13 10; sleep 40
+  pkill -f follow_waypoints; sleep 1   # stop the follow-up leg (SIGTERM -> followers zero their twist)
+  # BOTH reroute to the LEFT aisle x=-13: south to open floor (y=7), west along it,
+  # then up. R2 trails R3 (stops lower) so they don't collide (no robot-robot avoidance).
+  # Odom waypoints = world - spawn.  R2 world (-7,7)->(-12,7)->(-13,10) ; R3 world (-9,7)->(-13,7)->(-13,15)
+  follow R3 0,-1 -4,-1 -4,7     # R3: south, west to x=-13, up the aisle
+  follow R2 0,-1 -5,-1 -6,2     # R2: south, west to x=-13, up behind R3
+  sleep 70                      # closed-loop followers; generous time for the (slow-sim) reroute
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }
