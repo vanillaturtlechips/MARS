@@ -110,11 +110,11 @@ charge_demo(){
   timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
   # view centered on the REAL charging area: station at (0,3), dock (0,5), robots
   # approach from the aisle (x=-8) and park along y=3. (Old cam aimed at x=10 = empty.)
-  # Elevated SW OVERVIEW (charge_3): frames the pad + approach aisle + parks so the
-  # view stays populated even when the pad is momentarily empty (charge_5 was a close,
-  # floor-heavy angle that only looked good in the sweep because robots sat on the pad
-  # -> empty pad = grey floor in the real run). NOTE: =form required for negative x.
-  bringup "--record $out --cam-eye=-3,-10,11 --cam-target=-3,4,0.6" || { echo "  bringup failed for $scn"; return 1; }
+  # Camera INSIDE the building. demo1's working cam was at y=-2; charge_5/charge_3 were
+  # at y=-7/-10 = SOUTH of the building wall (outside) -> grey wall. Put it back inside
+  # (y=-2, like demo1) and pitch down onto the charging band (charger/pad y=5, parks
+  # y=3, robots arriving from aisle x=-8). NOTE: =form required for negative x.
+  bringup "--record $out --cam-eye=-2,-2,7 --cam-target=-2,5,0.3" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
