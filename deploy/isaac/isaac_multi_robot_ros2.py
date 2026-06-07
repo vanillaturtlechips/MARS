@@ -91,7 +91,12 @@ CHARGER_XY = (0.0, 3.0)     # charging station in the open south area
 WHEEL_RADIUS = 0.08
 WHEEL_BASE = 0.54
 
-world = World(stage_units_in_meters=1.0)
+# physics_dt/rendering_dt 1/20 (not the default 1/60): render is the bottleneck
+# (~5 fps), so a bigger sim-dt per render advances sim-time ~3x faster per wall-
+# second WITHOUT making control coarse — control still runs every rendered step
+# (unlike the PHYS_PER_RENDER substep hack, which let the wheels coast through
+# turns on stale odom and made the robots dart/scatter).
+world = World(stage_units_in_meters=1.0, physics_dt=1.0 / 20.0, rendering_dt=1.0 / 20.0)
 world.scene.add_default_ground_plane()
 stage = omni.usd.get_context().get_stage()
 
@@ -317,20 +322,12 @@ if args.record:
 open("/tmp/keepout_isaac_ready", "w").close()
 
 _step = 0
-# Render is the bottleneck (~4-6 rendered fps -> sim-time crawls at ~0.1x wall, so
-# robots never reach their goals in a sane window). Advance physics several steps
-# per rendered frame: the wheels keep their last commanded velocity between renders,
-# so the robots cover ~PHYS_PER_RENDER x more ground per render (sim-time keeps up
-# with wall-clock). OnPlaybackTick/ROS2 publish still fire on the rendered step.
-PHYS_PER_RENDER = 4
 # reveal the red keepout slab once the agent declares avoid_zone; the runner
 # touches this marker right after the bridge logs avoid_zone=True (demo1 only,
 # so the slab stays hidden in the charging demos).
 _keepout_pending = True
 try:
     while simulation_app.is_running():
-        for _ in range(PHYS_PER_RENDER - 1):
-            world.step(render=False)
         world.step(render=True)
         if _keepout_pending and os.path.exists("/tmp/keepout_zone_go"):
             UsdGeom.Imageable(stage.GetPrimAtPath("/World/keepout_zone")).MakeVisible()

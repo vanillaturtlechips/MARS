@@ -66,14 +66,18 @@ demo1(){
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
   odomlog                          # diag: record each robot's odom position for the whole demo
   echo "  R1,R2,R3 head into the aisle together; R1 leads up aisle x=-8"
-  goal R1 -8 18                 # R1 leads up aisle x=-8, rams the box at (-8,15)
-  sleep 2; goal R2 -8 13.5      # R2,R3 follow up the SAME aisle x=-8 in a column
-  sleep 1; goal R3 -8 11
+  # Column up aisle x=-8, spaced ~2.5m. Same speed -> the 2.5m gaps hold (there is
+  # NO inter-robot collision layer, so they must NOT converge on the same spot).
+  # Goals stagger by 2.5m so each stops in a QUEUE behind the blockage:
+  # R1 sticks at the box (~14.5), R2 stops ~12, R3 ~9.5.
+  goal R1 -8 18                 # R1 leads up to the box at (-8,15)
+  sleep 1; goal R2 -8 12        # R2 follows, stops 2.5m behind R1
+  sleep 1; goal R3 -8 9.5       # R3 follows, stops 2.5m behind R2
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
   touch /tmp/keepout_zone_go    # agent flagged the aisle -> red slab appears
   echo "  R1 stuck at the box -> R2,R3 divert to the SIDE aisles (x=-3 right, x=-13 left)"
-  goal R2 -3 18;  sleep 16      # R2 reroutes (south around shelf x=-5.5) into aisle x=-3
-  goal R3 -13 18; sleep 32      # R3 reroutes (south around shelf x=-10.5) into aisle x=-13
+  goal R2 -3 16;  sleep 35      # R2 reroutes (south around shelf x=-5.5) into aisle x=-3
+  goal R3 -13 16; sleep 55      # R3 reroutes (south around shelf x=-10.5) into aisle x=-13
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }
