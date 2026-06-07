@@ -41,7 +41,9 @@ from mars.services.charging import ChargingService        # noqa: E402
 # Park spots are distinct free cells in that open band. The ORDER robots take the
 # one charger is the real supervisory decision; these are just where it is.
 CHARGER_POSE = (0.0, 5.0)
-PARK_POSES = {"R1": (-8.0, 3.0), "R2": (3.0, 3.0), "R3": (-12.0, 3.0)}
+# Park spots after charging — kept near the pad and in the camera's view (charging
+# spawns are R1(0,2.5) R2(3,2) R3(-4,2)); a charged robot pulls aside so the next can dock.
+PARK_POSES = {"R1": (-2.0, 2.0), "R2": (4.0, 3.0), "R3": (-4.0, 2.0)}
 
 
 def decide_order(scenario: str, conn) -> tuple[list[tuple[str, str]], list[dict]]:

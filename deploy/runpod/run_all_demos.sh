@@ -45,10 +45,13 @@ bringup(){
   ISAAC_PID=$!
   echo "  waiting for Isaac up (cold ~2-3min)..."; local i=0
   until [ -f /tmp/keepout_isaac_ready ]; do sleep 3; i=$((i+3)); kill -0 "$ISAAC_PID" 2>/dev/null || { echo "  Isaac died ($L/isaac.log)"; return 1; }; [ $i -ge 600 ] && { echo "  Isaac timeout"; return 1; }; done
+  # map->R*/odom offsets MUST match the sim spawns. Defaults = demo1 aisle spawns;
+  # charge_demo overrides via SPAWN_R* to the charging layout (south of the pad).
+  local s1="${SPAWN_R1:--8 11}" s2="${SPAWN_R2:--7 8}" s3="${SPAWN_R3:--9 8}"
   bash -c "source $RENV; \
-    ros2 run tf2_ros static_transform_publisher --x -8 --y 11 --z 0 --frame-id map --child-frame-id R1/odom & \
-    ros2 run tf2_ros static_transform_publisher --x -7 --y 8 --z 0 --frame-id map --child-frame-id R2/odom & \
-    ros2 run tf2_ros static_transform_publisher --x -9 --y 8 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
+    ros2 run tf2_ros static_transform_publisher --x ${s1%% *} --y ${s1##* } --z 0 --frame-id map --child-frame-id R1/odom & \
+    ros2 run tf2_ros static_transform_publisher --x ${s2%% *} --y ${s2##* } --z 0 --frame-id map --child-frame-id R2/odom & \
+    ros2 run tf2_ros static_transform_publisher --x ${s3%% *} --y ${s3##* } --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
   sleep 5
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
   grepwait "$L/nav2_global.log" "Managed nodes are active" 120 || return 1
@@ -110,11 +113,12 @@ charge_demo(){
   timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
   # view centered on the REAL charging area: station at (0,3), dock (0,5), robots
   # approach from the aisle (x=-8) and park along y=3. (Old cam aimed at x=10 = empty.)
-  # Camera INSIDE the building. demo1's working cam was at y=-2; charge_5/charge_3 were
-  # at y=-7/-10 = SOUTH of the building wall (outside) -> grey wall. Put it back inside
-  # (y=-2, like demo1) and pitch down onto the charging band (charger/pad y=5, parks
-  # y=3, robots arriving from aisle x=-8). NOTE: =form required for negative x.
-  bringup "--record $out --cam-eye=-2,-2,10 --cam-target=-2,6,0.4" || { echo "  bringup failed for $scn"; return 1; }
+  # Charging layout: robots spawn SPREAD just south of the pad (--charge) so they don't
+  # bump and dock quickly; static TF offsets must match those spawns.
+  export SPAWN_R1="0 2.5" SPAWN_R2="3 2" SPAWN_R3="-4 2"
+  # Camera INSIDE the building (y=-2; charge_5/charge_3 at y=-7/-10 were OUTSIDE the
+  # south wall -> grey). Wide overview pitched down onto the charging band.
+  bringup "--record $out --charge --cam-eye=-2,-2,9 --cam-target=-2,4,0.3" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1

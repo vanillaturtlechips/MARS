@@ -44,6 +44,10 @@ ap.add_argument("--record", type=str, default="",
 ap.add_argument("--cam-eye", type=str, default="-8,-2,7", help="record camera position x,y,z")
 ap.add_argument("--cam-target", type=str, default="-8,12,0.5", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
+ap.add_argument("--charge", action="store_true",
+                help="charging-demo layout: spawn robots SPREAD just south of the charger "
+                     "pad (0,5) instead of clustered in the aisle, so they don't bump each "
+                     "other and reach the pad quickly")
 args, _ = ap.parse_known_args()
 
 from isaacsim.core.utils.extensions import enable_extension  # noqa: E402
@@ -86,7 +90,13 @@ RACK_USD     = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_Rac
 # OPPOSITE side aisles (R2->x=-3 right, R3->x=-13 left) on diverging paths and never
 # cross each other or R1 (there is NO inter-robot collision layer). All x in the clear
 # aisle band [-9.8,-6.2]; y>=8 stays in the camera's floor view (floor from y~6.75).
-ROBOTS = [("R1", -8.0, 11.0), ("R2", -7.0, 8.0), ("R3", -9.0, 8.0)]
+if args.charge:
+    # Charging layout: spread just SOUTH of the charger pad (0,5), 3-4m apart, so the
+    # bridge can drive them to the pad one at a time without bumping the others, and
+    # each reaches it in a short hop. R1 critical (docks first), R2 low (waits), R3 idle.
+    ROBOTS = [("R1", 0.0, 2.5), ("R2", 3.0, 2.0), ("R3", -4.0, 2.0)]
+else:
+    ROBOTS = [("R1", -8.0, 11.0), ("R2", -7.0, 8.0), ("R3", -9.0, 8.0)]
 DOCK_XY = (-8.0, 15.0)      # obstacle box / keepout — inside real aisle x=-8, between real shelves
 CHARGER_XY = (0.0, 3.0)     # charging station in the open south area
 WHEEL_RADIUS = 0.08
