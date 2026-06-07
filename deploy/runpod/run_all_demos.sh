@@ -71,6 +71,8 @@ bringup(){
   done
 }
 enc(){ pkill -9 -f "action send_goal"; sleep 2; local n; n=$(ls "$FR"/frame_*.png 2>/dev/null | wc -l); echo "  $n frames -> $1"; [ "$n" -gt 0 ] && ffmpeg -y -framerate 20 -i "$FR/frame_%06d.png" -pix_fmt yuv420p "$1" >/dev/null 2>&1; }
+# savelog <src.log> <grep-pattern> <out.txt>: curated agent-decision log for the slides
+savelog(){ grep -aE "$2" "$1" 2>/dev/null | sed -E 's/^[0-9:]+ +//' > "$3"; echo "  decision log -> $3 ($(wc -l < "$3" 2>/dev/null) lines)"; }
 
 demo1(){
   say "DEMO 1 — keepout (agents flag a failing zone, fleet avoids it)"
@@ -103,6 +105,7 @@ demo1(){
   sleep 60                      # closed-loop followers; generous time for the (slow-sim) reroute
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
+  savelog "$L/bridge.log" "REAL abort|investigator|decision_validator|strategy_trigger|policy_manager|keepout|avoid_zone active" /workspace/demo1_log.txt
 }
 # charge_demo <scenario> <mp4> : bring up, then let the REAL charging bridge
 # decide the serve order and drive the robots. The bridge runs in the foreground
@@ -125,6 +128,8 @@ charge_demo(){
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc "$out"
+  # decision log next to the mp4: demo2_charging.mp4 -> demo2_log.txt, demo3_priority.mp4 -> demo3_log.txt
+  savelog "$L/charge_$scn.log" "serve order|fleet_state|decision_validator|strategy_trigger|guardrail|reserve_chargers|delay_low|policy_manager|charger granted|reached" "${out%_*.mp4}_log.txt"
 }
 demo2(){
   say "DEMO 2 — charging (agent reserves the one charger for the CRITICAL robot, delays the low one)"
