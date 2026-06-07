@@ -58,7 +58,7 @@ bringup(){
   # which robots get a full Nav2 stack. demo1 sets this to just "R1" (the hero whose
   # real failure drives avoid_zone); R2/R3 are follower-driven so we don't pay the
   # multi-stack DDS contention. charge demos leave the default (all three).
-  for r in ${NAV_ROBOTS:-R1 R2 R3}; do
+  for r in ${NAV_ROBOTS-R1 R2 R3}; do
     local ok=0
     for attempt in 1 2; do
       bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_robot_ns.launch.py namespace:=$r" > "$L/nav2_$r.log" 2>&1 &
@@ -113,12 +113,12 @@ charge_demo(){
   timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
   # view centered on the REAL charging area: station at (0,3), dock (0,5), robots
   # approach from the aisle (x=-8) and park along y=3. (Old cam aimed at x=10 = empty.)
-  # Charging layout: robots spawn SPREAD just south of the pad (--charge) so they don't
-  # bump and dock quickly; static TF offsets must match those spawns.
-  export SPAWN_R1="0 2.5" SPAWN_R2="3 2" SPAWN_R3="-4 2"
-  # Camera INSIDE the building (y=-2; charge_5/charge_3 at y=-7/-10 were OUTSIDE the
-  # south wall -> grey). Wide overview pitched down onto the charging band.
-  bringup "--record $out --charge --cam-eye=0,-2,7 --cam-target=0,4,0.4" || { echo "  bringup failed for $scn"; return 1; }
+  # Charging is driven by the bridge via direct cmd_vel (followers) — NO Nav2 (3 stacks
+  # froze a robot). NAV_ROBOTS="" skips the per-robot Nav2 bringup; SPAWN_R* match the
+  # scene --charge spawns (inline so they don't leak to other demos). Camera INSIDE the
+  # building (y=-2; y=-7/-10 were OUTSIDE the south wall -> grey), WIDE overview.
+  NAV_ROBOTS="" SPAWN_R1="0 2.5" SPAWN_R2="3 2" SPAWN_R3="-4 2" \
+    bringup "--record $out --charge --cam-eye=0,-2,11 --cam-target=0,4.5,0.3" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1

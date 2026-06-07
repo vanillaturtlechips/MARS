@@ -154,20 +154,20 @@ world.scene.add(VisualCuboid(
     position=np.array([_cx, _cy, 0.02]), scale=np.array([1.8, 1.8, 0.04]),
     color=np.array([0.05, 0.85, 0.25]),
 ))
-# ...plus an upright charging-dock backboard just north of the pad so it reads as a
-# "charging station", not a flat square. Visual only (no collider) — the robot docks
-# at (cx,cy) and faces it. A brighter cap strip on top sells the "charger" look.
+# ...plus a compact charging-dock unit just north of the pad (low industrial box +
+# a green indicator strip facing the robot) so it reads as a charger, not a big green
+# panel. Visual only — the robot docks at (cx,cy) and faces the unit.
 world.scene.add(VisualCuboid(
-    prim_path="/World/charge_post", name="charge_post",
-    position=np.array([_cx, _cy + 1.05, 0.65]), scale=np.array([1.8, 0.25, 1.3]),
-    color=np.array([0.10, 0.55, 0.28]),
+    prim_path="/World/charge_dock", name="charge_dock",
+    position=np.array([_cx, _cy + 0.95, 0.45]), scale=np.array([1.3, 0.45, 0.9]),
+    color=np.array([0.30, 0.32, 0.36]),
 ))
 world.scene.add(VisualCuboid(
-    prim_path="/World/charge_cap", name="charge_cap",
-    position=np.array([_cx, _cy + 1.05, 1.35]), scale=np.array([1.8, 0.28, 0.18]),
-    color=np.array([0.15, 0.95, 0.35]),
+    prim_path="/World/charge_led", name="charge_led",
+    position=np.array([_cx, _cy + 0.72, 0.62]), scale=np.array([0.9, 0.06, 0.28]),
+    color=np.array([0.10, 0.90, 0.35]),
 ))
-carb.log_warn(f"[multi] charging station: green pad + dock backboard at ({_cx},{_cy})")
+carb.log_warn(f"[multi] charging station: green pad + dock unit at ({_cx},{_cy})")
 
 # Small red keepout slab (1.6x1.6) over the receiving_dock polygon center (3,3).
 # Hidden until the agent declares avoid_zone (runner touches /tmp/keepout_zone_go

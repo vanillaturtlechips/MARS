@@ -115,52 +115,69 @@ def main() -> None:
     except Exception:
         log.exception("fleet LLM loop failed (non-fatal — serve order already decided)")
 
+    # Drive via direct cmd_vel closed on /<r>/odom — NO Nav2. Three Nav2 stacks
+    # deadlock this env's FastDDS discovery and randomly freeze a robot (e.g. R2);
+    # the charging area is open floor so straight-line driving is enough. Same control
+    # law as follow_waypoints.py. The serve ORDER above is still the real agent decision.
+    import math
     import rclpy
-    from rclpy.action import ActionClient
     from rclpy.node import Node
-    from nav2_msgs.action import NavigateToPose
-    from geometry_msgs.msg import PoseStamped
+    from nav_msgs.msg import Odometry
+    from geometry_msgs.msg import Twist
 
+    SPAWN = {"R1": (0.0, 2.5), "R2": (3.0, 2.0), "R3": (-4.0, 2.0)}   # = scene --charge spawns
     rclpy.init()
     node = Node("isaac_charging_bridge")
-    clients = {r: ActionClient(node, NavigateToPose, f"/{r}/navigate_to_pose")
-               for r in ("R1", "R2", "R3")}
+    st = {r: {"x": 0.0, "y": 0.0, "yaw": 0.0, "have": False} for r in ("R1", "R2", "R3")}
+    pubs = {r: node.create_publisher(Twist, f"/{r}/cmd_vel", 10) for r in st}
 
-    def goal_msg(x: float, y: float):
-        p = PoseStamped()
-        p.header.frame_id = "map"
-        p.pose.position.x = float(x)
-        p.pose.position.y = float(y)
-        p.pose.orientation.w = 1.0
-        g = NavigateToPose.Goal()
-        g.pose = p
-        return g
+    def _mk(r):
+        def cb(m):
+            p = m.pose.pose.position
+            q = m.pose.pose.orientation
+            st[r]["x"], st[r]["y"] = p.x, p.y
+            st[r]["yaw"] = math.atan2(2 * (q.w * q.z + q.x * q.y),
+                                      1 - 2 * (q.y * q.y + q.z * q.z))
+            st[r]["have"] = True
+        return cb
+    for r in st:
+        node.create_subscription(Odometry, f"/{r}/odom", _mk(r), 10)
 
-    def drive(robot: str, x: float, y: float, timeout: float = 70.0) -> bool:
-        cl = clients[robot]
-        if not cl.wait_for_server(timeout_sec=20.0):
-            log.warning("  %s: nav action server not available", robot)
-        log.info("  -> %s navigating to (%.1f, %.1f)", robot, x, y)
-        fut = cl.send_goal_async(goal_msg(x, y))
-        rclpy.spin_until_future_complete(node, fut, timeout_sec=20.0)
-        gh = fut.result()
-        if gh is None or not gh.accepted:
-            log.warning("  %s: goal not accepted", robot)
-            return False
-        rf = gh.get_result_async()
-        rclpy.spin_until_future_complete(node, rf, timeout_sec=timeout)
-        log.info("  %s reached / finished", robot)
-        return True
+    def drive(robot: str, X: float, Y: float, timeout: float = 60.0) -> bool:
+        sx, sy = SPAWN[robot]
+        gx, gy = X - sx, Y - sy          # world target -> odom frame (zeroed at spawn, map-aligned)
+        log.info("  -> %s driving to (%.1f, %.1f)", robot, X, Y)
+        t0 = time.monotonic()
+        pub = pubs[robot]
+        while rclpy.ok() and time.monotonic() - t0 < timeout:
+            rclpy.spin_once(node, timeout_sec=0.05)
+            s = st[robot]
+            if not s["have"]:
+                continue
+            dx, dy = gx - s["x"], gy - s["y"]
+            if math.hypot(dx, dy) < 0.3:
+                pub.publish(Twist())     # stop (diff drive latches last velocity)
+                log.info("  %s reached (%.1f, %.1f)", robot, X, Y)
+                return True
+            err = math.atan2(math.sin(math.atan2(dy, dx) - s["yaw"]),
+                             math.cos(math.atan2(dy, dx) - s["yaw"]))
+            tw = Twist()
+            tw.angular.z = max(-0.8, min(0.8, 1.5 * err))
+            tw.linear.x = 0.4 * max(0.0, math.cos(err))
+            pub.publish(tw)
+        pub.publish(Twist())
+        log.warning("  %s drive timed out", robot)
+        return False
 
     # serialize the single charger: each robot drives in, dwells (charging), then
     # parks away so the next robot in the real serve order can take it.
     for robot, role in order:
         log.info("charger granted to %s (%s)", robot, role)
-        drive(robot, *CHARGER_POSE, timeout=70.0)
+        drive(robot, *CHARGER_POSE)
         log.info("  %s charging at the bay (%.0fs)...", robot, a.dwell)
         time.sleep(a.dwell)
-        px, py = PARK_POSES.get(robot, (3.0, -8.0))
-        drive(robot, px, py, timeout=70.0)   # leave so the next robot can charge
+        px, py = PARK_POSES.get(robot, (4.0, 3.0))
+        drive(robot, px, py)             # leave so the next robot can charge
 
     log.info("charging arbitration demo done (scenario=%s)", a.scenario)
     node.destroy_node()
