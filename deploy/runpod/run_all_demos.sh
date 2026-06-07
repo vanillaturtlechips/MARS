@@ -21,7 +21,10 @@ WANT="${1:-all}"
 say(){ echo -e "\n########## $* ##########"; }
 grepwait(){ local f="$1" pat="$2" to="${3:-300}" i=0; while ! grep -q "$pat" "$f" 2>/dev/null; do sleep 2; i=$((i+2)); [ $i -ge "$to" ] && { echo "[TIMEOUT] $pat ($f)"; return 1; }; done; echo "[ok] $pat"; }
 goal(){ bash -c "source $RENV; ros2 action send_goal /$1/navigate_to_pose nav2_msgs/action/NavigateToPose \"{pose: {header: {frame_id: map}, pose: {position: {x: $2, y: $3}, orientation: {w: 1.0}}}}\"" >> "$L/goals.log" 2>&1 & }
-killall_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f static_transform_publisher; pkill -9 -f "action send_goal"; sleep 3; }
+killall_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f static_transform_publisher; pkill -9 -f "action send_goal"; pkill -9 -f "topic echo"; sleep 3; }
+# background odom logger: prove whether each robot PHYSICALLY moves (position in the
+# R*/odom frame, zeroed at spawn -> grows as the robot drives). Files: $L/odom_R*.log
+odomlog(){ for r in R1 R2 R3; do bash -c "source $RENV; exec stdbuf -oL ros2 topic echo /$r/odom --field pose.pose.position" > "$L/odom_$r.log" 2>&1 & done; }
 
 # bringup <isaac extra args> ; sets ISAAC_PID. returns 1 on failure.
 bringup(){
@@ -61,6 +64,7 @@ demo1(){
   grepwait "$L/bridge.log" "listening for aborts" 60 || true
   sleep 3
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
+  odomlog                          # diag: record each robot's odom position for the whole demo
   echo "  R1,R2,R3 head into the aisle together; R1 leads up aisle x=-8"
   goal R1 -8 22                 # R1 up aisle x=-8 (rams the box at -8,15)
   sleep 3; goal R2 -5 8         # R2,R3 edge in behind, staying in the open south
