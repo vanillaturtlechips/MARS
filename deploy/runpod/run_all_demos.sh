@@ -108,8 +108,9 @@ charge_demo(){
   local scn="$1" out="$2"
   killall_
   timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
-  # view centered on the charging station (x≈12) + the robots in the open band
-  bringup "--record $out --cam-eye 10,-12,9 --cam-target 10,4,0.6" || { echo "  bringup failed for $scn"; return 1; }
+  # view centered on the REAL charging area: station at (0,3), dock (0,5), robots
+  # approach from the aisle (x=-8) and park along y=3. (Old cam aimed at x=10 = empty.)
+  bringup "--record $out --cam-eye -2,-9,11 --cam-target -2,4,0.6" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
