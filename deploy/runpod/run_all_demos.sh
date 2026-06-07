@@ -34,9 +34,9 @@ bringup(){
   echo "  waiting for Isaac up (cold ~2-3min)..."; local i=0
   until [ -f /tmp/keepout_isaac_ready ]; do sleep 3; i=$((i+3)); kill -0 "$ISAAC_PID" 2>/dev/null || { echo "  Isaac died ($L/isaac.log)"; return 1; }; [ $i -ge 600 ] && { echo "  Isaac timeout"; return 1; }; done
   bash -c "source $RENV; \
-    ros2 run tf2_ros static_transform_publisher --x -8 --y 8 --z 0 --frame-id map --child-frame-id R1/odom & \
-    ros2 run tf2_ros static_transform_publisher --x -5 --y 8 --z 0 --frame-id map --child-frame-id R2/odom & \
-    ros2 run tf2_ros static_transform_publisher --x -11 --y 8 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
+    ros2 run tf2_ros static_transform_publisher --x -8 --y 12 --z 0 --frame-id map --child-frame-id R1/odom & \
+    ros2 run tf2_ros static_transform_publisher --x -8 --y 9.5 --z 0 --frame-id map --child-frame-id R2/odom & \
+    ros2 run tf2_ros static_transform_publisher --x -8 --y 7 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
   sleep 5
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
   grepwait "$L/nav2_global.log" "Managed nodes are active" 120 || return 1
@@ -66,16 +66,14 @@ demo1(){
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
   odomlog                          # diag: record each robot's odom position for the whole demo
   echo "  R1,R2,R3 head into the aisle together; R1 leads up aisle x=-8"
-  goal R1 -8 20                 # R1 up aisle x=-8 (rams the box at -8,15)
-  sleep 3; goal R2 -5 12        # R2,R3 edge into the aisle behind R1
-  sleep 1; goal R3 -11 12
+  goal R1 -8 18                 # R1 leads up aisle x=-8, rams the box at (-8,15)
+  sleep 2; goal R2 -8 13.5      # R2,R3 follow up the SAME aisle x=-8 in a column
+  sleep 1; goal R3 -8 11
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
   touch /tmp/keepout_zone_go    # agent flagged the aisle -> red slab appears
   echo "  R1 stuck at the box -> R2,R3 divert to the SIDE aisles (x=-3 right, x=-13 left)"
-  goal R2 -3 12;  sleep 9
-  goal R2 -3 18;  sleep 2
-  goal R3 -13 12; sleep 9
-  goal R3 -13 18; sleep 22
+  goal R2 -3 18;  sleep 16      # R2 reroutes (south around shelf x=-5.5) into aisle x=-3
+  goal R3 -13 18; sleep 32      # R3 reroutes (south around shelf x=-10.5) into aisle x=-13
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }

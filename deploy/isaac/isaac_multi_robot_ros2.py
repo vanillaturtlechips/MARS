@@ -81,10 +81,11 @@ RACK_USD     = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_Rac
 #   demo1: R1 goes up aisle x=-8, rams the box (-8,15) BETWEEN the REAL shelves
 #   (x=-10.5 & -5.5) and is stuck; agent flags it; R1 corrects its path (back
 #   south, up the next aisle x=-3); R2,R3 take that same corrected path.
-# y=8 is open floor just SOUTH of the shelf rows (shelves start y=8.5), so x=-5/-11
-# don't clip the shelves at x=-5.5/-10.5; and y=8 is inside the down-aisle camera's
-# floor view (cam eye -8,-2,7 sees floor from y≈6.75). Box only ~7m up aisle x=-8.
-ROBOTS = [("R1", -8.0, 8.0), ("R2", -5.0, 8.0), ("R3", -11.0, 8.0)]
+# All three in a COLUMN up the real aisle x=-8 (clear between shelves x=-10.5/-5.5),
+# so they head in together as a line and R1 (front) rams the box at (-8,15). Earlier
+# x=-5/-11 sat INSIDE the shelves -> no valid path -> only R1 moved. All y>=7 so they
+# stay in the down-aisle camera's floor view (sees floor from y~6.75).
+ROBOTS = [("R1", -8.0, 12.0), ("R2", -8.0, 9.5), ("R3", -8.0, 7.0)]
 DOCK_XY = (-8.0, 15.0)      # obstacle box / keepout — inside real aisle x=-8, between real shelves
 CHARGER_XY = (0.0, 3.0)     # charging station in the open south area
 WHEEL_RADIUS = 0.08
@@ -316,12 +317,20 @@ if args.record:
 open("/tmp/keepout_isaac_ready", "w").close()
 
 _step = 0
+# Render is the bottleneck (~4-6 rendered fps -> sim-time crawls at ~0.1x wall, so
+# robots never reach their goals in a sane window). Advance physics several steps
+# per rendered frame: the wheels keep their last commanded velocity between renders,
+# so the robots cover ~PHYS_PER_RENDER x more ground per render (sim-time keeps up
+# with wall-clock). OnPlaybackTick/ROS2 publish still fire on the rendered step.
+PHYS_PER_RENDER = 4
 # reveal the red keepout slab once the agent declares avoid_zone; the runner
 # touches this marker right after the bridge logs avoid_zone=True (demo1 only,
 # so the slab stays hidden in the charging demos).
 _keepout_pending = True
 try:
     while simulation_app.is_running():
+        for _ in range(PHYS_PER_RENDER - 1):
+            world.step(render=False)
         world.step(render=True)
         if _keepout_pending and os.path.exists("/tmp/keepout_zone_go"):
             UsdGeom.Imageable(stage.GetPrimAtPath("/World/keepout_zone")).MakeVisible()
