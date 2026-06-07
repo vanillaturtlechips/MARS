@@ -105,6 +105,10 @@ demo3(){
 
 command -v ffmpeg >/dev/null || apt-get install -y ffmpeg >/dev/null 2>&1 || true
 service postgresql start >/dev/null 2>&1 || true
+# raise UDP socket buffer ceiling so FastDDS can actually take the 16MB buffers
+# from fastdds_udp_only.xml (else the kernel clamps it and 3 Nav2 stacks drop
+# large-costmap fragments -> follow_path/costmap/bond timeouts; single stack OK).
+sysctl -w net.core.rmem_max=16777216 net.core.wmem_max=16777216 >/dev/null 2>&1 || true
 
 # each is independent: a failure in one does NOT stop the others
 case "$WANT" in
