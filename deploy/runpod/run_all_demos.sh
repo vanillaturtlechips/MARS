@@ -73,14 +73,15 @@ demo1(){
   sleep 1; goal R3 -9 11        # R3 follows up on the LEFT
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
   touch /tmp/keepout_zone_go    # agent flagged the aisle -> red slab appears
-  echo "  R1 stuck at the box -> R2,R3 divert to the SIDE aisles (x=-3 right, x=-13 left)"
-  # Explicit waypoints (Nav2's own reroute around the shelves is unreliable here, and
-  # a far single goal made R2/R3 wander): both retreat straight SOUTH to the open
-  # floor (y<8.5), then peel to OPPOSITE sides (R2 east, R3 west) so paths diverge and
-  # never cross, then go up the side aisles.
-  goal R2 -7 7;   goal R3 -9 7;   sleep 30
-  goal R2 -3 7;   goal R3 -13 7;  sleep 35
-  goal R2 -3 14;  goal R3 -13 14; sleep 45
+  sleep 4                       # let the red zone register before the fleet reacts
+  echo "  R1 stuck at the box -> R2,R3 BOTH reroute LEFT (the right aisle x=-3 is blocked too)"
+  # Explicit waypoints (Nav2's own reroute around the keepout is unreliable here).
+  # BOTH head to the LEFT aisle x=-13: retreat south to the open floor, west along it,
+  # then up. R2 trails R3 by ~1m on the westward lane to hold a gap (there is NO robot-
+  # robot avoidance) and stops below R3 in the aisle.
+  goal R3 -9 7;   goal R2 -7 7;   sleep 12
+  goal R3 -13 7;  goal R2 -12 7;  sleep 22
+  goal R3 -13 15; goal R2 -13 10; sleep 40
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }
