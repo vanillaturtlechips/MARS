@@ -29,6 +29,14 @@ odomlog(){ for r in R1 R2 R3; do bash -c "source $RENV; exec stdbuf -oL ros2 top
 # direct cmd_vel (closed loop on /<ns>/odom). Lets demo1 run only ONE Nav2 stack
 # (the hero R1) so the multi-stack FastDDS discovery contention can't kill robots.
 follow(){ local ns="$1"; shift; bash -c "source $RENV && cd $REPO && exec python3 -u deploy/isaac/follow_waypoints.py $ns $*" > "$L/follow_$ns.log" 2>&1 & }
+# block until R1 has PHYSICALLY driven up to the box (odom y in the R1/odom frame,
+# spawn -8,11 -> box at world y=15 is odom y~4; wait for >2.8 = world ~13.8). Gates the
+# whole reroute on the real collision so it can NEVER look preemptive. Needs odomlog running.
+wait_at_box(){ local i=0 y; echo "  waiting for R1 to reach the box (odom)..."; while :; do
+    y=$(grep '^y:' "$L/odom_R1.log" 2>/dev/null | tail -1 | awk '{print $2+0}')
+    awk "BEGIN{exit !(${y:-0} > 2.8)}" && { echo "  R1 reached the box (odom y=$y)"; return 0; }
+    sleep 2; i=$((i+2)); [ $i -ge 180 ] && { echo "  [warn] R1-at-box wait timed out"; return 0; }
+  done; }
 
 # bringup <isaac extra args> ; sets ISAAC_PID. returns 1 on failure.
 bringup(){
@@ -75,19 +83,21 @@ demo1(){
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
   odomlog                          # diag: record each robot's odom position for the whole demo
   echo "  R1 drives up aisle x=-8 to the box; R2,R3 HOLD at the aisle mouth (don't move yet)"
-  # ONLY R1 moves first. R2/R3 stay parked until the agent flags the zone, so the
-  # avoidance is unambiguously REACTIVE (after the crash), never preemptive.
+  # ONLY R1 moves first. Everything else is gated on R1 PHYSICALLY reaching the box,
+  # so the avoidance is unambiguously REACTIVE (after the crash), never preemptive.
   goal R1 -8 17                 # R1 alone drives up to the box at (-8,15) and rams it
-  grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
-  touch /tmp/keepout_zone_go    # R1 failed -> agent declared avoid_zone -> red slab appears
+  wait_at_box                   # <-- block until R1 has actually driven up and hit the box
+  grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 90 || echo "  [warn] avoid_zone not confirmed"
+  touch /tmp/keepout_zone_go    # R1 hit the box -> agent declared avoid_zone -> red slab appears
   sleep 5                       # hold on the crash + red zone (R2/R3 still parked) so it reads as the trigger
-  echo "  NOW R2,R3 react -> BOTH reroute LEFT (the right aisle x=-3 is blocked too)"
-  # Only AFTER the zone do the followers move. Both reroute to the LEFT aisle x=-13:
-  # south to open floor (y=7), west along it, then up; R2 trails R3 (stops lower) so
-  # they don't collide. Odom waypoints = world - spawn (R2 -7,8 ; R3 -9,8).
-  follow R3 0,-1 -4,-1 -4,7     # R3: south, west to x=-13, up the aisle  (world -9,7 -> -13,7 -> -13,15)
-  follow R2 0,-1 -5,-1 -6,2     # R2: south, west to x=-13, up behind R3  (world -7,7 -> -12,7 -> -13,10)
-  sleep 70                      # closed-loop followers; generous time for the (slow-sim) reroute
+  echo "  NOW R2,R3 react -> CONVOY left to aisle x=-13 (R3 leads, R2 follows behind)"
+  # CONVOY (not parallel) so they can't collide: R3 goes first all the way up the left
+  # aisle; ~14s later R2 takes the SAME lane and stops below R3. Odom wp = world - spawn
+  # (R3 spawn -9,8 ; R2 spawn -7,8). Lane: south to y=7, west to x=-13, then up.
+  follow R3 0,-1 -4,-1 -4,7     # R3: world (-9,7)->(-13,7)->(-13,15)
+  sleep 14                      # let R3 clear the lane before R2 enters it
+  follow R2 -2,-1 -6,-1 -6,3    # R2: world (-9,7)->(-13,7)->(-13,11)  (joins R3's lane, stops lower)
+  sleep 60                      # closed-loop followers; generous time for the (slow-sim) reroute
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }
