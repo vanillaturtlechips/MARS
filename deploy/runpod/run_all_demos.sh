@@ -110,9 +110,11 @@ charge_demo(){
   timeout 25 su - postgres -c "psql -d warehouse -c 'TRUNCATE incident_embeddings, failures, diagnoses, outcomes RESTART IDENTITY CASCADE;'" >/dev/null 2>&1 || true
   # view centered on the REAL charging area: station at (0,3), dock (0,5), robots
   # approach from the aisle (x=-8) and park along y=3. (Old cam aimed at x=10 = empty.)
-  # charge_5 from cam_sweep_charge (SW 3/4 on the pad). NOTE: =form is required — a
-  # value starting with '-' (negative x) is otherwise parsed by argparse as a flag.
-  bringup "--record $out --cam-eye=-6,-7,7 --cam-target=0,4,0.8" || { echo "  bringup failed for $scn"; return 1; }
+  # Elevated SW OVERVIEW (charge_3): frames the pad + approach aisle + parks so the
+  # view stays populated even when the pad is momentarily empty (charge_5 was a close,
+  # floor-heavy angle that only looked good in the sweep because robots sat on the pad
+  # -> empty pad = grey floor in the real run). NOTE: =form required for negative x.
+  bringup "--record $out --cam-eye=-3,-10,11 --cam-target=-3,4,0.6" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
