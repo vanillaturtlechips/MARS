@@ -46,10 +46,8 @@ world.scene.add_default_ground_plane()
 stage = omni.usd.get_context().get_stage()
 add_reference_to_stage(WAREHOUSE, "/World/Warehouse")
 
-# charger (packing table) + green charge pad
-add_reference_to_stage(CHARGER, "/World/charger")
-UsdGeom.Xformable(stage.GetPrimAtPath("/World/charger")).AddTranslateOp().Set(
-    Gf.Vec3d(CHARGER_XY[0], CHARGER_XY[1], 0.0))
+# charging station = green charge pad only (the packing-table stand-in read as a
+# work table, not a charger, so it's dropped).
 world.scene.add(VisualCuboid(prim_path="/World/charge_pad", name="charge_pad",
                              position=np.array([PAD[0], PAD[1], 0.02]),
                              scale=np.array([1.8, 1.8, 0.04]),

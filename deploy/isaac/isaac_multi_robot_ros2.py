@@ -133,18 +133,17 @@ carb.log_warn(f"[multi] obstacle: real SM_CardBoxA at {DOCK_XY} (collider 1.2x0.
 # No added shelves: the box sits in the REAL warehouse aisle x=-8, flanked by
 # full_warehouse's own shelves at x=-10.5 and -5.5 (Y 8.5..25).
 
-# Charging station: real NVIDIA packing table for context at (0,3) + a clearly
-# readable green CHARGING PAD at the dock (0,5) where robots actually pull in (there
-# is no dedicated charger asset; the bare table doesn't read as "charging", so the
-# glowing pad is what sells it — a robot sitting on the green pad = charging).
-_place("/World/charger", CHARGER_USD, *CHARGER_XY, 0.0)
+# Charging station = a clearly readable green CHARGING PAD at the dock (0,5) where
+# robots pull in. (No dedicated charger asset exists; the packing_table stand-in read
+# as a work table, not a charger, so it's dropped — a robot sitting on the glowing
+# green pad = charging is what sells it.)
 _cx, _cy = 0.0, 5.0          # = isaac_charging_bridge CHARGER_POSE (robots dock here)
 world.scene.add(VisualCuboid(
     prim_path="/World/charge_pad", name="charge_pad",
     position=np.array([_cx, _cy, 0.02]), scale=np.array([1.8, 1.8, 0.04]),
     color=np.array([0.05, 0.85, 0.25]),
 ))
-carb.log_warn(f"[multi] charging station: packing_table at {CHARGER_XY} + green charge pad at ({_cx},{_cy})")
+carb.log_warn(f"[multi] charging station: green charge pad at ({_cx},{_cy})")
 
 # Small red keepout slab (1.6x1.6) over the receiving_dock polygon center (3,3).
 # Hidden until the agent declares avoid_zone (runner touches /tmp/keepout_zone_go
