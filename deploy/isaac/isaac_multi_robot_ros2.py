@@ -44,6 +44,9 @@ ap.add_argument("--record", type=str, default="",
 ap.add_argument("--cam-eye", type=str, default="-8,-2,7", help="record camera position x,y,z")
 ap.add_argument("--cam-target", type=str, default="-8,12,0.5", help="record camera look-at x,y,z")
 ap.add_argument("--fps", type=int, default=20)
+ap.add_argument("--focal", type=float, default=24.0,
+                help="camera focal length (mm). LOWER = wider FOV. Use to see wider WITHOUT "
+                     "raising the camera (raising z above the ~8m ceiling just renders grey).")
 ap.add_argument("--charge", action="store_true",
                 help="charging-demo layout: spawn robots SPREAD just south of the charger "
                      "pad (0,5) instead of clustered in the aisle, so they don't bump each "
@@ -326,8 +329,8 @@ if args.record:
     eye = _xyz(args.cam_eye); tgt = _xyz(args.cam_target)
     _cam = Camera(prim_path="/World/RecordCam", resolution=(1280, 720))
     _cam.initialize()
-    _cam.set_focal_length(24.0)          # default aperture is ~2.1 (≈5° telephoto);
-    _cam.set_horizontal_aperture(20.955) # standard ~20.955 -> ~47° FOV, whole scene fits
+    _cam.set_focal_length(args.focal)    # default aperture is ~2.1 (≈5° telephoto);
+    _cam.set_horizontal_aperture(20.955) # standard ~20.955 -> ~47° FOV at focal 24; lower focal = wider
     set_camera_view(eye=eye, target=tgt, camera_prim_path="/World/RecordCam")  # correct aim
     for _ in range(20):
         world.step(render=True)
