@@ -34,9 +34,9 @@ bringup(){
   echo "  waiting for Isaac up (cold ~2-3min)..."; local i=0
   until [ -f /tmp/keepout_isaac_ready ]; do sleep 3; i=$((i+3)); kill -0 "$ISAAC_PID" 2>/dev/null || { echo "  Isaac died ($L/isaac.log)"; return 1; }; [ $i -ge 600 ] && { echo "  Isaac timeout"; return 1; }; done
   bash -c "source $RENV; \
-    ros2 run tf2_ros static_transform_publisher --x -8 --y 12 --z 0 --frame-id map --child-frame-id R1/odom & \
-    ros2 run tf2_ros static_transform_publisher --x -8 --y 9.5 --z 0 --frame-id map --child-frame-id R2/odom & \
-    ros2 run tf2_ros static_transform_publisher --x -8 --y 7 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
+    ros2 run tf2_ros static_transform_publisher --x -8 --y 11 --z 0 --frame-id map --child-frame-id R1/odom & \
+    ros2 run tf2_ros static_transform_publisher --x -7 --y 8 --z 0 --frame-id map --child-frame-id R2/odom & \
+    ros2 run tf2_ros static_transform_publisher --x -9 --y 8 --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
   sleep 5
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
   grepwait "$L/nav2_global.log" "Managed nodes are active" 120 || return 1
@@ -66,18 +66,21 @@ demo1(){
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
   odomlog                          # diag: record each robot's odom position for the whole demo
   echo "  R1,R2,R3 head into the aisle together; R1 leads up aisle x=-8"
-  # Column up aisle x=-8, spaced ~2.5m. Same speed -> the 2.5m gaps hold (there is
-  # NO inter-robot collision layer, so they must NOT converge on the same spot).
-  # Goals stagger by 2.5m so each stops in a QUEUE behind the blockage:
-  # R1 sticks at the box (~14.5), R2 stops ~12, R3 ~9.5.
-  goal R1 -8 18                 # R1 leads up to the box at (-8,15)
-  sleep 1; goal R2 -8 12        # R2 follows, stops 2.5m behind R1
-  sleep 1; goal R3 -8 9.5       # R3 follows, stops 2.5m behind R2
+  # R1 leads up the center; R2 (right) and R3 (left) follow a bit -> a loose line
+  # advancing toward the box.
+  goal R1 -8 17                 # R1 leads up to the box at (-8,15)
+  sleep 1; goal R2 -7 11        # R2 follows up on the RIGHT
+  sleep 1; goal R3 -9 11        # R3 follows up on the LEFT
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
   touch /tmp/keepout_zone_go    # agent flagged the aisle -> red slab appears
   echo "  R1 stuck at the box -> R2,R3 divert to the SIDE aisles (x=-3 right, x=-13 left)"
-  goal R2 -3 16;  sleep 35      # R2 reroutes (south around shelf x=-5.5) into aisle x=-3
-  goal R3 -13 16; sleep 55      # R3 reroutes (south around shelf x=-10.5) into aisle x=-13
+  # Explicit waypoints (Nav2's own reroute around the shelves is unreliable here, and
+  # a far single goal made R2/R3 wander): both retreat straight SOUTH to the open
+  # floor (y<8.5), then peel to OPPOSITE sides (R2 east, R3 west) so paths diverge and
+  # never cross, then go up the side aisles.
+  goal R2 -7 7;   goal R3 -9 7;   sleep 30
+  goal R2 -3 7;   goal R3 -13 7;  sleep 35
+  goal R2 -3 14;  goal R3 -13 14; sleep 45
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
 }

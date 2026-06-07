@@ -81,11 +81,12 @@ RACK_USD     = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_Rac
 #   demo1: R1 goes up aisle x=-8, rams the box (-8,15) BETWEEN the REAL shelves
 #   (x=-10.5 & -5.5) and is stuck; agent flags it; R1 corrects its path (back
 #   south, up the next aisle x=-3); R2,R3 take that same corrected path.
-# All three in a COLUMN up the real aisle x=-8 (clear between shelves x=-10.5/-5.5),
-# so they head in together as a line and R1 (front) rams the box at (-8,15). Earlier
-# x=-5/-11 sat INSIDE the shelves -> no valid path -> only R1 moved. All y>=7 so they
-# stay in the down-aisle camera's floor view (sees floor from y~6.75).
-ROBOTS = [("R1", -8.0, 12.0), ("R2", -8.0, 9.5), ("R3", -8.0, 7.0)]
+# R1 leads up the CENTER of aisle x=-8 to the box (-8,15). R2 sits slightly RIGHT
+# (x=-7) and R3 slightly LEFT (x=-9), both a bit south, so on divert they peel to
+# OPPOSITE side aisles (R2->x=-3 right, R3->x=-13 left) on diverging paths and never
+# cross each other or R1 (there is NO inter-robot collision layer). All x in the clear
+# aisle band [-9.8,-6.2]; y>=8 stays in the camera's floor view (floor from y~6.75).
+ROBOTS = [("R1", -8.0, 11.0), ("R2", -7.0, 8.0), ("R3", -9.0, 8.0)]
 DOCK_XY = (-8.0, 15.0)      # obstacle box / keepout — inside real aisle x=-8, between real shelves
 CHARGER_XY = (0.0, 3.0)     # charging station in the open south area
 WHEEL_RADIUS = 0.08
