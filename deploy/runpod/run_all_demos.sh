@@ -74,23 +74,19 @@ demo1(){
   sleep 3
   touch /tmp/keepout_record_go    # start camera capture now that Nav2 is up (no bringup contention)
   odomlog                          # diag: record each robot's odom position for the whole demo
-  echo "  R1,R2,R3 head into the aisle together; R1 leads up aisle x=-8"
-  # R1 (Nav2) leads up the center to the box; R2 (right) and R3 (left) follow up a
-  # bit via direct cmd_vel -> a loose line advancing together. Waypoints are in each
-  # robot's odom frame (= world - spawn): R2 spawn (-7,8), R3 spawn (-9,8); 0,3 = up 3m.
-  goal R1 -8 17                 # R1 leads up to the box at (-8,15)
-  sleep 1; follow R2 0,3        # R2 follows up on the RIGHT  (world -7,11)
-  follow R3 0,3                 # R3 follows up on the LEFT   (world -9,11)
+  echo "  R1 drives up aisle x=-8 to the box; R2,R3 HOLD at the aisle mouth (don't move yet)"
+  # ONLY R1 moves first. R2/R3 stay parked until the agent flags the zone, so the
+  # avoidance is unambiguously REACTIVE (after the crash), never preemptive.
+  goal R1 -8 17                 # R1 alone drives up to the box at (-8,15) and rams it
   grepwait "$L/bridge.log" "avoid_zone active for receiving_dock = True" 150 || echo "  [warn] avoid_zone not confirmed"
-  touch /tmp/keepout_zone_go    # agent flagged the aisle -> red slab appears
-  sleep 4                       # let the red zone register before the fleet reacts
-  echo "  R1 stuck at the box -> R2,R3 BOTH reroute LEFT (the right aisle x=-3 is blocked too)"
-  pkill -f follow_waypoints; sleep 1   # stop the follow-up leg (SIGTERM -> followers zero their twist)
-  # BOTH reroute to the LEFT aisle x=-13: south to open floor (y=7), west along it,
-  # then up. R2 trails R3 (stops lower) so they don't collide (no robot-robot avoidance).
-  # Odom waypoints = world - spawn.  R2 world (-7,7)->(-12,7)->(-13,10) ; R3 world (-9,7)->(-13,7)->(-13,15)
-  follow R3 0,-1 -4,-1 -4,7     # R3: south, west to x=-13, up the aisle
-  follow R2 0,-1 -5,-1 -6,2     # R2: south, west to x=-13, up behind R3
+  touch /tmp/keepout_zone_go    # R1 failed -> agent declared avoid_zone -> red slab appears
+  sleep 5                       # hold on the crash + red zone (R2/R3 still parked) so it reads as the trigger
+  echo "  NOW R2,R3 react -> BOTH reroute LEFT (the right aisle x=-3 is blocked too)"
+  # Only AFTER the zone do the followers move. Both reroute to the LEFT aisle x=-13:
+  # south to open floor (y=7), west along it, then up; R2 trails R3 (stops lower) so
+  # they don't collide. Odom waypoints = world - spawn (R2 -7,8 ; R3 -9,8).
+  follow R3 0,-1 -4,-1 -4,7     # R3: south, west to x=-13, up the aisle  (world -9,7 -> -13,7 -> -13,15)
+  follow R2 0,-1 -5,-1 -6,2     # R2: south, west to x=-13, up behind R3  (world -7,7 -> -12,7 -> -13,10)
   sleep 70                      # closed-loop followers; generous time for the (slow-sim) reroute
   kill -INT "$ISAAC_PID" 2>/dev/null; sleep 6
   enc /workspace/demo1_keepout.mp4
