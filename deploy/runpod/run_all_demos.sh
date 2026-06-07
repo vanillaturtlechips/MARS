@@ -119,7 +119,7 @@ charge_demo(){
   # building at z=7 — z=9-11 went ABOVE the ~8m ceiling -> grey; z=7 is the height that
   # worked. "Wider" = WIDE LENS (--focal 16), NOT raising z. y=-2 (y<-2 hits the wall).
   NAV_ROBOTS="" SPAWN_R1="0 2.5" SPAWN_R2="3 2" SPAWN_R3="-4 2" \
-    bringup "--record $out --charge --focal 16 --cam-eye=0,-2,7 --cam-target=0,4.5,0.3" || { echo "  bringup failed for $scn"; return 1; }
+    bringup "--record $out --charge --focal 16 --cam-eye=0,-2,7 --cam-target=0,4,0.3" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
