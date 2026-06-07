@@ -118,7 +118,7 @@ charge_demo(){
   export SPAWN_R1="0 2.5" SPAWN_R2="3 2" SPAWN_R3="-4 2"
   # Camera INSIDE the building (y=-2; charge_5/charge_3 at y=-7/-10 were OUTSIDE the
   # south wall -> grey). Wide overview pitched down onto the charging band.
-  bringup "--record $out --charge --cam-eye=-2,-2,9 --cam-target=-2,4,0.3" || { echo "  bringup failed for $scn"; return 1; }
+  bringup "--record $out --charge --cam-eye=0,-2,7 --cam-target=0,4,0.4" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
