@@ -34,7 +34,8 @@ class Follower(Node):
         self.have = False
         self.i = 0
         self.VLIN, self.VANG = 0.4, 0.8
-        self.POS_TOL, self.YAW_TOL = 0.3, 0.15
+        self.K_ANG = 1.5          # proportional heading gain
+        self.POS_TOL = 0.3
         self.create_timer(0.1, self._tick)
 
     def _odom(self, m):
@@ -60,11 +61,10 @@ class Follower(Node):
             return
         err = math.atan2(math.sin(math.atan2(dy, dx) - self.yaw),
                          math.cos(math.atan2(dy, dx) - self.yaw))
-        if abs(err) > self.YAW_TOL:
-            t.angular.z = self.VANG if err > 0 else -self.VANG   # turn in place to face it
-        else:
-            t.linear.x = self.VLIN
-            t.angular.z = 0.6 * err                              # mild steering
+        # smooth proportional control: steer toward the goal and drive forward only as
+        # much as we already face it (cos) -> gentle curves, no bang-bang zig-zag/dance.
+        t.angular.z = max(-self.VANG, min(self.VANG, self.K_ANG * err))
+        t.linear.x = self.VLIN * max(0.0, math.cos(err))
         self.pub.publish(t)
 
 
