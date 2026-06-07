@@ -114,7 +114,7 @@ charge_demo(){
   # at y=-7/-10 = SOUTH of the building wall (outside) -> grey wall. Put it back inside
   # (y=-2, like demo1) and pitch down onto the charging band (charger/pad y=5, parks
   # y=3, robots arriving from aisle x=-8). NOTE: =form required for negative x.
-  bringup "--record $out --cam-eye=-2,-2,7 --cam-target=-2,5,0.3" || { echo "  bringup failed for $scn"; return 1; }
+  bringup "--record $out --cam-eye=-2,-2,10 --cam-target=-2,6,0.4" || { echo "  bringup failed for $scn"; return 1; }
   touch /tmp/keepout_record_go
   echo "  running real charging arbitration bridge (scenario=$scn)"
   bash -c "source $RENV && cd $REPO/agents/mars && exec stdbuf -oL -eL python3 -u -m tools.isaac_charging_bridge --scenario $scn" > "$L/charge_$scn.log" 2>&1
