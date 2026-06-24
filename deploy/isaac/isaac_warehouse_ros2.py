@@ -198,12 +198,23 @@ try:
         orientation=np.array([1.0, 0.0, 0.0, 0.0]),
         config_file_name="RPLIDAR_S2E",   # 2D, 360°, 30 m
     )
+    # LidarRtx makes an Xform wrapper at LIDAR_PATH; the actual OmniLidar sensor
+    # prim is a CHILD (e.g. /World/iw_hub/lidar/RPLidar_S2E). The render product
+    # must attach to that OmniLidar prim, not the wrapper — attaching to the
+    # Xform gave "Render product not attached to RTX Lidar". Find it by type so
+    # we don't hardcode the config-dependent child name.
+    _stage = omni.usd.get_context().get_stage()
+    SENSOR_PATH = LIDAR_PATH
+    for _p in _stage.Traverse():
+        _sp = str(_p.GetPath())
+        if _sp.startswith(LIDAR_PATH) and _p.GetTypeName() == "OmniLidar":
+            SENSOR_PATH = _sp
+            break
+    carb.log_warn(f"[1d] OmniLidar sensor prim: {SENSOR_PATH}")
     # RTX lidar publishes through the render pipeline. Create the render product
-    # DIRECTLY on the lidar prim with replicator (deterministic) instead of the
-    # in-graph IsaacCreateRenderProduct node, whose cameraPrim relationship
-    # wasn't binding -> "Render product not attached to RTX Lidar". Then feed the
-    # render product path to ROS2RtxLidarHelper as a plain string value.
-    _hydra = rep.create.render_product(LIDAR_PATH, [1, 1])
+    # directly on the sensor prim with replicator (deterministic), then feed its
+    # path to ROS2RtxLidarHelper as a plain string value.
+    _hydra = rep.create.render_product(SENSOR_PATH, [1, 1])
     RP_PATH = _hydra.path if hasattr(_hydra, "path") else str(_hydra)
     carb.log_warn(f"[1d] lidar render product: {RP_PATH}")
     og.Controller.edit(
