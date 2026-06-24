@@ -6,11 +6,16 @@ telemetry and discover the robot's joint names before adding cmd_vel.
 Run (RunPod, after `source deploy/isaac/env_isaac.sh`, stale sims killed):
     python deploy/isaac/isaac_warehouse_ros2.py            # ground plane only (fast)
     python deploy/isaac/isaac_warehouse_ros2.py --warehouse  # + full_warehouse.usd (S3 download)
+    python deploy/isaac/isaac_warehouse_ros2.py --warehouse --slam  # SLAM scan run
+
+--slam: odom is published as odom->base_link (relative) instead of ground-truth
+map->base_link, so slam_toolbox owns map->odom. The RTX lidar /scan is published
+in both modes. Pair with: ros2 launch iw_hub_slam slam.launch.py
 
 Verify (other shell, `source deploy/isaac/env_ros2.sh`):
-    ros2 topic list                       # /clock /odom /tf
-    ros2 topic echo /odom --once          # pose ~ (0,0)
-    ros2 run tf2_ros tf2_echo map base_link
+    ros2 topic list                       # /clock /odom /tf /scan
+    ros2 topic echo /scan --once          # LaserScan ranges
+    ros2 run tf2_ros tf2_echo odom base_link
 """
 from isaacsim import SimulationApp
 
@@ -25,7 +30,13 @@ ap.add_argument("--warehouse", action="store_true",
 ap.add_argument("--obstacle", action="store_true",
                 help="spawn a blocking box in receiving_dock (x~4) so a goal "
                      "there aborts — used to trigger a real failure")
+ap.add_argument("--slam", action="store_true",
+                help="publish odometry as odom->base_link (NOT ground-truth "
+                     "map->base_link) so slam_toolbox can own map->odom. Also "
+                     "needed for the lidar /scan to feed SLAM.")
 args, _ = ap.parse_known_args()
+
+import numpy as np  # noqa: E402  (lidar position, obstacle scale)
 
 from isaacsim.core.utils.extensions import enable_extension  # noqa: E402
 enable_extension("isaacsim.ros2.bridge")
@@ -43,6 +54,11 @@ WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_wareho
 
 ROBOT_PRIM = "/World/iw_hub"
 
+# SLAM mode: slam_toolbox owns map->odom, so Isaac must publish odom->base_link
+# (relative odometry). Default (no --slam) keeps the ground-truth map->base_link
+# shortcut used by the known-map / AMCL demos.
+ODOM_PARENT = "odom" if args.slam else "map"
+
 world = World(stage_units_in_meters=1.0)
 world.scene.add_default_ground_plane()
 
@@ -56,7 +72,6 @@ add_reference_to_stage(IW_HUB_USD, ROBOT_PRIM)
 # Blocking box in receiving_dock (x~4) — robot can't reach a goal there, Nav2
 # aborts (progress checker) -> a real failure for the supervisor to react to.
 if args.obstacle:
-    import numpy as np
     from isaacsim.core.api.objects import FixedCuboid
     world.scene.add(FixedCuboid(
         prim_path="/World/dock_block", name="dock_block",
@@ -81,9 +96,9 @@ og.Controller.edit(
             ("PublishRawTF", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
         ],
         og.Controller.Keys.SET_VALUES: [
-            ("PublishOdom.inputs:odomFrameId", "map"),
+            ("PublishOdom.inputs:odomFrameId", ODOM_PARENT),
             ("PublishOdom.inputs:chassisFrameId", "base_link"),
-            ("PublishRawTF.inputs:parentFrameId", "map"),
+            ("PublishRawTF.inputs:parentFrameId", ODOM_PARENT),
             ("PublishRawTF.inputs:childFrameId", "base_link"),
         ],
         og.Controller.Keys.CONNECT: [
@@ -167,6 +182,50 @@ try:
 except Exception as exc:  # noqa: BLE001
     carb.log_error(f"[1c] drive graph FAILED (odom/tf still OK): {exc}")
 
+# ------------------------------------------------------------------
+# RTX Lidar -> /scan (sensor_msgs/LaserScan).  frame_id=lidar_link; the
+# slam.launch.py static_transform_publisher provides base_link->lidar_link.
+# URDF lidar_joint origin: x=+0.35, y=0, z=+0.25 (chassis front, top).
+# ------------------------------------------------------------------
+try:
+    from isaacsim.sensors.rtx import LidarRtx
+    LIDAR_PATH = f"{ROBOT_PRIM}/lidar"
+    LidarRtx(
+        prim_path=LIDAR_PATH,
+        name="iw_hub_lidar",
+        position=np.array([0.35, 0.0, 0.25]),
+        orientation=np.array([1.0, 0.0, 0.0, 0.0]),
+        config_file_name="RPLIDAR_S2E",   # 2D, 360°, 30 m
+    )
+    og.Controller.edit(
+        {"graph_path": "/LidarGraph", "evaluator_name": "execution"},
+        {
+            og.Controller.Keys.CREATE_NODES: [
+                ("OnTick",      "omni.graph.action.OnPlaybackTick"),
+                ("Context",     "isaacsim.ros2.bridge.ROS2Context"),
+                ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                ("PublishScan", "isaacsim.ros2.bridge.ROS2PublishLaserScan"),
+            ],
+            og.Controller.Keys.SET_VALUES: [
+                ("PublishScan.inputs:topicName", "scan"),
+                ("PublishScan.inputs:frameId",   "lidar_link"),
+            ],
+            og.Controller.Keys.CONNECT: [
+                ("OnTick.outputs:tick",                "PublishScan.inputs:execIn"),
+                ("Context.outputs:context",            "PublishScan.inputs:context"),
+                ("ReadSimTime.outputs:simulationTime", "PublishScan.inputs:timeStamp"),
+            ],
+        },
+    )
+    set_target_prims(
+        primPath="/LidarGraph/PublishScan",
+        inputName="inputs:lidarPrim",
+        targetPrimPaths=[LIDAR_PATH],
+    )
+    carb.log_warn("[1d] lidar graph ready: /scan (frame=lidar_link)")
+except Exception as exc:  # noqa: BLE001
+    carb.log_error(f"[1d] lidar graph FAILED (odom/tf still OK): {exc}")
+
 world.reset()
 
 # Discover joints (for the upcoming cmd_vel / differential-drive step).
@@ -181,7 +240,9 @@ carb.log_warn("[1b] ===================================")
 import omni.timeline  # noqa: E402
 timeline = omni.timeline.get_timeline_interface()
 timeline.play()
-carb.log_warn("[1b] timeline playing; publishing /clock /odom /tf. Ctrl+C to stop.")
+carb.log_warn(
+    f"[1b] timeline playing; publishing /clock /odom /tf /scan "
+    f"(odom parent={ODOM_PARENT}). Ctrl+C to stop.")
 
 try:
     while simulation_app.is_running():

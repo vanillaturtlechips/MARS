@@ -9,7 +9,7 @@ slam_toolbox:
 
     # TF 프레임 — URDF와 일치
     odom_frame:  odom
-    base_frame:  base_footprint
+    base_frame:  base_link    # Isaac iw_hub은 base_footprint 없이 base_link 퍼블리시
     map_frame:   map
     scan_topic:  /scan       # Isaac Sim에선 /{name}/scan 으로 remap
 
