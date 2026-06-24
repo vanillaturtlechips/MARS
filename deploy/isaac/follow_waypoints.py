@@ -24,12 +24,19 @@ from geometry_msgs.msg import Twist
 NS = sys.argv[1]
 WPS = [tuple(float(v) for v in a.split(",")) for a in sys.argv[2:]]
 
+# Single-robot warehouse run uses un-namespaced /cmd_vel and /odom. Pass "-"
+# (or "" / "/") as the namespace for that case.
+_BARE = NS in ("", "-", "/")
+_CMD = "/cmd_vel" if _BARE else f"/{NS}/cmd_vel"
+_ODOM = "/odom" if _BARE else f"/{NS}/odom"
+_NODE = "follower" if _BARE else f"{NS}_follower"
+
 
 class Follower(Node):
     def __init__(self):
-        super().__init__(f"{NS}_follower")
-        self.pub = self.create_publisher(Twist, f"/{NS}/cmd_vel", 10)
-        self.create_subscription(Odometry, f"/{NS}/odom", self._odom, 10)
+        super().__init__(_NODE)
+        self.pub = self.create_publisher(Twist, _CMD, 10)
+        self.create_subscription(Odometry, _ODOM, self._odom, 10)
         self.x = self.y = self.yaw = 0.0
         self.have = False
         self.i = 0
