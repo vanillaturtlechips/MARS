@@ -19,10 +19,10 @@ unset AMENT_PREFIX_PATH ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION \
 export PYTHONPATH=$(echo "$PYTHONPATH" | tr ':' '\n' | grep -v '/opt/ros/' | paste -sd:)
 export LD_LIBRARY_PATH=$(echo "$LD_LIBRARY_PATH" | tr ':' '\n' | grep -v '/opt/ros/' | paste -sd:)
 
-_EXT=/workspace/isaac_venv311/lib/python3.11/site-packages/isaacsim/exts/isaacsim.ros2.bridge
-export ROS_DISTRO=humble
+_EXT=/workspace/isaac_venv311/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.bridge
+export ROS_DISTRO=jazzy
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export LD_LIBRARY_PATH=$_EXT/humble/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$_EXT/jazzy/lib:$LD_LIBRARY_PATH
 export FASTRTPS_DEFAULT_PROFILES_FILE=/workspace/MARS/deploy/isaac/fastdds_udp_only.xml
 
 echo "[env_isaac] py=$(python --version 2>&1) RMW=$RMW_IMPLEMENTATION"

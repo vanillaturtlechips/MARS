@@ -14,7 +14,7 @@ fi
 export LD_LIBRARY_PATH="$(echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | grep -v isaac_venv311 | paste -sd:)"
 export PYTHONPATH="$(echo "${PYTHONPATH:-}" | tr ':' '\n' | grep -v isaac_venv311 | paste -sd:)"
 
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export FASTRTPS_DEFAULT_PROFILES_FILE=/workspace/MARS/deploy/isaac/fastdds_udp_only.xml
 

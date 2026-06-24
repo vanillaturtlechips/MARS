@@ -72,7 +72,7 @@ try:
 except ImportError:
     from omni.isaac.core_nodes.scripts.utils import set_target_prims
 
-_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
+_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 IW_HUB_USD   = f"{_ISAAC_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub.usd"
 WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
 # real NVIDIA props (no standalone shelf asset exists — the shelves come from
@@ -197,6 +197,55 @@ def spawn_robot(name: str, x: float, y: float) -> str:
     return prim_path
 
 
+def build_lidar_graph(name: str, prim_path: str) -> None:
+    """RTX Lidar → /scan (sensor_msgs/LaserScan) 퍼블리시 OmniGraph.
+
+    라이다 prim은 로봇 루트 하위에 생성. URDF lidar_joint 위치와 맞춤:
+      x=+0.35, y=0, z=+0.25 (base_link 기준 = 섀시 전면 상단).
+    """
+    from isaacsim.sensors.rtx import LidarRtx
+    from pxr import UsdGeom, Gf
+
+    lidar_path = f"{prim_path}/lidar"
+    lidar = LidarRtx(
+        prim_path=lidar_path,
+        name=f"{name}_lidar",
+        position=np.array([0.35, 0.0, 0.25]),  # URDF lidar_joint origin과 일치
+        orientation=np.array([1.0, 0.0, 0.0, 0.0]),
+        config_file_name="RPLIDAR_S2E",  # 2D 라이다 프리셋 (360°, 30m)
+    )
+
+    ns = f"/{name}"
+    g = f"/{name}_LidarGraph"
+    og.Controller.edit(
+        {"graph_path": g, "evaluator_name": "execution"},
+        {
+            og.Controller.Keys.CREATE_NODES: [
+                ("OnTick",       "omni.graph.action.OnPlaybackTick"),
+                ("Context",      "isaacsim.ros2.bridge.ROS2Context"),
+                ("ReadSimTime",  "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                ("PublishScan",  "isaacsim.ros2.bridge.ROS2PublishLaserScan"),
+            ],
+            og.Controller.Keys.SET_VALUES: [
+                ("PublishScan.inputs:nodeNamespace", ns),
+                ("PublishScan.inputs:topicName",     "scan"),
+                ("PublishScan.inputs:frameId",       f"{name}/lidar_link"),
+            ],
+            og.Controller.Keys.CONNECT: [
+                ("OnTick.outputs:tick",                  "PublishScan.inputs:execIn"),
+                ("Context.outputs:context",              "PublishScan.inputs:context"),
+                ("ReadSimTime.outputs:simulationTime",   "PublishScan.inputs:timeStamp"),
+            ],
+        },
+    )
+    set_target_prims(
+        primPath=f"{g}/PublishScan",
+        inputName="inputs:lidarPrim",
+        targetPrimPaths=[lidar_path],
+    )
+    carb.log_warn(f"[multi] lidar graph ready for {name} ({ns}/scan)")
+
+
 def build_robot_graph(name: str, prim_path: str) -> None:
     ns = f"/{name}"
     g = f"/{name}_Graph"
@@ -285,6 +334,7 @@ og.Controller.edit(
 for _name, _x, _y in ROBOTS:
     _prim = spawn_robot(_name, _x, _y)
     build_robot_graph(_name, _prim)
+    build_lidar_graph(_name, _prim)
 
 world.reset()
 

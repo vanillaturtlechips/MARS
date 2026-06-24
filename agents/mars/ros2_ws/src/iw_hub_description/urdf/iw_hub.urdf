@@ -1,0 +1,222 @@
+<?xml version="1.0"?>
+<robot name="iw_hub">
+
+  <!--
+    iw_hub URDF — Idealworks iW-Hub AMR
+    USD 실측값 기반 (deploy/isaac/isaac_multi_robot_ros2.py 와 동일한 수치)
+
+    좌표계 (REP-103):
+      X = 전진 방향
+      Y = 좌측
+      Z = 위
+
+    링크 구조:
+      base_footprint  (지면 투영, z=0)
+        └─ base_link  (휠 축 중심, z=+0.08m)
+              ├─ left_wheel_link   (y=+0.28963m)
+              ├─ right_wheel_link  (y=-0.28963m)
+              ├─ left_caster_link  (x=-0.677m, y=+0.093m)
+              └─ right_caster_link (x=-0.677m, y=-0.093m)
+  -->
+
+  <!-- ── 지면 투영 프레임 ─────────────────────────────────── -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <!-- 휠 반지름만큼 올림: base_link = 휠 축 높이 -->
+    <origin xyz="0 0 0.08" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ── 섀시 ─────────────────────────────────────────────── -->
+  <link name="base_link">
+    <visual>
+      <!-- 섀시 박스 중심을 약간 후방으로 (캐스터가 x=-0.677 있음) -->
+      <origin xyz="-0.15 0 0.12" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.9 0.58 0.24"/>
+      </geometry>
+      <material name="dark_grey">
+        <color rgba="0.25 0.25 0.25 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.15 0 0.12" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.9 0.58 0.24"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <!-- iw_hub 실측 중량 ~80 kg -->
+      <mass value="80.0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <!-- 박스 관성: I = (1/12)*m*(a²+b²) -->
+      <inertia ixx="2.8" ixy="0" ixz="0"
+               iyy="7.1" iyz="0"
+               izz="9.1"/>
+    </inertial>
+  </link>
+
+  <!-- ── 왼쪽 구동 휠 ─────────────────────────────────────── -->
+  <link name="left_wheel_link">
+    <visual>
+      <!-- URDF cylinder 기본 축 = Z → 90° 회전으로 Y축 정렬 -->
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.08" length="0.05"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.08" length="0.05"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <!-- 솔리드 실린더: Ixx=Izz=(1/12)m(3r²+l²), Iyy=(1/2)mr² -->
+      <mass value="2.0"/>
+      <inertia ixx="0.0036" ixy="0" ixz="0"
+               iyy="0.0064" iyz="0"
+               izz="0.0036"/>
+    </inertial>
+  </link>
+
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child  link="left_wheel_link"/>
+    <!-- USD localPos0: y=+0.28963 -->
+    <origin xyz="0 0.28963 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ── 오른쪽 구동 휠 ───────────────────────────────────── -->
+  <link name="right_wheel_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.08" length="0.05"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.08" length="0.05"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="2.0"/>
+      <inertia ixx="0.0036" ixy="0" ixz="0"
+               iyy="0.0064" iyz="0"
+               izz="0.0036"/>
+    </inertial>
+  </link>
+
+  <joint name="right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child  link="right_wheel_link"/>
+    <!-- USD localPos0: y=-0.28963 -->
+    <origin xyz="0 -0.28963 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ── 왼쪽 캐스터 ──────────────────────────────────────── -->
+  <link name="left_caster_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <!-- 반지름: 휠 중심(z=0) - 캐스터 z오프셋(0.010) = 0.07m 로 지면 접촉 -->
+        <sphere radius="0.07"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.07"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <!-- 솔리드 구: I = (2/5)mr² -->
+      <mass value="0.5"/>
+      <inertia ixx="0.00098" ixy="0" ixz="0"
+               iyy="0.00098" iyz="0"
+               izz="0.00098"/>
+    </inertial>
+  </link>
+
+  <joint name="left_caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="left_caster_link"/>
+    <!-- USD: x=-0.677, y=+0.093, z=-0.010 -->
+    <origin xyz="-0.677 0.093 -0.010" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ── 오른쪽 캐스터 ─────────────────────────────────────── -->
+  <link name="right_caster_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.07"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.07"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.5"/>
+      <inertia ixx="0.00098" ixy="0" ixz="0"
+               iyy="0.00098" iyz="0"
+               izz="0.00098"/>
+    </inertial>
+  </link>
+
+  <joint name="right_caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="right_caster_link"/>
+    <!-- USD: x=-0.677, y=-0.093, z=-0.010 -->
+    <origin xyz="-0.677 -0.093 -0.010" rpy="0 0 0"/>
+  </joint>
+
+
+  <!-- ── 전면 라이다 ──────────────────────────────────────────── -->
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.07"/>
+      </geometry>
+      <material name="lidar_black">
+        <color rgba="0.05 0.05 0.05 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.07"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.3"/>
+      <inertia ixx="0.0003" ixy="0" ixz="0"
+               iyy="0.0003" iyz="0"
+               izz="0.0003"/>
+    </inertial>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="lidar_link"/>
+    <!-- 섀시 전면 중앙 상단 -->
+    <origin xyz="0.35 0.0 0.25" rpy="0 0 0"/>
+  </joint>
+
+</robot>
