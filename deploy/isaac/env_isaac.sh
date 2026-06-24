@@ -15,7 +15,10 @@ unset AMENT_PREFIX_PATH ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION \
 export PYTHONPATH=$(echo "$PYTHONPATH" | tr ':' '\n' | grep -v '/opt/ros/' | paste -sd:)
 export LD_LIBRARY_PATH=$(echo "$LD_LIBRARY_PATH" | tr ':' '\n' | grep -v '/opt/ros/' | paste -sd:)
 
-_EXT=/workspace/isaac_venv312/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.bridge
+# Isaac Sim 6.0: the bundled ROS2 RMW/runtime libs live in isaacsim.ros2.core
+# (in 5.1 they were under isaacsim.ros2.bridge). The bridge ext fails to start
+# with "ROS2 Bridge startup failed" if this path isn't on LD_LIBRARY_PATH.
+_EXT=/workspace/isaac_venv312/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.core
 export ROS_DISTRO=jazzy
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export LD_LIBRARY_PATH=$_EXT/jazzy/lib:$LD_LIBRARY_PATH
