@@ -11,8 +11,8 @@ if [ -n "${VIRTUAL_ENV:-}" ]; then
   PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "$VIRTUAL_ENV" | paste -sd:)"; export PATH
   unset VIRTUAL_ENV
 fi
-export LD_LIBRARY_PATH="$(echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | grep -v isaac_venv311 | paste -sd:)"
-export PYTHONPATH="$(echo "${PYTHONPATH:-}" | tr ':' '\n' | grep -v isaac_venv311 | paste -sd:)"
+export LD_LIBRARY_PATH="$(echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | grep -v isaac_venv312 | paste -sd:)"
+export PYTHONPATH="$(echo "${PYTHONPATH:-}" | tr ':' '\n' | grep -v isaac_venv312 | paste -sd:)"
 
 source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp

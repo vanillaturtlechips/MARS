@@ -55,7 +55,9 @@
       "Bash(echo \"# ROS2 Jazzy\")",
       "Bash(echo \"alias ros2init='source /opt/ros/jazzy/setup.bash'\")",
       "Bash(echo \"alias wsource='source ~/MARS/agents/mars/ros2_ws/install/setup.bash'\")",
-      "Bash(apt-cache search *)"
+      "Bash(apt-cache search *)",
+      "Bash(pip3 install *)",
+      "Bash(wget -q -O /root/warehouse/full_warehouse.usd \"https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Environments/Simple_Warehouse/full_warehouse.usd\")"
     ]
   },
   "enableAllProjectMcpServers": true,

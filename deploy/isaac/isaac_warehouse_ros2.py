@@ -37,7 +37,7 @@ from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.utils.stage import add_reference_to_stage  # noqa: E402
 from pxr import Usd, UsdPhysics  # noqa: E402
 
-_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
+_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 IW_HUB_USD   = f"{_ISAAC_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub.usd"
 WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
 

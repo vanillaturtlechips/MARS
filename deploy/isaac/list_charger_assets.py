@@ -6,7 +6,7 @@
 """
 import omni.client
 
-BASE = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/"
+BASE = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/"
 FOLDERS = [
     "Isaac/Robots/Idealworks",
     "Isaac/Robots/Idealworks/iwhub",

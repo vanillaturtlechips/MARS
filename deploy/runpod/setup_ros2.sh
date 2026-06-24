@@ -1,42 +1,23 @@
 #!/bin/bash
-# MARS Phase 4 — ROS2 Humble + Nav2 + colcon 설치 (Ubuntu 22.04 / Jammy)
+# MARS — ROS2 Jazzy + Nav2 + colcon 설치 (Ubuntu 24.04 / Noble)
 # 사용법: bash deploy/runpod/setup_ros2.sh
-#
-# 이 스크립트는 시스템 레벨(apt)에만 설치한다. RL용 isaac_venv 와 무관.
-# Isaac Sim ROS2 bridge 연동(난관)은 별도. 여기서는 "Nav2가 실제로 도는가"까지만.
 set -e
 
 echo "════════════════════════════════════════════"
-echo " MARS Phase 4 — ROS2 Humble 설치"
+echo " MARS — ROS2 Jazzy 설치"
 echo "════════════════════════════════════════════"
 
-# ── 0. OS 확인 (Humble = Jammy 전용) ───────────────────────────
+# ── 0. OS 확인 (Jazzy = Noble 전용) ────────────────────────────
 . /etc/os-release
-if [ "$VERSION_CODENAME" != "jammy" ]; then
-    echo "[중단] ROS2 Humble은 Ubuntu 22.04(jammy) 전용. 현재: $VERSION_CODENAME"
+if [ "$VERSION_CODENAME" != "noble" ]; then
+    echo "[중단] ROS2 Jazzy는 Ubuntu 24.04(noble) 전용. 현재: $VERSION_CODENAME"
     exit 1
 fi
-echo "▶ OS: $PRETTY_NAME  (jammy OK)"
-
-# 디스크 경고 — ros-humble-desktop 은 약 2.5GB (root fs)
+echo "▶ OS: $PRETTY_NAME  (noble OK)"
 echo "▶ root 디스크:"; df -h / | tail -1
 
-# ── 0b. python3 → 3.10 정렬 ────────────────────────────────────
-# ROS Humble은 python3.10 빌드. 베이스 이미지가 python3→3.11이면 rclpy/apt_pkg가 깨짐.
-# RL venv(isaac_venv, 3.11)는 자기 인터프리터를 쓰므로 영향 없음. 원복: --set ...python3.11
-echo "▶ python3 → 3.10 정렬 (RL venv는 3.11 독립 유지)"
-if [ -x /usr/bin/python3.10 ]; then
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 2>/dev/null || true
-    [ -x /usr/bin/python3.11 ] && \
-        update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2 2>/dev/null || true
-    update-alternatives --set python3 /usr/bin/python3.10 2>/dev/null || true
-    echo "  python3 = $(python3 --version 2>&1)"
-else
-    echo "  [경고] /usr/bin/python3.10 없음 — 수동 확인 필요"
-fi
-
 # ── 1. locale ──────────────────────────────────────────────────
-echo "[1/5] locale..."
+echo "[1/4] locale..."
 apt-get update -q
 apt-get install -y -q locales
 locale-gen en_US en_US.UTF-8
@@ -44,45 +25,29 @@ update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 export LANG=en_US.UTF-8
 
 # ── 2. ROS2 apt 저장소 ─────────────────────────────────────────
-echo "[2/5] ROS2 apt 저장소 등록..."
-apt-get install -y -q curl gnupg lsb-release ca-certificates
-# universe 활성화 — add-apt-repository 우회 (시스템 python3 변경으로 apt_pkg 깨진 환경 대응)
-if apt-cache policy 2>/dev/null | grep -qi universe; then
-    echo "  universe 이미 활성"
-else
-    MIRROR=$(grep -m1 -oP '^deb \K(https?://[^ ]+)' /etc/apt/sources.list 2>/dev/null \
-             || echo "http://archive.ubuntu.com/ubuntu")
-    printf 'deb %s jammy universe\ndeb %s jammy-updates universe\n' "$MIRROR" "$MIRROR" \
-        > /etc/apt/sources.list.d/universe.list
-    echo "  universe 추가: $MIRROR"
-fi
+echo "[2/4] ROS2 apt 저장소 등록..."
+apt-get install -y -q curl gnupg lsb-release ca-certificates software-properties-common
+add-apt-repository universe -y
 curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
     -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main" \
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main" \
     | tee /etc/apt/sources.list.d/ros2.list > /dev/null
 apt-get update -q
 
-# ── 3. ROS2 Humble + Nav2 + 빌드도구 ───────────────────────────
-# desktop = RViz 포함(데모 시각화에 필요). 디스크 부족 시 ros-humble-ros-base 로 교체.
-echo "[3/5] ros-humble-desktop + Nav2 + colcon (수 분 소요)..."
+# ── 3. ROS2 Jazzy + Nav2 + 빌드도구 ────────────────────────────
+echo "[3/4] ros-jazzy-desktop + Nav2 + colcon (수 분 소요)..."
 apt-get install -y \
-    ros-humble-desktop \
-    ros-humble-navigation2 \
-    ros-humble-nav2-bringup \
+    ros-jazzy-desktop \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup \
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-vision-msgs \
     ros-dev-tools \
     python3-colcon-common-extensions \
     python3-rosdep
 
-# Nav2 동작 스모크테스트용 TB3 sim (Isaac Sim과 무관하게 "Nav2가 도는가" 검증용)
-echo "[4/5] TurtleBot3 sim (Nav2 검증용)..."
-apt-get install -y \
-    ros-humble-turtlebot3 \
-    ros-humble-turtlebot3-gazebo \
-    ros-humble-nav2-minimal-tb3-sim || \
-    echo "  (TB3 패키지 일부 없음 — 검증 단계에서 다시 시도)"
-
-# ── 5. rosdep init ─────────────────────────────────────────────
-echo "[5/5] rosdep..."
+# ── 4. rosdep init ─────────────────────────────────────────────
+echo "[4/4] rosdep..."
 rosdep init 2>/dev/null || true
 rosdep update || true
 
@@ -91,11 +56,9 @@ echo ""
 echo "════════════════════════════════════════════"
 echo " 검증"
 echo "════════════════════════════════════════════"
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 echo "ROS_DISTRO = $ROS_DISTRO"
 echo "rclpy:   $(python3 -c 'import rclpy; print("OK")' 2>&1)"
-echo "colcon:  $(colcon version-check 2>/dev/null | head -1 || colcon --help >/dev/null 2>&1 && echo OK)"
 echo "nav2 패키지 수: $(ros2 pkg list 2>/dev/null | grep -c nav2)"
 echo ""
-echo "다음: source /opt/ros/humble/setup.bash 를 ~/.bashrc 에 추가하거나 매 셸에서 실행."
-echo "그다음 Step 2 — mars_msgs colcon 빌드."
+echo "다음: source /opt/ros/jazzy/setup.bash 를 ~/.bashrc 에 추가."

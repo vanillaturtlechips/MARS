@@ -35,7 +35,7 @@ from isaacsim.sensors.camera import Camera  # noqa: E402
 from isaacsim.core.utils.viewports import set_camera_view  # noqa: E402
 from pxr import UsdGeom, Gf  # noqa: E402
 
-_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
+_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 IW_HUB = f"{_CLOUD}/Isaac/Robots/Idealworks/iwhub/iw_hub.usd"
 WAREHOUSE = f"{_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
 

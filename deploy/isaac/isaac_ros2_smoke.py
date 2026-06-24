@@ -1,19 +1,17 @@
 """
-Step 1a — Isaac Sim 5.1 ↔ ROS2 bridge smoke test (headless).
+Step 1a — Isaac Sim 6.0 ↔ ROS2 bridge smoke test (headless).
 
 Goal: prove the isaacsim.ros2.bridge extension actually publishes to ROS2
 BEFORE we build the full warehouse + iw_hub drive graph. It loads a minimal
 scene and publishes /clock via an OmniGraph ROS2 clock node.
 
-Run (RunPod, isaac_venv311 = Python 3.11):
-    source /opt/ros/humble/setup.bash
-    export ROS_DISTRO=humble
-    export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-    source /workspace/isaac_venv311/bin/activate
+Run (RunPod, isaac_venv312 = Python 3.12):
+    source deploy/isaac/env_isaac.sh
     cd /workspace/MARS
     python deploy/isaac/isaac_ros2_smoke.py
 
-In a second shell (source ROS2 Humble):
+In a second shell:
+    source deploy/isaac/env_ros2.sh
     ros2 topic list                 # expect /clock, /rosout, /parameter_events
     ros2 topic echo /clock --once   # expect a rosgraph_msgs/Clock with rising time
 

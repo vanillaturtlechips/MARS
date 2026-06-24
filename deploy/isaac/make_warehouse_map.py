@@ -40,7 +40,7 @@ TAG_OCC, TAG_FREE, TAG_UNK = 1, 0, 2
 # Nav2 image row 0 = TOP = highest y; flip the buffer's y so north is up.
 FLIP_Y = True
 
-_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
+_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 WAREHOUSE_USD = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
 
 from isaacsim.core.utils.extensions import enable_extension  # noqa: E402

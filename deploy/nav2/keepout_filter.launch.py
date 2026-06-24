@@ -6,8 +6,8 @@ lifecycle manager to activate it.  The keepout MASK is published dynamically by
 the MARS supervisor (ROS2SimAdapter.publish_keepout_mask) on /keepout_filter_mask,
 so no static map_server for the mask is launched here.
 
-Run (on RunPod, after sourcing ROS2 Humble + Nav2):
-    source /opt/ros/humble/setup.bash
+Run (on RunPod, after sourcing ROS2 Jazzy + Nav2):
+    source deploy/isaac/env_ros2.sh
     ros2 launch deploy/nav2/keepout_filter.launch.py
 
 Then start the supervisor (mars.ros.ros2_node) and your Nav2 bringup whose

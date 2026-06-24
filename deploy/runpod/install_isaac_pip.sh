@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Isaac Sim 5.1 (py3.11) reliably on a flaky network.
+# Install Isaac Sim 6.0 (py3.12) reliably on a flaky network.
 # Single concurrent download + long timeout + retry loop. uv caches every
 # COMPLETED wheel in UV_CACHE_DIR, so each retry resumes (only re-fetches what
 # didn't finish) and progress is monotonic until it succeeds.
@@ -8,23 +8,21 @@
 #   tail -f /tmp/isaac_pip.log
 set -u
 
-VENV="${VENV:-/workspace/isaac_venv311}"
+VENV="${VENV:-/workspace/isaac_venv312}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-/workspace/.uv_cache}"
 export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-900}"
-export UV_CONCURRENT_DOWNLOADS="${UV_CONCURRENT_DOWNLOADS:-1}"   # one file at a time = no contention/restart
-# First isaacsim import bootstraps Kit, which prompts for the EULA on stdin;
-# non-interactive here -> "EOF when reading a line" crash. Accept via env vars.
+export UV_CONCURRENT_DOWNLOADS="${UV_CONCURRENT_DOWNLOADS:-1}"
 export OMNI_KIT_ACCEPT_EULA=YES
 export OMNI_KIT_ALLOW_ROOT=1
 
 command -v uv >/dev/null 2>&1 || pip install uv -q
-[ -d "$VENV" ] || uv venv --python 3.11 "$VENV"
+[ -d "$VENV" ] || uv venv --python 3.12 "$VENV"
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 
-PKGS="isaacsim==5.1.0 isaacsim-rl==5.1.0 isaacsim-replicator==5.1.0 \
-isaacsim-extscache-physics==5.1.0 isaacsim-extscache-kit==5.1.0 \
-isaacsim-extscache-kit-sdk==5.1.0 isaacsim-ros2==5.1.0"
+PKGS="isaacsim==6.0.0 isaacsim-rl==6.0.0 isaacsim-replicator==6.0.0 \
+isaacsim-extscache-physics==6.0.0 isaacsim-extscache-kit==6.0.0 \
+isaacsim-extscache-kit-sdk==6.0.0 isaacsim-ros2==6.0.0"
 
 for i in $(seq 1 50); do
     echo "===== attempt $i ($(date +%H:%M:%S)) ====="
@@ -32,7 +30,7 @@ for i in $(seq 1 50); do
     if uv pip install $PKGS --extra-index-url https://pypi.nvidia.com; then
         echo "===== INSTALL DONE ====="
         python -c "import isaacsim; print('isaacsim import OK')"
-        ls -d "$VENV"/lib/python3.11/site-packages/isaacsim/exts/isaacsim.ros2.bridge \
+        ls -d "$VENV"/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.bridge \
             && echo "ros2 bridge ext present"
         exit 0
     fi
