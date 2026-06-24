@@ -217,35 +217,24 @@ world.reset()
 # Lidar render product + ROS2 graph — MUST be after world.reset(); reset tears
 # down render products (the "hydratexture already released" warning), so a render
 # product created before reset renders nothing and /scan stays empty.
+_lidar_writer = None  # keep a strong ref so the writer isn't garbage-collected
 if SENSOR_PATH is not None:
     try:
         import omni.replicator.core as rep
         _hydra = rep.create.render_product(SENSOR_PATH, [1, 1])
         RP_PATH = _hydra.path if hasattr(_hydra, "path") else str(_hydra)
         carb.log_warn(f"[1d] lidar render product: {RP_PATH}")
-        og.Controller.edit(
-            {"graph_path": "/LidarGraph", "evaluator_name": "execution"},
-            {
-                og.Controller.Keys.CREATE_NODES: [
-                    ("OnTick",   "omni.graph.action.OnPlaybackTick"),
-                    ("Context",  "isaacsim.ros2.bridge.ROS2Context"),
-                    ("RtxLidar", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
-                ],
-                og.Controller.Keys.SET_VALUES: [
-                    ("RtxLidar.inputs:renderProductPath", RP_PATH),
-                    ("RtxLidar.inputs:topicName",         "scan"),
-                    ("RtxLidar.inputs:frameId",           "lidar_link"),
-                    ("RtxLidar.inputs:type",              "laser_scan"),
-                ],
-                og.Controller.Keys.CONNECT: [
-                    ("OnTick.outputs:tick",     "RtxLidar.inputs:execIn"),
-                    ("Context.outputs:context", "RtxLidar.inputs:context"),
-                ],
-            },
-        )
-        carb.log_warn("[1d] lidar graph ready: /scan (frame=lidar_link, RTX render product)")
+        # Use the replicator WRITER (NVIDIA standalone pattern), not the OmniGraph
+        # ROS2RtxLidarHelper node. The writer registers an annotator on the SDG
+        # pipeline, which forces the lidar render product to actually render each
+        # frame -> /scan publishes. The helper-node graph advertised /scan but
+        # rendered nothing under world.step(render=True), so it stayed empty.
+        _lidar_writer = rep.writers.get("RtxLidarROS2PublishLaserScan")
+        _lidar_writer.initialize(topicName="scan", frameId="lidar_link")
+        _lidar_writer.attach([_hydra])
+        carb.log_warn("[1d] lidar writer attached: /scan (frame=lidar_link)")
     except Exception as exc:  # noqa: BLE001
-        carb.log_error(f"[1d] lidar graph FAILED (odom/tf still OK): {exc}")
+        carb.log_error(f"[1d] lidar writer FAILED (odom/tf still OK): {exc}")
 
 # Discover joints (for the upcoming cmd_vel / differential-drive step).
 stage = omni.usd.get_context().get_stage()
