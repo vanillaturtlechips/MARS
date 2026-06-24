@@ -183,13 +183,13 @@ except Exception as exc:  # noqa: BLE001
     carb.log_error(f"[1c] drive graph FAILED (odom/tf still OK): {exc}")
 
 # ------------------------------------------------------------------
-# RTX Lidar -> /scan (sensor_msgs/LaserScan).  frame_id=lidar_link; the
-# slam.launch.py static_transform_publisher provides base_link->lidar_link.
+# RTX Lidar prim -> /scan (built AFTER world.reset() below; the render product
+# is torn down by reset, so creating it here would publish nothing).
 # URDF lidar_joint origin: x=+0.35, y=0, z=+0.25 (chassis front, top).
 # ------------------------------------------------------------------
+SENSOR_PATH = None
 try:
     from isaacsim.sensors.rtx import LidarRtx
-    import omni.replicator.core as rep
     LIDAR_PATH = f"{ROBOT_PRIM}/lidar"
     LidarRtx(
         prim_path=LIDAR_PATH,
@@ -199,9 +199,7 @@ try:
         config_file_name="RPLIDAR_S2E",   # 2D, 360°, 30 m
     )
     # LidarRtx makes an Xform wrapper at LIDAR_PATH; the actual OmniLidar sensor
-    # prim is a CHILD (e.g. /World/iw_hub/lidar/RPLidar_S2E). The render product
-    # must attach to that OmniLidar prim, not the wrapper — attaching to the
-    # Xform gave "Render product not attached to RTX Lidar". Find it by type so
+    # prim is a CHILD (e.g. /World/iw_hub/lidar/RPLidar_S2E). Find it by type so
     # we don't hardcode the config-dependent child name.
     _stage = omni.usd.get_context().get_stage()
     SENSOR_PATH = LIDAR_PATH
@@ -211,37 +209,43 @@ try:
             SENSOR_PATH = _sp
             break
     carb.log_warn(f"[1d] OmniLidar sensor prim: {SENSOR_PATH}")
-    # RTX lidar publishes through the render pipeline. Create the render product
-    # directly on the sensor prim with replicator (deterministic), then feed its
-    # path to ROS2RtxLidarHelper as a plain string value.
-    _hydra = rep.create.render_product(SENSOR_PATH, [1, 1])
-    RP_PATH = _hydra.path if hasattr(_hydra, "path") else str(_hydra)
-    carb.log_warn(f"[1d] lidar render product: {RP_PATH}")
-    og.Controller.edit(
-        {"graph_path": "/LidarGraph", "evaluator_name": "execution"},
-        {
-            og.Controller.Keys.CREATE_NODES: [
-                ("OnTick",   "omni.graph.action.OnPlaybackTick"),
-                ("Context",  "isaacsim.ros2.bridge.ROS2Context"),
-                ("RtxLidar", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
-            ],
-            og.Controller.Keys.SET_VALUES: [
-                ("RtxLidar.inputs:renderProductPath", RP_PATH),
-                ("RtxLidar.inputs:topicName",         "scan"),
-                ("RtxLidar.inputs:frameId",           "lidar_link"),
-                ("RtxLidar.inputs:type",              "laser_scan"),
-            ],
-            og.Controller.Keys.CONNECT: [
-                ("OnTick.outputs:tick",     "RtxLidar.inputs:execIn"),
-                ("Context.outputs:context", "RtxLidar.inputs:context"),
-            ],
-        },
-    )
-    carb.log_warn("[1d] lidar graph ready: /scan (frame=lidar_link, RTX render product)")
 except Exception as exc:  # noqa: BLE001
-    carb.log_error(f"[1d] lidar graph FAILED (odom/tf still OK): {exc}")
+    carb.log_error(f"[1d] lidar prim FAILED (odom/tf still OK): {exc}")
 
 world.reset()
+
+# Lidar render product + ROS2 graph — MUST be after world.reset(); reset tears
+# down render products (the "hydratexture already released" warning), so a render
+# product created before reset renders nothing and /scan stays empty.
+if SENSOR_PATH is not None:
+    try:
+        import omni.replicator.core as rep
+        _hydra = rep.create.render_product(SENSOR_PATH, [1, 1])
+        RP_PATH = _hydra.path if hasattr(_hydra, "path") else str(_hydra)
+        carb.log_warn(f"[1d] lidar render product: {RP_PATH}")
+        og.Controller.edit(
+            {"graph_path": "/LidarGraph", "evaluator_name": "execution"},
+            {
+                og.Controller.Keys.CREATE_NODES: [
+                    ("OnTick",   "omni.graph.action.OnPlaybackTick"),
+                    ("Context",  "isaacsim.ros2.bridge.ROS2Context"),
+                    ("RtxLidar", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
+                ],
+                og.Controller.Keys.SET_VALUES: [
+                    ("RtxLidar.inputs:renderProductPath", RP_PATH),
+                    ("RtxLidar.inputs:topicName",         "scan"),
+                    ("RtxLidar.inputs:frameId",           "lidar_link"),
+                    ("RtxLidar.inputs:type",              "laser_scan"),
+                ],
+                og.Controller.Keys.CONNECT: [
+                    ("OnTick.outputs:tick",     "RtxLidar.inputs:execIn"),
+                    ("Context.outputs:context", "RtxLidar.inputs:context"),
+                ],
+            },
+        )
+        carb.log_warn("[1d] lidar graph ready: /scan (frame=lidar_link, RTX render product)")
+    except Exception as exc:  # noqa: BLE001
+        carb.log_error(f"[1d] lidar graph FAILED (odom/tf still OK): {exc}")
 
 # Discover joints (for the upcoming cmd_vel / differential-drive step).
 stage = omni.usd.get_context().get_stage()
