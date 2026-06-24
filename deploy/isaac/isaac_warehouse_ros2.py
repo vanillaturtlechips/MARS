@@ -189,6 +189,7 @@ except Exception as exc:  # noqa: BLE001
 # ------------------------------------------------------------------
 try:
     from isaacsim.sensors.rtx import LidarRtx
+    import omni.replicator.core as rep
     LIDAR_PATH = f"{ROBOT_PRIM}/lidar"
     LidarRtx(
         prim_path=LIDAR_PATH,
@@ -197,36 +198,33 @@ try:
         orientation=np.array([1.0, 0.0, 0.0, 0.0]),
         config_file_name="RPLIDAR_S2E",   # 2D, 360°, 30 m
     )
-    # RTX lidar publishes through the render pipeline, NOT a direct prim read:
-    #   CreateRenderProduct(lidar) -> renderProductPath -> ROS2RtxLidarHelper.
-    # (ROS2PublishLaserScan is for the legacy PhysX lidar and silently emits
-    # nothing when fed an RTX lidar prim — that was the empty /scan.)
+    # RTX lidar publishes through the render pipeline. Create the render product
+    # DIRECTLY on the lidar prim with replicator (deterministic) instead of the
+    # in-graph IsaacCreateRenderProduct node, whose cameraPrim relationship
+    # wasn't binding -> "Render product not attached to RTX Lidar". Then feed the
+    # render product path to ROS2RtxLidarHelper as a plain string value.
+    _hydra = rep.create.render_product(LIDAR_PATH, [1, 1])
+    RP_PATH = _hydra.path if hasattr(_hydra, "path") else str(_hydra)
+    carb.log_warn(f"[1d] lidar render product: {RP_PATH}")
     og.Controller.edit(
         {"graph_path": "/LidarGraph", "evaluator_name": "execution"},
         {
             og.Controller.Keys.CREATE_NODES: [
-                ("OnTick",    "omni.graph.action.OnPlaybackTick"),
-                ("Context",   "isaacsim.ros2.bridge.ROS2Context"),
-                ("CreateRP",  "isaacsim.core.nodes.IsaacCreateRenderProduct"),
-                ("RtxLidar",  "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
+                ("OnTick",   "omni.graph.action.OnPlaybackTick"),
+                ("Context",  "isaacsim.ros2.bridge.ROS2Context"),
+                ("RtxLidar", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
             ],
             og.Controller.Keys.SET_VALUES: [
-                ("RtxLidar.inputs:topicName", "scan"),
-                ("RtxLidar.inputs:frameId",   "lidar_link"),
-                ("RtxLidar.inputs:type",      "laser_scan"),
+                ("RtxLidar.inputs:renderProductPath", RP_PATH),
+                ("RtxLidar.inputs:topicName",         "scan"),
+                ("RtxLidar.inputs:frameId",           "lidar_link"),
+                ("RtxLidar.inputs:type",              "laser_scan"),
             ],
             og.Controller.Keys.CONNECT: [
-                ("OnTick.outputs:tick",            "CreateRP.inputs:execIn"),
-                ("CreateRP.outputs:execOut",       "RtxLidar.inputs:execIn"),
-                ("CreateRP.outputs:renderProductPath", "RtxLidar.inputs:renderProductPath"),
-                ("Context.outputs:context",        "RtxLidar.inputs:context"),
+                ("OnTick.outputs:tick",     "RtxLidar.inputs:execIn"),
+                ("Context.outputs:context", "RtxLidar.inputs:context"),
             ],
         },
-    )
-    set_target_prims(
-        primPath="/LidarGraph/CreateRP",
-        inputName="inputs:cameraPrim",
-        targetPrimPaths=[LIDAR_PATH],
     )
     carb.log_warn("[1d] lidar graph ready: /scan (frame=lidar_link, RTX render product)")
 except Exception as exc:  # noqa: BLE001
