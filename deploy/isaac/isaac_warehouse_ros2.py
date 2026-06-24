@@ -197,32 +197,38 @@ try:
         orientation=np.array([1.0, 0.0, 0.0, 0.0]),
         config_file_name="RPLIDAR_S2E",   # 2D, 360°, 30 m
     )
+    # RTX lidar publishes through the render pipeline, NOT a direct prim read:
+    #   CreateRenderProduct(lidar) -> renderProductPath -> ROS2RtxLidarHelper.
+    # (ROS2PublishLaserScan is for the legacy PhysX lidar and silently emits
+    # nothing when fed an RTX lidar prim — that was the empty /scan.)
     og.Controller.edit(
         {"graph_path": "/LidarGraph", "evaluator_name": "execution"},
         {
             og.Controller.Keys.CREATE_NODES: [
-                ("OnTick",      "omni.graph.action.OnPlaybackTick"),
-                ("Context",     "isaacsim.ros2.bridge.ROS2Context"),
-                ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
-                ("PublishScan", "isaacsim.ros2.bridge.ROS2PublishLaserScan"),
+                ("OnTick",    "omni.graph.action.OnPlaybackTick"),
+                ("Context",   "isaacsim.ros2.bridge.ROS2Context"),
+                ("CreateRP",  "isaacsim.core.nodes.IsaacCreateRenderProduct"),
+                ("RtxLidar",  "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
             ],
             og.Controller.Keys.SET_VALUES: [
-                ("PublishScan.inputs:topicName", "scan"),
-                ("PublishScan.inputs:frameId",   "lidar_link"),
+                ("RtxLidar.inputs:topicName", "scan"),
+                ("RtxLidar.inputs:frameId",   "lidar_link"),
+                ("RtxLidar.inputs:type",      "laser_scan"),
             ],
             og.Controller.Keys.CONNECT: [
-                ("OnTick.outputs:tick",                "PublishScan.inputs:execIn"),
-                ("Context.outputs:context",            "PublishScan.inputs:context"),
-                ("ReadSimTime.outputs:simulationTime", "PublishScan.inputs:timeStamp"),
+                ("OnTick.outputs:tick",            "CreateRP.inputs:execIn"),
+                ("CreateRP.outputs:execOut",       "RtxLidar.inputs:execIn"),
+                ("CreateRP.outputs:renderProductPath", "RtxLidar.inputs:renderProductPath"),
+                ("Context.outputs:context",        "RtxLidar.inputs:context"),
             ],
         },
     )
     set_target_prims(
-        primPath="/LidarGraph/PublishScan",
-        inputName="inputs:lidarPrim",
+        primPath="/LidarGraph/CreateRP",
+        inputName="inputs:cameraPrim",
         targetPrimPaths=[LIDAR_PATH],
     )
-    carb.log_warn("[1d] lidar graph ready: /scan (frame=lidar_link)")
+    carb.log_warn("[1d] lidar graph ready: /scan (frame=lidar_link, RTX render product)")
 except Exception as exc:  # noqa: BLE001
     carb.log_error(f"[1d] lidar graph FAILED (odom/tf still OK): {exc}")
 
