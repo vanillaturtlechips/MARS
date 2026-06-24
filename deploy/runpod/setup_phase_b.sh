@@ -38,11 +38,16 @@ command -v uv >/dev/null 2>&1 || pip install uv -q
 export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-600}"
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
+# NOTE: install via the [all,extscache] extras — NOT a hand-listed set of
+# subpackages. The bare meta-package only installs the Python wheels; the actual
+# Kit extensions (isaacsim.app.about, .gui, sensors, ros2.bridge, ...) live in
+# the extscache wheels. Without `extscache` Kit tries to pull them from the
+# online registry at runtime and dies with "No versions of isaacsim.app.about".
 uv pip install \
-    isaacsim==6.0.0 isaacsim-rl==6.0.0 isaacsim-replicator==6.0.0 \
-    isaacsim-extscache-physics==6.0.0 isaacsim-extscache-kit==6.0.0 \
-    isaacsim-extscache-kit-sdk==6.0.0 isaacsim-ros2==6.0.0 \
-    --extra-index-url https://pypi.nvidia.com
+    "isaacsim[all,extscache]==6.0.0" \
+    --extra-index-url https://pypi.nvidia.com \
+    --index-strategy unsafe-best-match \
+    --prerelease=allow
 
 echo "==[4/4] verify =="
 export OMNI_KIT_ACCEPT_EULA=YES
@@ -51,8 +56,15 @@ python - <<'PY'
 import isaacsim  # noqa: F401
 print("  isaacsim import OK")
 PY
-ls -d "$VENV"/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.bridge \
-    && echo "  ros2 bridge ext present"
+# Verify the extscache extensions actually landed locally (the bit that was
+# missing before): isaacsim.app.about is the one Kit failed to resolve.
+for _e in isaacsim.app.about isaacsim.ros2.bridge; do
+    if ls -d "$VENV"/lib/python3.12/site-packages/isaacsim/exts/"$_e" >/dev/null 2>&1; then
+        echo "  ext present: $_e"
+    else
+        echo "  [WARN] ext MISSING: $_e"
+    fi
+done
 
 echo
 echo "DONE. Isaac + ROS2 환경 준비 완료."

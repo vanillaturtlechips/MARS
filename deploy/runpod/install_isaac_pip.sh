@@ -20,16 +20,19 @@ command -v uv >/dev/null 2>&1 || pip install uv -q
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 
-PKGS="isaacsim==6.0.0 isaacsim-rl==6.0.0 isaacsim-replicator==6.0.0 \
-isaacsim-extscache-physics==6.0.0 isaacsim-extscache-kit==6.0.0 \
-isaacsim-extscache-kit-sdk==6.0.0 isaacsim-ros2==6.0.0"
+# [all,extscache] extras pull the Kit extension wheels too (isaacsim.app.about,
+# .gui, sensors, ros2.bridge). The bare meta-package omits them and Kit then
+# fails at runtime trying to fetch them from the online registry.
+PKGS="isaacsim[all,extscache]==6.0.0"
 
 for i in $(seq 1 50); do
     echo "===== attempt $i ($(date +%H:%M:%S)) ====="
     # shellcheck disable=SC2086
-    if uv pip install $PKGS --extra-index-url https://pypi.nvidia.com; then
+    if uv pip install "$PKGS" --extra-index-url https://pypi.nvidia.com --index-strategy unsafe-best-match --prerelease=allow; then
         echo "===== INSTALL DONE ====="
         python -c "import isaacsim; print('isaacsim import OK')"
+        ls -d "$VENV"/lib/python3.12/site-packages/isaacsim/exts/isaacsim.app.about \
+            && echo "app.about ext present"
         ls -d "$VENV"/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.bridge \
             && echo "ros2 bridge ext present"
         exit 0
