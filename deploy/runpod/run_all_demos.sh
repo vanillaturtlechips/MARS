@@ -21,7 +21,7 @@ WANT="${1:-all}"
 say(){ echo -e "\n########## $* ##########"; }
 grepwait(){ local f="$1" pat="$2" to="${3:-300}" i=0; while ! grep -q "$pat" "$f" 2>/dev/null; do sleep 2; i=$((i+2)); [ $i -ge "$to" ] && { echo "[TIMEOUT] $pat ($f)"; return 1; }; done; echo "[ok] $pat"; }
 goal(){ bash -c "source $RENV; ros2 action send_goal /$1/navigate_to_pose nav2_msgs/action/NavigateToPose \"{pose: {header: {frame_id: map}, pose: {position: {x: $2, y: $3}, orientation: {w: 1.0}}}}\"" >> "$L/goals.log" 2>&1 & }
-killall_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f static_transform_publisher; pkill -9 -f "action send_goal"; pkill -9 -f "topic echo"; pkill -9 -f follow_waypoints; sleep 3; }
+killall_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/jazzy/lib/nav2; pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f static_transform_publisher; pkill -9 -f "action send_goal"; pkill -9 -f "topic echo"; pkill -9 -f follow_waypoints; sleep 3; }
 # background odom logger: prove whether each robot PHYSICALLY moves (position in the
 # R*/odom frame, zeroed at spawn -> grows as the robot drives). Files: $L/odom_R*.log
 odomlog(){ for r in R1 R2 R3; do bash -c "source $RENV; exec stdbuf -oL ros2 topic echo /$r/odom --field pose.pose.position" > "$L/odom_$r.log" 2>&1 & done; }
@@ -49,9 +49,9 @@ bringup(){
   # charge_demo overrides via SPAWN_R* to the charging layout (south of the pad).
   local s1="${SPAWN_R1:--8 11}" s2="${SPAWN_R2:--7 8}" s3="${SPAWN_R3:--9 8}"
   bash -c "source $RENV; \
-    ros2 run tf2_ros static_transform_publisher --x ${s1%% *} --y ${s1##* } --z 0 --frame-id map --child-frame-id R1/odom & \
-    ros2 run tf2_ros static_transform_publisher --x ${s2%% *} --y ${s2##* } --z 0 --frame-id map --child-frame-id R2/odom & \
-    ros2 run tf2_ros static_transform_publisher --x ${s3%% *} --y ${s3##* } --z 0 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
+    ros2 run tf2_ros static_transform_publisher --x ${s1%% *} --y ${s1##* } --z 0.08 --frame-id map --child-frame-id R1/odom & \
+    ros2 run tf2_ros static_transform_publisher --x ${s2%% *} --y ${s2##* } --z 0.08 --frame-id map --child-frame-id R2/odom & \
+    ros2 run tf2_ros static_transform_publisher --x ${s3%% *} --y ${s3##* } --z 0.08 --frame-id map --child-frame-id R3/odom & wait" > "$L/stf.log" 2>&1 &
   sleep 5
   bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/nav2_global.log" 2>&1 &
   grepwait "$L/nav2_global.log" "Managed nodes are active" 120 || return 1

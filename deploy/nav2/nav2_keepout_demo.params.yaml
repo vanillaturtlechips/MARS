@@ -51,15 +51,15 @@ controller_server:
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       desired_linear_vel: 0.4
-      lookahead_dist: 0.6
-      min_lookahead_dist: 0.3
-      max_lookahead_dist: 0.9
-      rotate_to_heading_angular_vel: 0.8
+      lookahead_dist: 1.0
+      min_lookahead_dist: 0.5
+      max_lookahead_dist: 2.0
+      rotate_to_heading_angular_vel: 0.4
       transform_tolerance: 0.2
       use_velocity_scaled_lookahead_dist: false
       min_approach_linear_velocity: 0.05
       approach_velocity_scaling_dist: 0.6
-      max_angular_accel: 2.5
+      max_angular_accel: 1.0
       use_rotate_to_heading: true
       allow_reversing: false
       max_robot_pose_search_dist: 10.0
@@ -120,7 +120,7 @@ bt_navigator:
     use_sim_time: true
     global_frame: map
     robot_base_frame: base_link
-    odom_topic: /odom
+    odom_topic: odom   # 상대경로 — namespace 안에서 /R1/odom, /R2/odom 등으로 resolve됨
     bt_loop_duration: 10
     default_server_timeout: 20
 

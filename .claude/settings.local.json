@@ -33,7 +33,19 @@
       "Bash(git commit -q -m 'feat: 데모 외부 에셋 — 골판지 박스/팔레트/크레이트 USD \\(실패 시 도형 폴백\\) *)",
       "Bash(git commit -q -m 'feat: 선반 적재물 — 빈 랙에 박스 올려 '\\\\''재고 있는 창고'\\\\'' 연출\\(순수 비주얼\\) *)",
       "Bash(git commit -q -m 'fix: 원형 회전/벽붙음 — 도크 안쪽 이동 + 막힘 탈출\\(anti-stuck\\) *)",
-      "Bash(git commit -q -m 'fix: 선반 앞 로봇이 선반에 박는 현상 — 픽업 지점 선반에서 떼기\\(±1.6→±1.2\\) *)"
+      "Bash(git commit -q -m 'fix: 선반 앞 로봇이 선반에 박는 현상 — 픽업 지점 선반에서 떼기\\(±1.6→±1.2\\) *)",
+      "WebSearch",
+      "Bash(curl -I \"https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Robots/Idealworks/iwhub/iw_hub.usd\")",
+      "Bash(mkdir -p /root/iwhub)",
+      "Bash(curl -L \"https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Robots/Idealworks/iwhub/iw_hub.usd\" -o /root/iwhub/iw_hub.usd --progress-bar)",
+      "Read(//root/iwhub/**)",
+      "Bash(python3 -c \"from pxr import Usd; print\\('pxr OK'\\)\")",
+      "Bash(pip install *)",
+      "Bash(python3 *)",
+      "Bash(curl -s -o /root/iwhub/iw_hub_robot_schema.usd https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Robots/Idealworks/iwhub/configuration/iw_hub_robot_schema.usd)",
+      "Bash(nvidia-smi)",
+      "Bash(lspci)",
+      "Bash(git *)"
     ]
   },
   "enableAllProjectMcpServers": true,

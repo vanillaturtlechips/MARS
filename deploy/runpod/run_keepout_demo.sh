@@ -28,7 +28,7 @@ goal(){ # <ns> <x> <y>
 }
 
 say "0. kill stale + deps"
-pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2
+pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/jazzy/lib/nav2
 pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f static_transform_publisher
 pkill -9 -f "action send_goal"; pkill -9 -f keepout_publish_test
 rm -rf /tmp/keepout_frames    # clear old frames so the readiness-wait only sees this run's
@@ -55,11 +55,14 @@ echo "[ok] Isaac up + recording"
 sleep 3
 
 say "2. static tf (spawn offsets map->R*/odom)"
+# 각 값은 isaac_multi_robot_ros2.py ROBOTS 리스트의 spawn (x,y)와 일치해야 함.
+# IsaacComputeOdometry가 spawn 기준 상대값을 누적하므로, 이 TF가 틀리면
+# Nav2는 로봇이 맵에서 엉뚱한 위치에 있다고 판단해 경로를 못 찾음.
 # NOTE: 'source && a & b &' only sources for 'a'; use ';' so all three inherit ROS2.
 bash -c "source $RENV; \
-  ros2 run tf2_ros static_transform_publisher --x -3 --y 5 --z 0 --frame-id map --child-frame-id R1/odom & \
-  ros2 run tf2_ros static_transform_publisher --x 0 --y 5 --z 0 --frame-id map --child-frame-id R2/odom & \
-  ros2 run tf2_ros static_transform_publisher --x 3 --y 5 --z 0 --frame-id map --child-frame-id R3/odom & \
+  ros2 run tf2_ros static_transform_publisher --x -8.0 --y 11.0 --z 0.08 --frame-id map --child-frame-id R1/odom & \
+  ros2 run tf2_ros static_transform_publisher --x -7.0 --y  8.0 --z 0.08 --frame-id map --child-frame-id R2/odom & \
+  ros2 run tf2_ros static_transform_publisher --x -9.0 --y  8.0 --z 0.08 --frame-id map --child-frame-id R3/odom & \
   wait" > "$L/stf.log" 2>&1 &
 sleep 5
 

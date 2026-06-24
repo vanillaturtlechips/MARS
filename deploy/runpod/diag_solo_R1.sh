@@ -17,7 +17,7 @@ REPO=/workspace/MARS
 RENV="$REPO/deploy/isaac/env_ros2.sh"
 IENV="$REPO/deploy/isaac/env_isaac.sh"
 L=/tmp/solo; mkdir -p "$L"
-kill_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkill -9 -f static_transform_publisher; pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f "topic echo"; pkill -9 -f "action send_goal"; }
+kill_(){ pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/jazzy/lib/nav2; pkill -9 -f static_transform_publisher; pkill -9 -f isaac_multi_failure_bridge; pkill -9 -f "topic echo"; pkill -9 -f "action send_goal"; }
 
 kill_; sleep 3; rm -f /tmp/keepout_isaac_ready
 echo "[solo] starting Isaac (3 robots in sim, but we nav only R1)..."
@@ -25,7 +25,7 @@ bash -c "source $IENV && cd $REPO && exec stdbuf -oL -eL python -u deploy/isaac/
 until [ -f /tmp/keepout_isaac_ready ]; do sleep 3; done
 echo "[solo] Isaac up."
 
-bash -c "source $RENV; exec ros2 run tf2_ros static_transform_publisher --x -8 --y 8 --z 0 --frame-id map --child-frame-id R1/odom" > "$L/stf.log" 2>&1 &
+bash -c "source $RENV; exec ros2 run tf2_ros static_transform_publisher --x -8 --y 11 --z 0.08 --frame-id map --child-frame-id R1/odom" > "$L/stf.log" 2>&1 &
 sleep 5
 bash -c "source $RENV && cd $REPO && exec stdbuf -oL -eL ros2 launch deploy/nav2/bringup_global.launch.py" > "$L/global.log" 2>&1 &
 echo "[solo] waiting global nav2 active..."; until grep -q "Managed nodes are active" "$L/global.log" 2>/dev/null; do sleep 2; done

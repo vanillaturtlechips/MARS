@@ -102,8 +102,8 @@ else:
     ROBOTS = [("R1", -8.0, 11.0), ("R2", -7.0, 8.0), ("R3", -9.0, 8.0)]
 DOCK_XY = (-8.0, 15.0)      # obstacle box / keepout — inside real aisle x=-8, between real shelves
 CHARGER_XY = (0.0, 3.0)     # charging station in the open south area
-WHEEL_RADIUS = 0.08
-WHEEL_BASE = 0.54
+WHEEL_RADIUS = 0.08    # iw_hub 실측 (직경 160mm)
+WHEEL_BASE   = 0.5793  # USD localPos0 실측: left y=+0.28963, right y=-0.28963
 
 # physics_dt/rendering_dt 1/20 (not the default 1/60): render is the bottleneck
 # (~5 fps), so a bigger sim-dt per render advances sim-time ~3x faster per wall-
@@ -189,8 +189,11 @@ def spawn_robot(name: str, x: float, y: float) -> str:
     add_reference_to_stage(IW_HUB_USD, prim_path)
     xform = UsdGeom.Xformable(stage.GetPrimAtPath(prim_path))
     xform.ClearXformOpOrder()
-    xform.AddTranslateOp().Set(Gf.Vec3d(float(x), float(y), 0.0))
-    carb.log_warn(f"[multi] spawned {name} at ({x},{y})")
+    # z = WHEEL_RADIUS: 휠 센터가 z=0(루트)에 있으므로 루트를 휠 반지름만큼 올려야
+    # 휠 하단이 지면(z=0)에 닿음. z=0 spawn 시 PhysX가 0.08m 아래 박힌 로봇을
+    # 강제로 밀어올려 초기 진동 발생.
+    xform.AddTranslateOp().Set(Gf.Vec3d(float(x), float(y), WHEEL_RADIUS))
+    carb.log_warn(f"[multi] spawned {name} at ({x},{y}, z={WHEEL_RADIUS})")
     return prim_path
 
 

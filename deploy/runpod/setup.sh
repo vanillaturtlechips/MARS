@@ -8,7 +8,7 @@ set -e
 VENV_PATH="/workspace/isaac_venv"
 ISAACLAB_PATH="/workspace/IsaacLab"
 MARS_PATH="/workspace/MARS"
-ISAACLAB_VERSION="v2.3.2"
+ISAACLAB_VERSION="v3.0.0-beta"
 
 # CUDA 런타임 버전 감지 → torch 변형 자동 선택
 # nvidia-smi는 드라이버가 지원하는 최대 CUDA를 표시 (실제 런타임 버전 아님)
@@ -83,41 +83,35 @@ echo "[3/7] 가상환경: $VENV_PATH"
 if [ -d "$VENV_PATH" ]; then
     echo "  기존 venv 재사용"
 else
-    uv venv "$VENV_PATH"
+    uv venv --python 3.12 "$VENV_PATH"
 fi
 source "$VENV_PATH/bin/activate"
 echo "  완료"
 
-# ── 4. Isaac Sim 5.1.0 + PyTorch ───────────────────────────────
-echo "[4/7] Isaac Sim 5.1.0 설치 (10~15분)..."
+# ── 4. Isaac Sim 6.0.0.1 + PyTorch ─────────────────────────────
+echo "[4/7] Isaac Sim 6.0.0.1 설치 (10~15분)..."
 
+# 6.0부터 [all,extscache] extras 하나로 통합됨 (개별 패키지 불필요)
 uv pip install \
-    isaacsim==5.1.0 \
-    isaacsim-rl==5.1.0 \
-    isaacsim-replicator==5.1.0 \
-    isaacsim-extscache-physics==5.1.0 \
-    isaacsim-extscache-kit==5.1.0 \
-    isaacsim-extscache-kit-sdk==5.1.0 \
+    "isaacsim[all,extscache]==6.0.0.1" \
     --extra-index-url https://pypi.nvidia.com \
     --index-strategy unsafe-best-match
 
-# PyTorch 2.7.0 — IsaacLab v2.3.2 최소 요구사항 torch>=2.7
-# cu121 이하는 torch 2.7 빌드 없으므로 cu124로 올림 (CUDA 12.4 런타임에서 동작)
+# PyTorch 2.10.0 — IsaacLab v3.0.0 요구사항, CUDA 12.8 기본
 case "$TORCH_CUDA" in
     cu128) TORCH_TAG="cu128" ;;
     cu126) TORCH_TAG="cu126" ;;
-    *)     TORCH_TAG="cu124" ;;   # cu124 이하 모두 cu124 빌드 사용
+    *)     TORCH_TAG="cu128" ;;   # cu128 기본 (Isaac Sim 6.0 / CUDA 12.8)
 esac
 TORCH_WHL_URL_FINAL="https://download.pytorch.org/whl/${TORCH_TAG}"
-echo "  torch==2.7.0+${TORCH_TAG} 설치..."
-# isaaclab이 torch>=2.7을 요구하지만 uv가 최신 버전으로 올려버리므로 2.7.0 고정
-uv pip install "torch==2.7.0" "torchvision==0.22.0" "numpy==1.26.4" \
+echo "  torch==2.10.0+${TORCH_TAG} 설치..."
+uv pip install "torch==2.10.0" "torchvision==0.25.0" "numpy>=1.26.4,<3" \
     --index-url "${TORCH_WHL_URL_FINAL}" \
     --extra-index-url "https://pypi.org/simple" \
     --reinstall
 
 # pxr 경로 .pth 등록 (sitecustomize.py 사용 금지 — import isaacsim이 CUDA 컨텍스트 오염)
-SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
+SITE_PKG="$VENV_PATH/lib/python3.12/site-packages"
 PXR_DIR=$(find "$VENV_PATH" -maxdepth 12 -name "pxr" -type d 2>/dev/null \
           | grep -v "__pycache__" | head -1)
 if [ -n "$PXR_DIR" ]; then
@@ -133,7 +127,7 @@ echo "  완료"
 # isaaclab이 flatdict==4.0.1에 의존하는데, 해당 setup.py가 pkg_resources를
 # build-system.requires에 선언하지 않아 격리 빌드 환경에서 항상 실패함.
 # tarball에서 .py 파일만 직접 복사하고 dist-info를 수동 생성해 우회.
-SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
+SITE_PKG="$VENV_PATH/lib/python3.12/site-packages"
 _FD_DIR="/tmp/flatdict_src"
 mkdir -p "$_FD_DIR"
 pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
