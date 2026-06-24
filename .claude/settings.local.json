@@ -46,7 +46,16 @@
       "Bash(nvidia-smi)",
       "Bash(lspci)",
       "Bash(git *)",
-      "Bash(check_urdf *)"
+      "Bash(check_urdf *)",
+      "Bash(COLCON_TRACE=1 bash -c \"source /root/MARS/agents/mars/ros2_ws/install/local_setup.bash\")",
+      "Bash(xargs ls -la)",
+      "Bash(apt-cache show *)",
+      "Bash(colcon list *)",
+      "Bash(echo \"\")",
+      "Bash(echo \"# ROS2 Jazzy\")",
+      "Bash(echo \"alias ros2init='source /opt/ros/jazzy/setup.bash'\")",
+      "Bash(echo \"alias wsource='source ~/MARS/agents/mars/ros2_ws/install/setup.bash'\")",
+      "Bash(apt-cache search *)"
     ]
   },
   "enableAllProjectMcpServers": true,

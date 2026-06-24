@@ -1,0 +1,36 @@
+slam_toolbox:
+  ros__parameters:
+
+    # 플러그인 / 스레드
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    async_queue_size: 4
+
+    # TF 프레임 — URDF와 일치
+    odom_frame:  odom
+    base_frame:  base_footprint
+    map_frame:   map
+    scan_topic:  /scan       # Isaac Sim에선 /{name}/scan 으로 remap
+
+    # 업데이트 조건
+    transform_publish_period:  0.02   # 50 Hz
+    map_update_interval:       2.0    # 초마다 맵 갱신
+    resolution:                0.05   # 5 cm/cell
+    max_laser_range:           12.0   # RPLIDAR S2E 최대 30 m, 실내 12 m 제한
+    minimum_travel_distance:   0.1    # 10 cm 이동마다 스캔 반영
+    minimum_travel_heading:    0.1    # 0.1 rad 회전마다 스캔 반영
+
+    # 루프 클로저
+    use_scan_matching:         true
+    use_scan_barycenter:       true
+    loop_search_maximum_distance: 3.0
+    do_loop_closing:           true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_covariance: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine:   0.45
+
+    # 저장 / 재사용 (맵 저장은 ros2 service call로)
+    map_file_name: ""
+    map_start_at_dock: false
