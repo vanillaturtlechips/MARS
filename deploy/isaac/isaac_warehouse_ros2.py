@@ -182,59 +182,43 @@ try:
 except Exception as exc:  # noqa: BLE001
     carb.log_error(f"[1c] drive graph FAILED (odom/tf still OK): {exc}")
 
+world.reset()
+
 # ------------------------------------------------------------------
-# RTX Lidar prim -> /scan (built AFTER world.reset() below; the render product
-# is torn down by reset, so creating it here would publish nothing).
+# RTX Lidar -> /scan (sensor_msgs/LaserScan).  frame_id=lidar_link; the
+# slam.launch.py static_transform_publisher provides base_link->lidar_link.
 # URDF lidar_joint origin: x=+0.35, y=0, z=+0.25 (chassis front, top).
+#
+# Created AFTER world.reset() and kept in a MODULE-LEVEL ref (LIDAR) on purpose:
+#  - reset tears down render products, so building the lidar before it publishes
+#    nothing ("hydratexture already released").
+#  - LidarRtx.__init__ creates its OWN render product (128x128); we must use
+#    lidar.get_render_product_path() and NOT make a second one.
+#  - LidarRtx.__del__ destroys that render product, so if the object is GC'd
+#    (e.g. not assigned to a variable) the sensor silently stops producing data.
 # ------------------------------------------------------------------
-SENSOR_PATH = None
+LIDAR = None
+_lidar_writer = None
 try:
     from isaacsim.sensors.rtx import LidarRtx
-    LIDAR_PATH = f"{ROBOT_PRIM}/lidar"
-    LidarRtx(
-        prim_path=LIDAR_PATH,
+    import omni.replicator.core as rep
+    LIDAR = LidarRtx(
+        prim_path=f"{ROBOT_PRIM}/lidar",
         name="iw_hub_lidar",
         position=np.array([0.35, 0.0, 0.25]),
         orientation=np.array([1.0, 0.0, 0.0, 0.0]),
         config_file_name="RPLIDAR_S2E",   # 2D, 360°, 30 m
     )
-    # LidarRtx makes an Xform wrapper at LIDAR_PATH; the actual OmniLidar sensor
-    # prim is a CHILD (e.g. /World/iw_hub/lidar/RPLidar_S2E). Find it by type so
-    # we don't hardcode the config-dependent child name.
-    _stage = omni.usd.get_context().get_stage()
-    SENSOR_PATH = LIDAR_PATH
-    for _p in _stage.Traverse():
-        _sp = str(_p.GetPath())
-        if _sp.startswith(LIDAR_PATH) and _p.GetTypeName() == "OmniLidar":
-            SENSOR_PATH = _sp
-            break
-    carb.log_warn(f"[1d] OmniLidar sensor prim: {SENSOR_PATH}")
+    RP_PATH = LIDAR.get_render_product_path()
+    carb.log_warn(f"[1d] lidar render product: {RP_PATH}")
+    # Attach the ROS2 LaserScan writer to the lidar's OWN render product path
+    # (string), exactly as OgnROS2RtxLidarHelper does internally.
+    _lidar_writer = rep.writers.get("RtxLidarROS2PublishLaserScan")
+    _lidar_writer.initialize(topicName="scan", frameId="lidar_link")
+    _lidar_writer.attach([RP_PATH])
+    carb.log_warn("[1d] lidar writer attached: /scan (frame=lidar_link)")
 except Exception as exc:  # noqa: BLE001
-    carb.log_error(f"[1d] lidar prim FAILED (odom/tf still OK): {exc}")
-
-world.reset()
-
-# Lidar render product + ROS2 graph — MUST be after world.reset(); reset tears
-# down render products (the "hydratexture already released" warning), so a render
-# product created before reset renders nothing and /scan stays empty.
-_lidar_writer = None  # keep a strong ref so the writer isn't garbage-collected
-if SENSOR_PATH is not None:
-    try:
-        import omni.replicator.core as rep
-        _hydra = rep.create.render_product(SENSOR_PATH, [1, 1])
-        RP_PATH = _hydra.path if hasattr(_hydra, "path") else str(_hydra)
-        carb.log_warn(f"[1d] lidar render product: {RP_PATH}")
-        # Use the replicator WRITER (NVIDIA standalone pattern), not the OmniGraph
-        # ROS2RtxLidarHelper node. The writer registers an annotator on the SDG
-        # pipeline, which forces the lidar render product to actually render each
-        # frame -> /scan publishes. The helper-node graph advertised /scan but
-        # rendered nothing under world.step(render=True), so it stayed empty.
-        _lidar_writer = rep.writers.get("RtxLidarROS2PublishLaserScan")
-        _lidar_writer.initialize(topicName="scan", frameId="lidar_link")
-        _lidar_writer.attach([_hydra])
-        carb.log_warn("[1d] lidar writer attached: /scan (frame=lidar_link)")
-    except Exception as exc:  # noqa: BLE001
-        carb.log_error(f"[1d] lidar writer FAILED (odom/tf still OK): {exc}")
+    carb.log_error(f"[1d] lidar FAILED (odom/tf still OK): {exc}")
 
 # Discover joints (for the upcoming cmd_vel / differential-drive step).
 stage = omni.usd.get_context().get_stage()
