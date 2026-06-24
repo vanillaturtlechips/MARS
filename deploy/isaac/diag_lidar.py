@@ -29,4 +29,12 @@ for p in st.Traverse():
         print("PRIM:", p.GetTypeName(), s)
 print("==================================")
 
+# Available replicator writers that publish RTX lidar to ROS2 (LaserScan).
+import omni.replicator.core as rep  # noqa: E402
+writers = [w for w in rep.WriterRegistry.get_writers() if "idar" in w]
+print("==== lidar writers ====")
+for w in writers:
+    print("WRITER:", w)
+print("=======================")
+
 app.close()
