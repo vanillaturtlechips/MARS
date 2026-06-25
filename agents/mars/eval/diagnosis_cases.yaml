@@ -23,7 +23,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: transient_glitch
+    cause: transient_obstacle
     scope: isolated
     persistence: transient
     relevant_precedent_ids: []
@@ -53,7 +53,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: transient_glitch
+    cause: transient_obstacle
     scope: isolated
     persistence: transient
     relevant_precedent_ids: []
@@ -83,7 +83,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: transient_glitch
+    cause: transient_obstacle
     scope: isolated
     persistence: transient
     relevant_precedent_ids: []
@@ -96,7 +96,7 @@
     failures: []
     incidents:
     - incident_id: INC-B0
-      true_cause: battery_depletion
+      true_cause: low_battery
       text: estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.
       is_relevant: true
     active_policies: []
@@ -117,7 +117,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: battery_depletion
+    cause: low_battery
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -131,7 +131,7 @@
     failures: []
     incidents:
     - incident_id: INC-B1
-      true_cause: battery_depletion
+      true_cause: low_battery
       text: estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.
       is_relevant: true
     active_policies: []
@@ -152,7 +152,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: battery_depletion
+    cause: low_battery
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -166,7 +166,7 @@
     failures: []
     incidents:
     - incident_id: INC-B2
-      true_cause: battery_depletion
+      true_cause: low_battery
       text: estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.
       is_relevant: true
     active_policies: []
@@ -187,7 +187,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: battery_depletion
+    cause: low_battery
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -201,7 +201,7 @@
     failures: []
     incidents:
     - incident_id: INC-B3
-      true_cause: battery_depletion
+      true_cause: low_battery
       text: estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.
       is_relevant: true
     active_policies: []
@@ -222,7 +222,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: battery_depletion
+    cause: low_battery
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -253,7 +253,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: hardware_fault
+    cause: robot_internal_fault
     scope: isolated
     persistence: persistent
     relevant_precedent_ids: []
@@ -283,7 +283,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: hardware_fault
+    cause: robot_internal_fault
     scope: isolated
     persistence: persistent
     relevant_precedent_ids: []
@@ -313,7 +313,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: hardware_fault
+    cause: robot_internal_fault
     scope: isolated
     persistence: persistent
     relevant_precedent_ids: []
@@ -326,7 +326,7 @@
     failures: []
     incidents:
     - incident_id: INC-L0
-      true_cause: localization_loss
+      true_cause: localization_failure
       text: AMCL pose covariance spiked near featureless wall; robot lost localization and aborted.
       is_relevant: true
     active_policies: []
@@ -346,7 +346,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: localization_loss
+    cause: localization_failure
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -360,7 +360,7 @@
     failures: []
     incidents:
     - incident_id: INC-L1
-      true_cause: localization_loss
+      true_cause: localization_failure
       text: AMCL pose covariance spiked near featureless wall; robot lost localization and aborted.
       is_relevant: true
     active_policies: []
@@ -380,7 +380,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: localization_loss
+    cause: localization_failure
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -394,7 +394,7 @@
     failures: []
     incidents:
     - incident_id: INC-L2
-      true_cause: localization_loss
+      true_cause: localization_failure
       text: AMCL pose covariance spiked near featureless wall; robot lost localization and aborted.
       is_relevant: true
     active_policies: []
@@ -414,7 +414,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: localization_loss
+    cause: localization_failure
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -428,11 +428,11 @@
     failures: []
     incidents:
     - incident_id: INC-S0
-      true_cause: sensor_degradation
+      true_cause: robot_internal_fault
       text: Lidar returns corrupted by reflective shrink-wrap; phantom obstacles caused aborts.
       is_relevant: true
     - incident_id: INC-SX0
-      true_cause: battery_depletion
+      true_cause: low_battery
       text: Unrelated battery cutoff mid-aisle.
       is_relevant: false
     active_policies: []
@@ -452,7 +452,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: sensor_degradation
+    cause: robot_internal_fault
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -466,11 +466,11 @@
     failures: []
     incidents:
     - incident_id: INC-S1
-      true_cause: sensor_degradation
+      true_cause: robot_internal_fault
       text: Lidar returns corrupted by reflective shrink-wrap; phantom obstacles caused aborts.
       is_relevant: true
     - incident_id: INC-SX1
-      true_cause: battery_depletion
+      true_cause: low_battery
       text: Unrelated battery cutoff mid-aisle.
       is_relevant: false
     active_policies: []
@@ -490,7 +490,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: sensor_degradation
+    cause: robot_internal_fault
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -504,11 +504,11 @@
     failures: []
     incidents:
     - incident_id: INC-S2
-      true_cause: sensor_degradation
+      true_cause: robot_internal_fault
       text: Lidar returns corrupted by reflective shrink-wrap; phantom obstacles caused aborts.
       is_relevant: true
     - incident_id: INC-SX2
-      true_cause: battery_depletion
+      true_cause: low_battery
       text: Unrelated battery cutoff mid-aisle.
       is_relevant: false
     active_policies: []
@@ -528,7 +528,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: sensor_degradation
+    cause: robot_internal_fault
     scope: isolated
     persistence: persistent
     relevant_precedent_ids:
@@ -566,7 +566,7 @@
       ts_offset_sec: 180
     incidents:
     - incident_id: INC-O0
-      true_cause: static_obstacle
+      true_cause: zone_blocked
       text: Dropped pallet blocked the lane; robots aborted until removed.
       is_relevant: true
     active_policies: []
@@ -586,7 +586,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 3
   ground_truth:
-    cause: static_obstacle
+    cause: zone_blocked
     scope: zone_wide
     persistence: persistent
     relevant_precedent_ids:
@@ -624,7 +624,7 @@
       ts_offset_sec: 180
     incidents:
     - incident_id: INC-O1
-      true_cause: static_obstacle
+      true_cause: zone_blocked
       text: Dropped pallet blocked the lane; robots aborted until removed.
       is_relevant: true
     active_policies: []
@@ -644,7 +644,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 3
   ground_truth:
-    cause: static_obstacle
+    cause: zone_blocked
     scope: zone_wide
     persistence: persistent
     relevant_precedent_ids:
@@ -682,7 +682,7 @@
       ts_offset_sec: 180
     incidents:
     - incident_id: INC-O2
-      true_cause: static_obstacle
+      true_cause: zone_blocked
       text: Dropped pallet blocked the lane; robots aborted until removed.
       is_relevant: true
     active_policies: []
@@ -702,7 +702,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 3
   ground_truth:
-    cause: static_obstacle
+    cause: zone_blocked
     scope: zone_wide
     persistence: persistent
     relevant_precedent_ids:
@@ -740,7 +740,7 @@
       ts_offset_sec: 180
     incidents:
     - incident_id: INC-O3
-      true_cause: static_obstacle
+      true_cause: zone_blocked
       text: Dropped pallet blocked the lane; robots aborted until removed.
       is_relevant: true
     active_policies: []
@@ -760,7 +760,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 3
   ground_truth:
-    cause: static_obstacle
+    cause: zone_blocked
     scope: zone_wide
     persistence: persistent
     relevant_precedent_ids:
@@ -811,12 +811,12 @@
       ts_offset_sec: 120
     incidents:
     - incident_id: INC-R0
-      true_cause: recurring_blockage
+      true_cause: zone_blocked
       text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
         cleared.
       is_relevant: true
     - incident_id: INC-RX0
-      true_cause: hardware_fault
+      true_cause: robot_internal_fault
       text: Single robot gearbox fault, unrelated.
       is_relevant: false
     active_policies: []
@@ -836,9 +836,9 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 4
   ground_truth:
-    cause: recurring_blockage
+    cause: zone_blocked
     scope: zone_wide
-    persistence: recurring
+    persistence: persistent
     relevant_precedent_ids:
     - INC-R0
     expected_validation: PASS
@@ -887,12 +887,12 @@
       ts_offset_sec: 120
     incidents:
     - incident_id: INC-R1
-      true_cause: recurring_blockage
+      true_cause: zone_blocked
       text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
         cleared.
       is_relevant: true
     - incident_id: INC-RX1
-      true_cause: hardware_fault
+      true_cause: robot_internal_fault
       text: Single robot gearbox fault, unrelated.
       is_relevant: false
     active_policies: []
@@ -912,9 +912,9 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 4
   ground_truth:
-    cause: recurring_blockage
+    cause: zone_blocked
     scope: zone_wide
-    persistence: recurring
+    persistence: persistent
     relevant_precedent_ids:
     - INC-R1
     expected_validation: PASS
@@ -963,12 +963,12 @@
       ts_offset_sec: 120
     incidents:
     - incident_id: INC-R2
-      true_cause: recurring_blockage
+      true_cause: zone_blocked
       text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
         cleared.
       is_relevant: true
     - incident_id: INC-RX2
-      true_cause: hardware_fault
+      true_cause: robot_internal_fault
       text: Single robot gearbox fault, unrelated.
       is_relevant: false
     active_policies: []
@@ -988,9 +988,9 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 4
   ground_truth:
-    cause: recurring_blockage
+    cause: zone_blocked
     scope: zone_wide
-    persistence: recurring
+    persistence: persistent
     relevant_precedent_ids:
     - INC-R2
     expected_validation: PASS
@@ -1039,12 +1039,12 @@
       ts_offset_sec: 120
     incidents:
     - incident_id: INC-R3
-      true_cause: recurring_blockage
+      true_cause: zone_blocked
       text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
         cleared.
       is_relevant: true
     - incident_id: INC-RX3
-      true_cause: hardware_fault
+      true_cause: robot_internal_fault
       text: Single robot gearbox fault, unrelated.
       is_relevant: false
     active_policies: []
@@ -1064,9 +1064,9 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 4
   ground_truth:
-    cause: recurring_blockage
+    cause: zone_blocked
     scope: zone_wide
-    persistence: recurring
+    persistence: persistent
     relevant_precedent_ids:
     - INC-R3
     expected_validation: PASS
@@ -1115,12 +1115,12 @@
       ts_offset_sec: 120
     incidents:
     - incident_id: INC-R4
-      true_cause: recurring_blockage
+      true_cause: zone_blocked
       text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
         cleared.
       is_relevant: true
     - incident_id: INC-RX4
-      true_cause: hardware_fault
+      true_cause: robot_internal_fault
       text: Single robot gearbox fault, unrelated.
       is_relevant: false
     active_policies: []
@@ -1140,9 +1140,9 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 4
   ground_truth:
-    cause: recurring_blockage
+    cause: zone_blocked
     scope: zone_wide
-    persistence: recurring
+    persistence: persistent
     relevant_precedent_ids:
     - INC-R4
     expected_validation: PASS
@@ -1178,7 +1178,7 @@
       ts_offset_sec: 60
     incidents:
     - incident_id: INC-C0
-      true_cause: congestion_deadlock
+      true_cause: zone_congestion
       text: Three robots jammed at the aisle intersection; mutual blocking until one was rerouted.
       is_relevant: true
     active_policies: []
@@ -1198,7 +1198,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 3
   ground_truth:
-    cause: congestion_deadlock
+    cause: zone_congestion
     scope: zone_wide
     persistence: persistent
     relevant_precedent_ids:
@@ -1236,7 +1236,7 @@
       ts_offset_sec: 60
     incidents:
     - incident_id: INC-C1
-      true_cause: congestion_deadlock
+      true_cause: zone_congestion
       text: Three robots jammed at the aisle intersection; mutual blocking until one was rerouted.
       is_relevant: true
     active_policies: []
@@ -1256,7 +1256,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 3
   ground_truth:
-    cause: congestion_deadlock
+    cause: zone_congestion
     scope: zone_wide
     persistence: persistent
     relevant_precedent_ids:
@@ -1294,7 +1294,7 @@
       ts_offset_sec: 60
     incidents:
     - incident_id: INC-C2
-      true_cause: congestion_deadlock
+      true_cause: zone_congestion
       text: Three robots jammed at the aisle intersection; mutual blocking until one was rerouted.
       is_relevant: true
     active_policies: []
@@ -1314,7 +1314,7 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 3
   ground_truth:
-    cause: congestion_deadlock
+    cause: zone_congestion
     scope: zone_wide
     persistence: persistent
     relevant_precedent_ids:
@@ -1376,7 +1376,7 @@
       ts_offset_sec: 90
     incidents:
     - incident_id: INC-F0
-      true_cause: localization_loss
+      true_cause: localization_failure
       text: Fleet-wide localization degraded after a map server restart; aborts across all zones.
       is_relevant: true
     active_policies: []
@@ -1396,7 +1396,7 @@
       per_robot_zone_spread: 4
       per_zone_robot_spread: 1
   ground_truth:
-    cause: localization_loss
+    cause: localization_failure
     scope: fleet_wide
     persistence: persistent
     relevant_precedent_ids:
@@ -1458,7 +1458,7 @@
       ts_offset_sec: 90
     incidents:
     - incident_id: INC-F1
-      true_cause: localization_loss
+      true_cause: localization_failure
       text: Fleet-wide localization degraded after a map server restart; aborts across all zones.
       is_relevant: true
     active_policies: []
@@ -1478,7 +1478,7 @@
       per_robot_zone_spread: 4
       per_zone_robot_spread: 1
   ground_truth:
-    cause: localization_loss
+    cause: localization_failure
     scope: fleet_wide
     persistence: persistent
     relevant_precedent_ids:

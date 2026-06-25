@@ -17,21 +17,23 @@
 
 ## 통제 라벨셋 (점수화하려면 고정 어휘 필수)
 
-### cause (근본원인) — 고정 taxonomy
+### cause — 에이전트 출력 enum과 동일해야 채점됨 (failure_analysis _OUTPUT_SCHEMA)
 | 라벨 | 의미 |
 |---|---|
-| `static_obstacle` | 경로에 고정 장애물/방치 파레트 |
-| `congestion_deadlock` | 다수 로봇 교착 |
-| `recurring_blockage` | 같은 지점 반복 실패 (시공간 패턴 → 보통 zone_wide) |
-| `localization_loss` | pose 상실 / AMCL·SLAM 드리프트 |
-| `battery_depletion` | 저배터리/충전으로 중단 |
-| `hardware_fault` | estop·모터·센서 fault code |
-| `sensor_degradation` | 라이다/카메라 불량 데이터 (반사면 등) |
-| `transient_glitch` | 일회성, 실제 원인 없음 (isolated, 무행동이 정답) |
+| `transient_obstacle` | 일회성 장애/순간 차단 (history 없음) |
+| `robot_internal_fault` | 로봇 내부 결함 (모터·estop·센서 등) |
+| `low_battery` | 저배터리/충전으로 중단 |
+| `localization_failure` | pose 상실 / AMCL·SLAM 드리프트 |
+| `zone_congestion` | 다수 로봇 교착·혼잡 |
+| `zone_blocked` | zone 통로 막힘 (방치 파레트 등, 반복 포함) |
+| `fleet_overload` | 전체 fleet 과부하 |
 | `unknown` | 판별 불가 (폴백) |
 
-### scope: `isolated` | `zone_wide` | `fleet_wide`
-### persistence: `transient` | `persistent` | `recurring`
+> ⚠️ ground_truth.cause는 **반드시 위 enum** 사용 (에이전트가 이 값으로만 출력).
+> 다른 taxonomy 쓰면 영원히 0% (라벨 공간 불일치).
+
+### scope: `isolated` | `robot_specific` | `zone_wide` | `fleet_wide`
+### persistence: `transient` | `persistent`  (에이전트 enum — `recurring` 없음)
 
 ### defect_type (validator_probes 전용)
 | 라벨 | 주입 결함 | 기대 verdict |

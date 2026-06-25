@@ -100,6 +100,13 @@ def summarize(tag, rows):
     print(f"  cause accuracy: {cause}/{n} ({100*cause/n:.1f}%)" if n else "  no cases")
     print(f"  scope accuracy: {scope}/{n} ({100*scope/n:.1f}%)" if n else "")
     print(f"  verdicts: {dict(Counter(r['verdict'] for r in ok))}")
+    # per-case pred vs gt (so accuracy is debuggable, not a black box)
+    print("  case        cause(pred/gt)                    scope(pred/gt)        verdict")
+    for r in ok:
+        cflag = "✓" if r["cause_ok"] else "✗"
+        sflag = "✓" if r["scope_ok"] else "✗"
+        print(f"  {r['case']:10s} {cflag} {str(r['pred_cause']):20s}/{str(r['gt_cause']):20s} "
+              f"{sflag} {str(r['pred_scope']):12s}/{str(r['gt_scope']):12s} {r['verdict']}")
     if errs:
         print(f"  ERRORS: {[(e['case'], e['err'][:60]) for e in errs[:5]]}")
     return cause, scope, n

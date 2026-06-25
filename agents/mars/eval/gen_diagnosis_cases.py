@@ -61,53 +61,53 @@ def add(tags, seed, trigger, cause, scope, persistence, prec_ids, desc, exp_val=
 for i in range(3):
     z = ZONES[i]
     add(["normal", "thin_evidence"], {}, trig(f"R{i+1}", z),
-        "transient_glitch", "isolated", "transient", [],
+        "transient_obstacle", "isolated", "transient", [],
         "single abort, no history/precedent -> isolated transient")
 
 # 4-7 battery_depletion isolated (adversarial: estop symptom, real cause battery)
 for i in range(4):
     z = ZONES[i]
-    seed = {"incidents": [inc(f"INC-B{i}", "battery_depletion",
+    seed = {"incidents": [inc(f"INC-B{i}", "low_battery",
             "estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.", True)]}
     add(["adversarial"], seed, trig(f"R{i+1}", z, batt=10, estop=True, faults=["ESTOP"]),
-        "battery_depletion", "isolated", "persistent", [f"INC-B{i}"],
+        "low_battery", "isolated", "persistent", [f"INC-B{i}"],
         "estop symptom but battery is the cause (needs precedent/evidence)")
 
 # 8-10 hardware_fault isolated
 for i in range(3):
     z = ZONES[i+1]
     add(["normal"], {}, trig(f"R{i+1}", z, batt=80, faults=["MOTOR_OVERCURRENT"]),
-        "hardware_fault", "isolated", "persistent", [],
+        "robot_internal_fault", "isolated", "persistent", [],
         "motor fault code -> hardware_fault isolated")
 
 # 11-13 localization_loss isolated
 for i in range(3):
     z = ZONES[i+2]
-    seed = {"incidents": [inc(f"INC-L{i}", "localization_loss",
+    seed = {"incidents": [inc(f"INC-L{i}", "localization_failure",
             "AMCL pose covariance spiked near featureless wall; robot lost localization and aborted.", True)]}
     add(["normal"], seed, trig(f"R{i+1}", z, batt=75),
-        "localization_loss", "isolated", "persistent", [f"INC-L{i}"],
+        "localization_failure", "isolated", "persistent", [f"INC-L{i}"],
         "localization drift near featureless area")
 
 # 14-16 sensor_degradation isolated (reflective surface precedent + distractor)
 for i in range(3):
     z = ZONES[i]
     seed = {"incidents": [
-        inc(f"INC-S{i}", "sensor_degradation",
+        inc(f"INC-S{i}", "robot_internal_fault",
             "Lidar returns corrupted by reflective shrink-wrap; phantom obstacles caused aborts.", True),
-        inc(f"INC-SX{i}", "battery_depletion", "Unrelated battery cutoff mid-aisle.", False)]}
+        inc(f"INC-SX{i}", "low_battery", "Unrelated battery cutoff mid-aisle.", False)]}
     add(["adversarial"], seed, trig(f"R{i+1}", z, batt=78),
-        "sensor_degradation", "isolated", "persistent", [f"INC-S{i}"],
+        "robot_internal_fault", "isolated", "persistent", [f"INC-S{i}"],
         "reflective surface -> sensor_degradation (distractor present)")
 
 # 17-20 static_obstacle zone (2 recent failures same zone + precedent)
 for i in range(4):
     z = ZONES[i]
     seed = {"failures": [fail(f"R{i*2+1}", z, 400), fail(f"R{i*2+2}", z, 180)],
-            "incidents": [inc(f"INC-O{i}", "static_obstacle",
+            "incidents": [inc(f"INC-O{i}", "zone_blocked",
                 "Dropped pallet blocked the lane; robots aborted until removed.", True)]}
     add(["zone_wide"], seed, trig(f"RX{i}", z, spread=3),
-        "static_obstacle", "zone_wide", "persistent", [f"INC-O{i}"],
+        "zone_blocked", "zone_wide", "persistent", [f"INC-O{i}"],
         "two prior + this abort same zone -> static_obstacle zone_wide")
 
 # 21-25 recurring_blockage zone_wide (3 prior + relevant precedent + distractor)
@@ -115,33 +115,33 @@ for i in range(5):
     z = ZONES[i % len(ZONES)]
     seed = {"failures": [fail(f"A{i}", z, 600), fail(f"B{i}", z, 300), fail(f"C{i}", z, 120)],
             "incidents": [
-                inc(f"INC-R{i}", "recurring_blockage",
+                inc(f"INC-R{i}", "zone_blocked",
                     "Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until cleared.", True),
-                inc(f"INC-RX{i}", "hardware_fault", "Single robot gearbox fault, unrelated.", False)]}
+                inc(f"INC-RX{i}", "robot_internal_fault", "Single robot gearbox fault, unrelated.", False)]}
     add(["zone_wide", "novel_cause"], seed, trig(f"R{i+1}", z, spread=4),
-        "recurring_blockage", "zone_wide", "recurring", [f"INC-R{i}"],
+        "zone_blocked", "zone_wide", "persistent", [f"INC-R{i}"],
         "repeated same-zone failures -> recurring_blockage (distractor present)")
 
 # 26-28 congestion_deadlock zone_wide (multiple robots, narrow zone)
 for i in range(3):
     z = "aisle_3"
     seed = {"failures": [fail(f"D{i}1", z, 90), fail(f"D{i}2", z, 60)],
-            "incidents": [inc(f"INC-C{i}", "congestion_deadlock",
+            "incidents": [inc(f"INC-C{i}", "zone_congestion",
                 "Three robots jammed at the aisle intersection; mutual blocking until one was rerouted.", True)]}
     add(["zone_wide"], seed, trig(f"R{i+1}", z, spread=3),
-        "congestion_deadlock", "zone_wide", "persistent", [f"INC-C{i}"],
+        "zone_congestion", "zone_wide", "persistent", [f"INC-C{i}"],
         "multiple robots jammed same narrow zone -> congestion_deadlock")
 
 # 29-30 fleet_wide (failures across many zones)
 for i in range(2):
     seed = {"failures": [fail("F1", "aisle_1", 300), fail("F2", "aisle_5", 250),
                          fail("F3", "shipping_dock", 150), fail("F4", "cold_zone", 90)],
-            "incidents": [inc(f"INC-F{i}", "localization_loss",
+            "incidents": [inc(f"INC-F{i}", "localization_failure",
                 "Fleet-wide localization degraded after a map server restart; aborts across all zones.", True)]}
     t = trig(f"R{i+1}", "staging", spread=1)
     t["distribution"] = {"per_robot_zone_spread": 4, "per_zone_robot_spread": 1}
     add(["fleet_wide"], seed, t,
-        "localization_loss", "fleet_wide", "persistent", [f"INC-F{i}"],
+        "localization_failure", "fleet_wide", "persistent", [f"INC-F{i}"],
         "aborts across many zones -> fleet_wide")
 
 
