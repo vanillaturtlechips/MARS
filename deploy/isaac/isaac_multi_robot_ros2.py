@@ -51,6 +51,10 @@ ap.add_argument("--charge", action="store_true",
                 help="charging-demo layout: spawn robots SPREAD just south of the charger "
                      "pad (0,5) instead of clustered in the aisle, so they don't bump each "
                      "other and reach the pad quickly")
+ap.add_argument("--scenario", type=str, default="",
+                help="S1~S6 multi-robot scenario: spawn robots at the scenario's spawn "
+                     "points (deploy/scenarios.py). Pair with deploy/nav2/scenario_goals.py "
+                     "to send the matching Nav2 goals.")
 args, _ = ap.parse_known_args()
 
 from isaacsim.core.utils.extensions import enable_extension  # noqa: E402
@@ -93,7 +97,15 @@ RACK_USD     = f"{_ISAAC_CLOUD}/Isaac/Environments/Simple_Warehouse/Props/SM_Rac
 # OPPOSITE side aisles (R2->x=-3 right, R3->x=-13 left) on diverging paths and never
 # cross each other or R1 (there is NO inter-robot collision layer). All x in the clear
 # aisle band [-9.8,-6.2]; y>=8 stays in the camera's floor view (floor from y~6.75).
-if args.charge:
+if args.scenario:
+    # S1~S6 scenario spawns (deploy/scenarios.py). Same coords as the Nav2 goal
+    # driver so each robot is sent the goal matching its spawn.
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    import scenarios as _SC
+    ROBOTS = _SC.robots_for(args.scenario)
+    carb.log_warn(f"[multi] scenario {args.scenario}: {_SC.SCENARIOS[args.scenario]['desc']}")
+elif args.charge:
     # Charging layout: spread just SOUTH of the charger pad (0,5), 3-4m apart, so the
     # bridge can drive them to the pad one at a time without bumping the others, and
     # each reaches it in a short hop. R1 critical (docks first), R2 low (waits), R3 idle.
@@ -197,53 +209,41 @@ def spawn_robot(name: str, x: float, y: float) -> str:
     return prim_path
 
 
-def build_lidar_graph(name: str, prim_path: str) -> None:
-    """RTX Lidar → /scan (sensor_msgs/LaserScan) 퍼블리시 OmniGraph.
+# Module-level refs so LidarRtx objects aren't garbage-collected — their __del__
+# destroys the render product, silently killing /scan. (Same bug class as the
+# single-robot script.) MUST be called AFTER world.reset() (reset tears down
+# render products) — see the post-reset loop below.
+_LIDARS: list = []
+_LIDAR_WRITERS: list = []
 
-    라이다 prim은 로봇 루트 하위에 생성. URDF lidar_joint 위치와 맞춤:
-      x=+0.35, y=0, z=+0.25 (base_link 기준 = 섀시 전면 상단).
+
+def build_lidar_graph(name: str, prim_path: str) -> None:
+    """RTX Lidar → /{name}/scan (sensor_msgs/LaserScan) via replicator writer.
+
+    RTX lidar publishes through the render pipeline, not a direct prim read.
+    LidarRtx makes its OWN render product; we use it (no second one) and attach
+    the RtxLidarROS2PublishLaserScan writer (the mechanism the OmniGraph
+    ROS2RtxLidarHelper uses internally). lidar at URDF lidar_joint origin
+    (x=0.35, y=0, z=0.25 from base_link).
     """
     from isaacsim.sensors.rtx import LidarRtx
-    from pxr import UsdGeom, Gf
+    import omni.replicator.core as rep
 
-    lidar_path = f"{prim_path}/lidar"
     lidar = LidarRtx(
-        prim_path=lidar_path,
+        prim_path=f"{prim_path}/lidar",
         name=f"{name}_lidar",
-        position=np.array([0.35, 0.0, 0.25]),  # URDF lidar_joint origin과 일치
+        position=np.array([0.35, 0.0, 0.25]),
         orientation=np.array([1.0, 0.0, 0.0, 0.0]),
-        config_file_name="RPLIDAR_S2E",  # 2D 라이다 프리셋 (360°, 30m)
+        config_file_name="RPLIDAR_S2E",  # 2D, 360°, 30 m
     )
-
-    ns = f"/{name}"
-    g = f"/{name}_LidarGraph"
-    og.Controller.edit(
-        {"graph_path": g, "evaluator_name": "execution"},
-        {
-            og.Controller.Keys.CREATE_NODES: [
-                ("OnTick",       "omni.graph.action.OnPlaybackTick"),
-                ("Context",      "isaacsim.ros2.bridge.ROS2Context"),
-                ("ReadSimTime",  "isaacsim.core.nodes.IsaacReadSimulationTime"),
-                ("PublishScan",  "isaacsim.ros2.bridge.ROS2PublishLaserScan"),
-            ],
-            og.Controller.Keys.SET_VALUES: [
-                ("PublishScan.inputs:nodeNamespace", ns),
-                ("PublishScan.inputs:topicName",     "scan"),
-                ("PublishScan.inputs:frameId",       f"{name}/lidar_link"),
-            ],
-            og.Controller.Keys.CONNECT: [
-                ("OnTick.outputs:tick",                  "PublishScan.inputs:execIn"),
-                ("Context.outputs:context",              "PublishScan.inputs:context"),
-                ("ReadSimTime.outputs:simulationTime",   "PublishScan.inputs:timeStamp"),
-            ],
-        },
-    )
-    set_target_prims(
-        primPath=f"{g}/PublishScan",
-        inputName="inputs:lidarPrim",
-        targetPrimPaths=[lidar_path],
-    )
-    carb.log_warn(f"[multi] lidar graph ready for {name} ({ns}/scan)")
+    _LIDARS.append(lidar)  # keep ref alive
+    rp_path = lidar.get_render_product_path()
+    writer = rep.writers.get("RtxLidarROS2PublishLaserScan")
+    writer.initialize(topicName="scan", frameId=f"{name}/lidar_link",
+                      nodeNamespace=f"/{name}")
+    writer.attach([rp_path])
+    _LIDAR_WRITERS.append(writer)
+    carb.log_warn(f"[multi] lidar writer attached for {name} (/{name}/scan)")
 
 
 def build_robot_graph(name: str, prim_path: str) -> None:
@@ -331,12 +331,31 @@ og.Controller.edit(
     },
 )
 
+_PRIMS: dict[str, str] = {}
 for _name, _x, _y in ROBOTS:
     _prim = spawn_robot(_name, _x, _y)
     build_robot_graph(_name, _prim)
-    build_lidar_graph(_name, _prim)
+    _PRIMS[_name] = _prim
+
+# S6: spawn blocking boxes in front of robots 0,1 (scenario obstacles).
+if args.scenario:
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    import scenarios as _SC
+    from isaacsim.core.api.objects import FixedCuboid
+    for _i, (_ox, _oy) in enumerate(_SC.obstacles_for(args.scenario)):
+        world.scene.add(FixedCuboid(
+            prim_path=f"/World/obstacle_{_i}", name=f"obstacle_{_i}",
+            position=np.array([_ox, _oy, 0.3]),
+            scale=np.array([0.6, 0.6, 0.6]),
+        ))
+        carb.log_warn(f"[multi] scenario obstacle at ({_ox:.2f},{_oy:.2f})")
 
 world.reset()
+
+# Lidar AFTER reset (reset tears down render products) — see build_lidar_graph.
+for _name in (_n for _n, _, _ in ROBOTS):
+    build_lidar_graph(_name, _PRIMS[_name])
 
 import omni.timeline  # noqa: E402
 timeline = omni.timeline.get_timeline_interface()
