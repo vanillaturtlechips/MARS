@@ -108,7 +108,7 @@ PolicyManager) is deterministic — **not agents.**
 ## 5. Run procedure (multi-robot, RunPod)
 
 Each long process in its own terminal; **never Ctrl+Z** (suspends). Kill stale
-first: `pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/humble/lib/nav2; pkill -9 -f bridge`.
+first: `pkill -9 -f deploy/isaac; pkill -9 -f /opt/ros/jazzy/lib/nav2; pkill -9 -f bridge`.
 
 1. **Isaac** (`source deploy/isaac/env_isaac.sh`):
    `python deploy/isaac/isaac_multi_robot_ros2.py`
@@ -126,13 +126,13 @@ Single-robot full loop: `demo.py --ros2-keepout` (see git history / README_keepo
 
 ## 6. Known gotchas (all hit + solved)
 
-- **Python:** Isaac Sim 5.1 wheels are **cp311** only → separate `python3.11` venv
-  (`/workspace/isaac_venv311`); ROS2/supervisor run in system **py3.10** (rclpy).
+- **Python:** Isaac Sim 6.0 wheels are **cp311** only → separate `python3.12` venv
+  (`/workspace/isaac_venv312`); ROS2/supervisor run in system **py3.12** (rclpy).
 - **DDS:** Isaac's bundled FastDDS ≠ system FastDDS → topic visible but `echo`
   hangs over SHM. Force **UDPv4-only** via `FASTRTPS_DEFAULT_PROFILES_FILE`
   (`fastdds_udp_only.xml`) on **both** sides.
 - **Isaac ROS2 bridge:** strip system ROS2 from the Isaac shell (`env_isaac.sh`)
-  so it loads its **internal** rclpy; `LD_LIBRARY_PATH` → ext `humble/lib`.
+  so it loads its **internal** rclpy; `LD_LIBRARY_PATH` → ext `jazzy/lib`.
 - **OmniGraph:** must `timeline.play()` + `world.step(render=True)` or
   `OnPlaybackTick` never fires (topic advertised, 0 messages).
 - **Repeated `kill -9` Isaac → Vulkan/NGX startup hang** (cache clear doesn't fix;
@@ -174,7 +174,7 @@ Single-robot full loop: `demo.py --ros2-keepout` (see git history / README_keepo
 ```bash
 cd /workspace && git clone https://github.com/vanillaturtlechips/MARS.git
 cd MARS && git checkout feature/mars-msgs-interfaces
-bash deploy/runpod/setup_phase_b.sh        # ROS2+Nav2+mars_msgs + py3.11 Isaac (~20-30 min)
+bash deploy/runpod/setup_phase_b.sh        # ROS2+Nav2+mars_msgs + py3.12 Isaac (~20-30 min)
 bash deploy/runpod/setup_postgres.sh       # only for the brain (Phase A / bridges)
 python deploy/nav2/make_empty_map.py
 ```

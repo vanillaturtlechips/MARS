@@ -1,4 +1,4 @@
-# Nav2 params for the Isaac iw_hub keepout demo (ROS2 Humble).
+# Nav2 params for the Isaac iw_hub keepout demo (ROS2 Jazzy).
 #
 # Design choices:
 #  - Perfect localization: Isaac publishes tf map->base_link directly (no AMCL,
@@ -25,7 +25,7 @@ planner_server:
     expected_planner_frequency: 5.0
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner/NavfnPlanner"
+      plugin: "nav2_navfn_planner::NavfnPlanner"
       tolerance: 0.5
       use_astar: false
       allow_unknown: true
@@ -134,10 +134,10 @@ behavior_server:
     robot_base_frame: base_link
     behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
     spin:
-      plugin: "nav2_behaviors/Spin"
+      plugin: "nav2_behaviors::Spin"
     backup:
-      plugin: "nav2_behaviors/BackUp"
+      plugin: "nav2_behaviors::BackUp"
     drive_on_heading:
-      plugin: "nav2_behaviors/DriveOnHeading"
+      plugin: "nav2_behaviors::DriveOnHeading"
     wait:
-      plugin: "nav2_behaviors/Wait"
+      plugin: "nav2_behaviors::Wait"

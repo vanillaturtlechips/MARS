@@ -611,7 +611,7 @@ Propose-then-Commit:
 
 **내용:** Isaac Lab 설치 및 기본 RL 동작 확인
 
-- [x] Isaac Sim 5.1.0 + Isaac Lab 2.3.2 설치
+- [x] Isaac Sim 6.0.0 + Isaac Lab 2.3.2 설치
 - [x] NVIDIA Driver 580.142, CUDA 13.0
 - [x] Cartpole PPO 훈련 (보상 0.10 → 4.38)
 - [x] GUI 뷰어 동작 확인
@@ -916,7 +916,7 @@ VRAM 관리 (RTX 2070 8GB 기준):
 
 | 영역 | 기술 | 버전 |
 |------|------|------|
-| 시뮬레이터 | Isaac Sim | 5.1.0 |
+| 시뮬레이터 | Isaac Sim | 6.0.0 |
 | RL 프레임워크 | Isaac Lab | 2.3.2 |
 | 단일 로봇 RL | rsl_rl (PPO) | 3.0.1 |
 | 멀티 로봇 RL | IPPO → MAPPO (커스텀) | - |
@@ -926,7 +926,7 @@ VRAM 관리 (RTX 2070 8GB 기준):
 | 에이전트 프레임워크 | LangChain | 프로토타입 |
 | RAG | pgvector (PostgreSQL) | - |
 | Jetson LLM | Qwen2.5 3B (채택) | INT4 Q4_K_M (ollama), 21.5 tok/s |
-| 통신 | ROS2 Humble | - |
+| 통신 | ROS2 Jazzy | - |
 | 모델 배포 | TorchScript | - |
 | 엣지 디바이스 | Jetson Orin Nano Super | 8GB |
 | 훈련 하드웨어 | RTX 2070 Mobile | 8GB VRAM |
@@ -997,7 +997,7 @@ OS: Ubuntu 22.04 (JetPack 6.2, L4T R36.4.7)
 설치 완료:
   ✅ PyTorch 2.8.0 + CUDA (cuSPARSELt 0.7.0, cuDSS 0.7.1.4)
   ✅ torchvision 0.23.0
-  ✅ ROS2 Humble (ros-humble-ros-base)
+  ✅ ROS2 Jazzy (ros-jazzy-ros-base)
   ✅ Python 3.10.12
 
 벤치마킹 결과 (2026-05-16):

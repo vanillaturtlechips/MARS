@@ -242,7 +242,7 @@ Agent       reads the whole enriched event + history + RAG
 
 The agent never subscribes to health topics itself or recomputes these counts; it consumes what the Aggregator attached. Facts that are directly observable are resolved deterministically; only genuine inference reaches the LLM.
 
-### Topic → enriched-event field mapping (Isaac Sim + Nav2 Humble)
+### Topic → enriched-event field mapping (Isaac Sim + Nav2 Jazzy)
 
 All subscriptions are per-robot namespaced (`/robotN/...`). Three sources: **Nav2** (navigation), **Isaac Sim** (sim state/sensors), and **self-published** sim nodes (battery, health — nothing produces these otherwise).
 
@@ -262,7 +262,7 @@ SUBSCRIBED TOPIC                         TYPE                          SRC      
 /clock                                    rosgraph_msgs/Clock           IsaacSim use_sim_time = true
 ```
 
-`nav_outcome` is read from the action **status** (GoalStatus: 4=succeeded, 5=canceled, 6=aborted), NOT a result error code — on Humble the `NavigateToPose` result is empty. `fault_flag` is derived by the Aggregator from `robot_health.level == ERROR` OR `estop_active` OR `battery_pct < CRITICAL`. "Mission" is supervisory: dispatch is a `NavigateToPose` goal and mission state lives in the blackboard — there is no robot-published mission topic.
+`nav_outcome` is read from the action **status** (GoalStatus: 4=succeeded, 5=canceled, 6=aborted), NOT a result error code — on Jazzy the `NavigateToPose` result is empty. `fault_flag` is derived by the Aggregator from `robot_health.level == ERROR` OR `estop_active` OR `battery_pct < CRITICAL`. "Mission" is supervisory: dispatch is a `NavigateToPose` goal and mission state lives in the blackboard — there is no robot-published mission topic.
 
 ---
 
@@ -902,6 +902,6 @@ The Aggregator updates hot state continuously; only events and resolved records 
 + Charging pressure->policy loop (pressure metrics -> agent -> charging policy -> service)
 + Outcome Evaluator closes the RAG loop (labeled effectiveness history)
 + Hot state separated from analytical/vector store
-+ Topic->field mapping pinned to Isaac Sim + Nav2 Humble; outcome from GoalStatus (result empty)
++ Topic->field mapping pinned to Isaac Sim + Nav2 Jazzy; outcome from GoalStatus (result empty)
 + Custom mars_msgs interfaces: RobotHealth (build) + optional MissionCommand/Status, MissionFeasible.srv
 ```

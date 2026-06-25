@@ -12,7 +12,7 @@ validator.
 
 - Docker + Docker Compose
 - Python 3.10+ (with `.venv` already set up)
-- ROS2 Humble (only needed for M4 Isaac Sim adapter; the mock sim runs without it)
+- ROS2 Jazzy (only needed for M4 Isaac Sim adapter; the mock sim runs without it)
 
 ### 1. Start Postgres + Redis
 
@@ -109,13 +109,13 @@ DECISIONS.md      All open-parameter defaults with rationale
 docker-compose.yml
 ```
 
-## Building mars_msgs (ROS2 Humble)
+## Building mars_msgs (ROS2 Jazzy)
 
 ```bash
 mkdir -p ~/ros2_ws/src
 ln -s $(pwd)/mars/mars_msgs ~/ros2_ws/src/mars_msgs
 cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --packages-select mars_msgs
 source install/setup.bash
 ```

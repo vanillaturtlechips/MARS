@@ -242,7 +242,7 @@ python training/single_robot/eval_manipulation.py \
 
 ### Jetson 완료
 - PyTorch 2.8.0 + CUDA 설치
-- ROS2 Humble 설치
+- ROS2 Jazzy 설치
 - ollama + qwen2.5:3b-instruct-q4_K_M 설치 (채택)
 - `actor_phase15.pt` export 및 복사 완료
 

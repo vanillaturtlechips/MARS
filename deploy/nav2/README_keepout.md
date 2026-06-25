@@ -33,10 +33,10 @@ The mask publisher itself lives in the supervisor:
 `agents/mars/mars/ros/isaac_sim_adapter.py` → `ROS2SimAdapter.publish_keepout_mask`
 (topic constant `KEEPOUT_MASK_TOPIC = "/keepout_filter_mask"`).
 
-## Bring-up (RunPod, ROS2 Humble + Nav2)
+## Bring-up (RunPod, ROS2 Jazzy + Nav2)
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source ~/ros2_ws/install/setup.bash          # mars_msgs
 
 # 1) Isaac Sim warehouse scene publishing /tf (map -> <robot>/base_link),

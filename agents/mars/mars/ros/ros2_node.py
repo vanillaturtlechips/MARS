@@ -5,7 +5,7 @@ This is the entry point when running against real Isaac Sim + Nav2.
 Equivalent role to demo.py but for production use.
 
 Usage:
-    source /opt/ros/humble/setup.bash
+    source /opt/ros/jazzy/setup.bash
     source ~/ros2_ws/install/setup.bash   # for mars_msgs
     python -m mars.ros.ros2_node
 

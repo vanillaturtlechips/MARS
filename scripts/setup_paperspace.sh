@@ -5,7 +5,7 @@
 #  용도: GUI 데모 (훈련은 RunPod). 한 방에 끝나도록 설계 — 중간 땜질 없음.
 #
 #  ※ 핵심 제약 (이걸 어기면 전부 깨짐) ※
-#    드라이버 535  →  Isaac Sim 5.1 불가  →  Isaac Sim 4.5.0 고정
+#    드라이버 535  →  Isaac Sim 6.0 불가  →  Isaac Sim 4.5.0 고정
 #    Isaac Sim 4.5 →  torch == 2.5.1 고정 (2.6+ 깔면 isaacsim 깨짐)
 #    모델은 rsl_rl 3.x 산출물 → rsl_rl 필요. 단 3.1.2는 torch를 2.6+로
 #    끌어올려 충돌 → rsl_rl 3.0.1 을 --no-deps 로 설치해 torch 보존.
@@ -52,17 +52,17 @@ sudo systemctl disable --now unattended-upgrades 2>/dev/null || true
 
 # ── 1. Python 3.10 (+ venv 모듈) ──────────────────────────────────────
 echo ""; echo "[1/7] Python 3.10 + venv..."
-if ! python3.10 -c "import ensurepip" &>/dev/null; then
+if ! python3.12 -c "import ensurepip" &>/dev/null; then
     sudo add-apt-repository ppa:deadsnakes/ppa -y 2>/dev/null || true
     sudo apt-get update -q
-    sudo apt-get install -y python3.10 python3.10-venv python3.10-dev python3.10-distutils
+    sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3.12-distutils
 fi
-python3.10 --version
+python3.12 --version
 
 # ── 2. venv (깨진 상태면 깨끗이 재생성) ───────────────────────────────
 echo ""; echo "[2/7] venv: $VENV"
 if [ ! -f "$VENV/bin/activate" ]; then
-    python3.10 -m venv "$VENV"
+    python3.12 -m venv "$VENV"
 fi
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"

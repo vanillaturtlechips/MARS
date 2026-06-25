@@ -1,5 +1,5 @@
 """
-Launch the Nav2 keepout costmap-filter info server (ROS2 Humble).
+Launch the Nav2 keepout costmap-filter info server (ROS2 Jazzy).
 
 This brings up ONLY the costmap_filter_info_server (a lifecycle node) plus a
 lifecycle manager to activate it.  The keepout MASK is published dynamically by

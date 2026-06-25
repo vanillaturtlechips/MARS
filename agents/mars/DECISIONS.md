@@ -123,7 +123,7 @@ Reason: ivfflat requires `VACUUM ANALYZE` or a manual `REINDEX` to build useful 
 
 ---
 
-## 12. Deployment: ROS2 Humble vs no ROS2
+## 12. Deployment: ROS2 Jazzy vs no ROS2
 
 All supervisory Python code imports rclpy only inside concrete adapters (`ros/` module).  The supervisor core, agents, validators, and tests are importable without ROS2 installed.  The mock sim (`sim/`) runs as a plain Python thread — no ROS2 required for the M1 demo.
 

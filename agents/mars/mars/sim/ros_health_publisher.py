@@ -62,7 +62,7 @@ def main() -> None:
         from std_msgs.msg import String
         from sensor_msgs.msg import BatteryState
     except ImportError:
-        log.error("rclpy/std_msgs/sensor_msgs not available — source ROS2 Humble first.")
+        log.error("rclpy/std_msgs/sensor_msgs not available — source ROS2 Jazzy first.")
         raise SystemExit(1)
 
     try:

@@ -74,7 +74,7 @@ R1·R2·R3가 통로로 같이 진입 → **R1이 통로 x=-8 올라가 박스�
 ```bash
 cd /workspace && git clone git@github.com:vanillaturtlechips/MARS.git ; cd MARS
 git checkout feature/mars-msgs-interfaces && git pull
-bash deploy/runpod/setup_phase_b.sh     # ROS2+Nav2+mars_msgs+Isaac5.1(py3.11). Isaac 다운 느림/불안정
+bash deploy/runpod/setup_phase_b.sh     # ROS2+Nav2+mars_msgs+Isaac6.0(py3.12). Isaac 다운 느림/불안정
 #   끊기면: nohup bash deploy/runpod/install_isaac_pip.sh > /tmp/isaac_pip.log 2>&1 &  (재시도 루프)
 bash deploy/runpod/setup_postgres.sh    # Postgres+pgvector+warehouse+supervisor deps
 # agents/mars/.env : DB_DSN / DB_READONLY_DSN / ANTHROPIC_API_KEY / LLM_PROVIDER=anthropic

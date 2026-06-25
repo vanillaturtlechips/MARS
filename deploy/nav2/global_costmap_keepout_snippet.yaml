@@ -1,4 +1,4 @@
-# ADD-IN snippet for your Nav2 bringup params (ROS2 Humble).
+# ADD-IN snippet for your Nav2 bringup params (ROS2 Jazzy).
 #
 # Merge the `filters` list and `keepout_filter` block into EACH robot's
 # global_costmap.  The KeepoutFilter subscribes to /costmap_filter_info (from
@@ -7,7 +7,7 @@
 # the masked cells become lethal in the global costmap and the planner routes
 # around the zone.
 #
-# Note (Humble): `filters` is a SEPARATE list from `plugins`. Keep your existing
+# Note (Jazzy): `filters` is a SEPARATE list from `plugins`. Keep your existing
 # plugins; just add the filters list + the keepout_filter block.
 #
 # Per-robot namespacing: with robots under /R1, /R2, ... the global_costmap key

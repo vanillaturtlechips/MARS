@@ -4,7 +4,7 @@
 
 | 항목 | 값 |
 |------|-----|
-| 시뮬레이터 | Isaac Lab 2.3.2 / Isaac Sim 5.1.0 |
+| 시뮬레이터 | Isaac Lab 2.3.2 / Isaac Sim 6.0.0 |
 | GPU | RTX 2070 Mobile |
 | 알고리즘 | PPO (rsl_rl OnPolicyRunner) |
 | 로봇 모델 | Cuboid rigid body (0.5×0.4×0.3 m), 홀로노믹 직접 속도 제어 |

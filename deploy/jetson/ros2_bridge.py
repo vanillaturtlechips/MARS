@@ -1,4 +1,4 @@
-"""ROS2 Humble 브릿지 — RL policy → /cmd_vel 퍼블리시.
+"""ROS2 Jazzy 브릿지 — RL policy → /cmd_vel 퍼블리시.
 
 실행:
   python3 deploy/jetson/ros2_bridge.py

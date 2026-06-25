@@ -57,7 +57,14 @@
       "Bash(echo \"alias wsource='source ~/MARS/agents/mars/ros2_ws/install/setup.bash'\")",
       "Bash(apt-cache search *)",
       "Bash(pip3 install *)",
-      "Bash(wget -q -O /root/warehouse/full_warehouse.usd \"https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Environments/Simple_Warehouse/full_warehouse.usd\")"
+      "Bash(wget -q -O /root/warehouse/full_warehouse.usd \"https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Environments/Simple_Warehouse/full_warehouse.usd\")",
+      "Bash(python -m py_compile deploy/isaac/isaac_warehouse_ros2.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('agents/mars/ros2_ws/src/iw_hub_slam/launch/slam.launch.py'\\).read\\(\\)\\)\")",
+      "Bash(find / -iname \"Screenshot from 2026-06-24 20-58-54*\")",
+      "Read(//home/**)",
+      "Bash(grep -nE \"pt$|\\\\.pt|logs|model|ckpt|checkpoint\" .gitignore)",
+      "Bash(sed -i 's/ROS2 Humble/ROS2 Jazzy/g; s/\\(Humble\\)/\\(Jazzy\\)/g; s/Note \\(Humble\\)/Note \\(Jazzy\\)/g' deploy/nav2/keepout_costmap_filter_info.yaml deploy/nav2/bringup_keepout.launch.py deploy/nav2/global_costmap_keepout_snippet.yaml deploy/nav2/nav2_keepout_demo.params.yaml deploy/nav2/keepout_filter.launch.py deploy/nav2/README_keepout.md)",
+      "Bash(sed -i 's|/opt/ros/humble/setup.bash|/opt/ros/jazzy/setup.bash|g; s|ros-humble-|ros-jazzy-|g; s|ROS2 Humble|ROS2 Jazzy|g' deploy/nav2/README_keepout.md)"
     ]
   },
   "enableAllProjectMcpServers": true,

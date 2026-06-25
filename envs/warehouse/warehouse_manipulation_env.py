@@ -27,7 +27,7 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, UsdFileCfg, spawn_g
 from isaaclab.utils import configclass
 from isaaclab.utils.math import sample_uniform
 
-_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
+_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 
 try:
     from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG

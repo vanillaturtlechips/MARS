@@ -26,7 +26,7 @@ echo "════════════════════════�
 nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null && echo "  GPU OK" || echo "  [경고] GPU 확인 실패"
 
 # ── 1. 시스템 라이브러리 ─────────────────────────────────────────
-echo "[1/7] 시스템 라이브러리 + Python 3.11..."
+echo "[1/7] 시스템 라이브러리 + Python 3.12..."
 apt-get update -q 2>/dev/null || true
 apt-get install -y --no-install-recommends \
     software-properties-common curl git ffmpeg \
@@ -34,17 +34,17 @@ apt-get install -y --no-install-recommends \
     libgl1-mesa-glx libglu1-mesa libvulkan1 \
     libegl1 libgles2 libxkbcommon0 libdbus-1-3 2>/dev/null || true
 
-# Isaac Sim 5.1.0 은 Python 3.11 필수 (3.10 불가)
-if ! python3.11 --version &>/dev/null; then
+# Isaac Sim 6.0.0 은 Python 3.12 필수 (3.10 불가)
+if ! python3.12 --version &>/dev/null; then
     add-apt-repository ppa:deadsnakes/ppa -y
     apt-get update -q
-    apt-get install -y python3.11 python3.11-venv python3.11-dev
+    apt-get install -y python3.12 python3.12-venv python3.12-dev
 fi
-echo "  Python: $(python3.11 --version)"
+echo "  Python: $(python3.12 --version)"
 
-# pip for python3.11
-if ! python3.11 -m pip --version &>/dev/null; then
-    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+# pip for python3.12
+if ! python3.12 -m pip --version &>/dev/null; then
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 fi
 echo "  완료"
 
@@ -57,7 +57,7 @@ export UV_HTTP_TIMEOUT=600
 
 # ── 2. uv ────────────────────────────────────────────────────────
 echo "[2/7] uv 설치..."
-python3.11 -m pip install uv -q
+python3.12 -m pip install uv -q
 export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 echo "  완료"
 
@@ -66,21 +66,21 @@ echo "[3/7] 가상환경: $VENV_PATH"
 if [ ! -d "$VENV_PATH" ]; then
     # /tmp에서 실행 — pyproject.toml 간섭 방지
     cd /tmp
-    uv venv "$VENV_PATH" --python python3.11
+    uv venv "$VENV_PATH" --python python3.12
     cd "$MARS_PATH"
 fi
 source "$VENV_PATH/bin/activate"
 echo "  완료"
 
-# ── 4. Isaac Sim 5.1.0 + PyTorch ─────────────────────────────────
-echo "[4/7] Isaac Sim 5.1.0 설치 (10~15분)..."
+# ── 4. Isaac Sim 6.0.0 + PyTorch ─────────────────────────────────
+echo "[4/7] Isaac Sim 6.0.0 설치 (10~15분)..."
 uv pip install \
-    isaacsim==5.1.0 \
-    isaacsim-rl==5.1.0 \
-    isaacsim-replicator==5.1.0 \
-    isaacsim-extscache-physics==5.1.0 \
-    isaacsim-extscache-kit==5.1.0 \
-    isaacsim-extscache-kit-sdk==5.1.0 \
+    isaacsim==6.0.0 \
+    isaacsim-rl==6.0.0 \
+    isaacsim-replicator==6.0.0 \
+    isaacsim-extscache-physics==6.0.0 \
+    isaacsim-extscache-kit==6.0.0 \
+    isaacsim-extscache-kit-sdk==6.0.0 \
     --extra-index-url https://pypi.nvidia.com \
     --index-strategy unsafe-best-match
 
@@ -90,7 +90,7 @@ uv pip install "torch==2.7.0" "torchvision==0.22.0" "numpy==1.26.4" \
     --extra-index-url "https://pypi.org/simple" \
     --reinstall
 
-SITE_PKG="$VENV_PATH/lib/python3.11/site-packages"
+SITE_PKG="$VENV_PATH/lib/python3.12/site-packages"
 PXR_DIR=$(find "$VENV_PATH" -maxdepth 12 -name "pxr" -type d 2>/dev/null \
           | grep -v "__pycache__" | head -1)
 [ -n "$PXR_DIR" ] && dirname "$PXR_DIR" > "$SITE_PKG/pxr_path.pth"
@@ -99,7 +99,7 @@ echo "  완료"
 # ── 4.5. flatdict ────────────────────────────────────────────────
 _FD_DIR="/tmp/flatdict_src"
 mkdir -p "$_FD_DIR"
-python3.11 -m pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
+python3.12 -m pip download flatdict==4.0.1 --no-deps --no-binary :all: -d "$_FD_DIR" -q
 tar xzf "$_FD_DIR/flatdict-4.0.1.tar.gz" -C "$_FD_DIR"
 cp "$_FD_DIR/flatdict-4.0.1/flatdict.py" "$SITE_PKG/"
 _DI="$SITE_PKG/flatdict-4.0.1.dist-info"

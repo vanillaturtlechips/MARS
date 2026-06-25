@@ -8,7 +8,7 @@ pydantic>=2.7.0
 pgvector>=0.3.0
 
 # ROS2 (installed separately via apt / colcon — not pip)
-# rclpy is provided by ros-humble-rclpy
+# rclpy is provided by ros-jazzy-rclpy
 
 # Testing
 pytest>=8.0.0

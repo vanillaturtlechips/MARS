@@ -117,7 +117,7 @@ Output ONLY the JSON object. No prose.
 
 > **`nav_outcome` origin:** the Aggregator sets this from the Nav2 action
 > **GoalStatus** (4=succeeded, 5=canceled, 6=aborted), not a result error code —
-> on Humble the `NavigateToPose` result is empty. See architecture doc §1a.
+> on Jazzy the `NavigateToPose` result is empty. See architecture doc §1a.
 
 ### Output schema
 

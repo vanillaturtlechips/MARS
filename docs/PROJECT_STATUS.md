@@ -12,7 +12,7 @@
 - **가상환경**: 컨테이너 내 `/workspace/isaac_venv/`
 - **GPU**: 작업에 따라 RTX A6000(49GB) 또는 A4500(20GB) 사용
 - 로그·체크포인트는 컨테이너 내 `/workspace/MARS/logs/` (로컬 직접 접근 불가)
-- 설치: `bash deploy/runpod/setup.sh` (원클릭, ~20분, Isaac Sim 5.1 + Isaac Lab v2.3.2)
+- 설치: `bash deploy/runpod/setup.sh` (원클릭, ~20분, Isaac Sim 6.0 + Isaac Lab v2.3.2)
 
 ---
 

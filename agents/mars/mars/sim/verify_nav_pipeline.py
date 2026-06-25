@@ -14,7 +14,7 @@ PASS = enriched event with nav_outcome == "aborted" reaches the Aggregator.
 
 Run (venv OFF, ROS + mars_msgs sourced):
     cd agents/mars
-    source /opt/ros/humble/setup.bash
+    source /opt/ros/jazzy/setup.bash
     source ros2_ws/install/setup.bash
     python3 -m mars.sim.verify_nav_pipeline
 """
@@ -44,7 +44,7 @@ def main() -> None:
         from rclpy.executors import MultiThreadedExecutor
         from nav2_msgs.action import NavigateToPose
     except ImportError as exc:
-        print(f"FAIL: ROS2 not available ({exc}). Source /opt/ros/humble/setup.bash first.")
+        print(f"FAIL: ROS2 not available ({exc}). Source /opt/ros/jazzy/setup.bash first.")
         sys.exit(1)
 
     from mars.aggregator.aggregator import Aggregator

@@ -1,5 +1,5 @@
 """
-Isaac Sim + Nav2 Adapter — §1a topic mapping (ROS2 Humble)
+Isaac Sim + Nav2 Adapter — §1a topic mapping (ROS2 Jazzy)
 
 Implements NavigationInterface and SensorInterface behind the same abstract
 contracts as MockSim, so the entire supervisory stack is unchanged when
@@ -10,7 +10,7 @@ Topic mapping (all per-robot namespaced as /<robot_id>/...):
   /<robot_id>/navigate_to_pose/_action/status
       → action_msgs/GoalStatusArray          (Nav2)
       → NavGoalStatus.status: 4=SUCCEEDED 5=CANCELED 6=ABORTED
-        NOTE: NavigateToPose result is empty on Humble — use status, not result.
+        NOTE: NavigateToPose result is empty on Jazzy — use status, not result.
 
   /<robot_id>/navigate_to_pose/_action/feedback
       → nav2_msgs/action/NavigateToPose_FeedbackMessage   (Nav2)
@@ -55,7 +55,7 @@ from typing import Callable
 
 log = logging.getLogger(__name__)
 
-# GoalStatus values (action_msgs/GoalStatus) — Humble
+# GoalStatus values (action_msgs/GoalStatus) — Jazzy
 STATUS_UNKNOWN   = 0
 STATUS_ACCEPTED  = 1
 STATUS_EXECUTING = 2
@@ -116,7 +116,7 @@ class ROS2SimAdapter:
         Dispatch a NavigateToPose goal.  Results arrive asynchronously via
         on_status_change(NavGoalStatus).
 
-        NOTE: on Humble the NavigateToPose result is empty; outcome comes
+        NOTE: on Jazzy the NavigateToPose result is empty; outcome comes
         exclusively from GoalStatus (4/5/6).
         """
         import rclpy
@@ -244,7 +244,7 @@ class ROS2SimAdapter:
 
             # Try to import mars_msgs; fall back gracefully if not compiled
             try:
-                sys.path.insert(0, "/opt/ros/humble/lib/python3.10/site-packages")
+                sys.path.insert(0, "/opt/ros/jazzy/lib/python3.12/site-packages")
                 RobotHealth = importlib.import_module(
                     "mars_msgs.msg"
                 ).RobotHealth
@@ -259,7 +259,7 @@ class ROS2SimAdapter:
         for robot_id in self._robot_ids:
             ns = f"/{robot_id}"
 
-            # Nav2 action status (source of truth for goal outcomes on Humble)
+            # Nav2 action status (source of truth for goal outcomes on Jazzy)
             self._subs.append(
                 self._node.create_subscription(
                     GoalStatusArray,
@@ -355,7 +355,7 @@ class ROS2SimAdapter:
         Parse GoalStatusArray and fire NavGoalStatus callbacks for any
         terminal status (SUCCEEDED / CANCELED / ABORTED).
 
-        This is the Humble-correct approach: the NavigateToPose result message
+        This is the Jazzy-correct approach: the NavigateToPose result message
         is empty, so we drive everything from GoalStatus.
         """
         from mars.ros.interfaces import NavGoalStatus
@@ -411,7 +411,7 @@ class ROS2SimAdapter:
     def _on_result(self, robot_id: str, goal_id: str, future) -> None:
         """
         Called when get_result_async() completes.  This is the RELIABLE outcome
-        path on Humble: the NavigateToPose result payload is empty, but the
+        path on Jazzy: the NavigateToPose result payload is empty, but the
         result wrapper still carries the terminal GoalStatus (4/5/6).
 
         `goal_id` here is the id we registered in send_goal, so we can fire the

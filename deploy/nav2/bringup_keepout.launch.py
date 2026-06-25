@@ -1,5 +1,5 @@
 """
-Nav2 bring-up for the Isaac iw_hub keepout demo (ROS2 Humble).
+Nav2 bring-up for the Isaac iw_hub keepout demo (ROS2 Jazzy).
 
 Launches exactly the servers configured in nav2_keepout_demo.params.yaml:
   map_server, costmap_filter_info_server, planner_server, controller_server,

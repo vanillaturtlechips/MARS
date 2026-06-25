@@ -1,4 +1,4 @@
-# Nav2 Costmap Filter Info server — keepout filter (ROS2 Humble)
+# Nav2 Costmap Filter Info server — keepout filter (ROS2 Jazzy)
 #
 # Publishes nav2_msgs/CostmapFilterInfo telling each robot's KeepoutFilter
 # where to find the mask and how to interpret it.  The mask itself

@@ -20,7 +20,7 @@ Covers architecture doc **§1a** (topic → enriched-event mapping) and **§1b**
 | Adapter nav-result path (`_on_result`) | ⚠️ fixed, not yet verified | needs a real (or mock) `NavigateToPose` abort to exercise |
 | Isaac Sim + Nav2 bringup | ⬜ not started | Step 4 |
 
-Verified environment: **Ubuntu 22.04 (Jammy), ROS 2 Humble, Python 3.10**.
+Verified environment: **Ubuntu 22.04 (Jammy), ROS 2 Jazzy, Python 3.10**.
 
 ---
 
@@ -61,7 +61,7 @@ string[]  fault_codes    # e.g. ["MOTOR_FAULT","LIDAR_TIMEOUT"]
 
 ---
 
-## 3. Topic → enriched-event field mapping (Isaac Sim + Nav2 Humble)
+## 3. Topic → enriched-event field mapping (Isaac Sim + Nav2 Jazzy)
 
 All subscriptions are per-robot namespaced (`/<robot_id>/...`). Three sources:
 **Nav2** (navigation), **Isaac Sim** (sim state/sensors), and **self-published**
@@ -77,9 +77,9 @@ sim nodes (battery, health — nothing else produces these).
 | `…/robot_health` | `mars_msgs/RobotHealth` (**custom**) | **self** | `estop` / `fault_codes` → `fault_flag` |
 | `/clock` | `rosgraph_msgs/Clock` | Isaac Sim | `use_sim_time = true` |
 
-**Outcome source (Humble-specific):** `nav_outcome` is read from the action
+**Outcome source (Jazzy-specific):** `nav_outcome` is read from the action
 **GoalStatus** (`4=SUCCEEDED, 5=CANCELED, 6=ABORTED`), **not** a result error
-code — on Humble the `NavigateToPose` *result* payload is empty. The adapter
+code — on Jazzy the `NavigateToPose` *result* payload is empty. The adapter
 drives outcomes from the result-wrapper's `status` field (see §6).
 
 ---
@@ -116,25 +116,25 @@ agents/mars/
 ## 5. Build & verify
 
 ROS 2 work runs under **system Python 3.10** with ROS sourced — **not** inside the
-Isaac Lab venv (which is Python 3.11). Deactivate any venv first.
+Isaac Lab venv (which is Python 3.12). Deactivate any venv first.
 
 ### 5.1 Environment (one-time, RunPod)
 
 ```bash
-# installs ROS 2 Humble + Nav2 + colcon and aligns python3 → 3.10
+# installs ROS 2 Jazzy + Nav2 + colcon and aligns python3 → 3.10
 bash deploy/runpod/setup_ros2.sh
 ```
 
-> Why python3.10: ROS 2 Humble is built for 3.10; if `/usr/bin/python3` points to
+> Why python3.12: ROS 2 Jazzy is built for 3.10; if `/usr/bin/python3` points to
 > 3.11, `import rclpy` and `apt_pkg` both fail. The script sets
-> `update-alternatives --set python3 /usr/bin/python3.10`. The RL venv is
-> unaffected (it has its own 3.11). Revert with `--set python3 .../python3.11`.
+> `update-alternatives --set python3 /usr/bin/python3.12`. The RL venv is
+> unaffected (it has its own 3.11). Revert with `--set python3 .../python3.12`.
 
 ### 5.2 Build `mars_msgs`
 
 ```bash
 cd agents/mars/ros2_ws
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --packages-select mars_msgs
 source install/setup.bash
 ros2 interface show mars_msgs/msg/RobotHealth   # should print the definition
@@ -144,7 +144,7 @@ ros2 interface show mars_msgs/msg/RobotHealth   # should print the definition
 
 ```bash
 cd agents/mars
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source ros2_ws/install/setup.bash
 
 python3 -m mars.sim.ros_health_publisher > /tmp/health.log 2>&1 &
@@ -182,7 +182,7 @@ Stop the node with `pkill -f ros_health_publisher`.
 `/_action/status` (`GoalStatusArray`), matching our dispatch `goal_id` against
 Nav2's UUID — which **never matches**, so aborts never reached the Aggregator.
 
-The fix drives outcomes from **`get_result_async()`'s result wrapper**: on Humble
+The fix drives outcomes from **`get_result_async()`'s result wrapper**: on Jazzy
 the result payload is empty but `result.status` still carries the terminal
 `GoalStatus` (4/5/6), and the callback already has the correct registered
 `goal_id`. This path is now the source of truth; the status-array subscription is

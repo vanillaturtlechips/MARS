@@ -8,7 +8,7 @@ rclpy.  This keeps the supervisory logic importable without a ROS installation.
 Data types are plain dicts rather than ROS message objects so callers don't
 need rclpy either.
 
-GoalStatus constants (Nav2 Humble):
+GoalStatus constants (Nav2 Jazzy):
     STATUS_UNKNOWN   = 0
     STATUS_ACCEPTED  = 1
     STATUS_EXECUTING = 2

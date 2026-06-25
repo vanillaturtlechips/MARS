@@ -40,7 +40,7 @@ try:
 except ImportError:
     from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG  # type: ignore
 
-_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
+_ISAAC_CLOUD = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0"
 TRANSPORT_OBS_DIM = 23
 
 

@@ -1,11 +1,11 @@
 # Source this in the ROS2 / Nav2 / ros2-CLI / supervisor shell (subscriber side).
 #   source deploy/isaac/env_ros2.sh
 #
-# System ROS2 Humble (py3.10) + the SAME UDP-only FastDDS profile Isaac uses,
+# System ROS2 Jazzy (py3.12) + the SAME UDP-only FastDDS profile Isaac uses,
 # so `ros2 topic echo`, Nav2 and mars.ros.ros2_node see Isaac's topics.
 
-# If an Isaac py3.11 venv is active (e.g. run_keepout_demo.sh launched from an
-# isaac_venv311 shell), its libs (fmt/spdlog) break ROS2 rclpy with
+# If an Isaac py3.12 venv is active (e.g. run_keepout_demo.sh launched from an
+# isaac_venv312 shell), its libs (fmt/spdlog) break ROS2 rclpy with
 # "librcl_logging_spdlog.so: undefined symbol". Strip the venv before sourcing ROS2.
 if [ -n "${VIRTUAL_ENV:-}" ]; then
   PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "$VIRTUAL_ENV" | paste -sd:)"; export PATH

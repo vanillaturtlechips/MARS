@@ -34,7 +34,7 @@
 |--------|------|-----------|------|
 | ① Orchestrator | 자연어 해석, task 분배, **전역 우선순위·교착 조율** | fleet 전체 | Claude API (Phase 4) |
 | ② RL 정책 | obs→action, **반응적 회피·이동** | 로봇 로컬 | PPO/MAPPO (Phase 1~3) |
-| ③ ROS2 제어 | 센서·명령·통신, 하드웨어 연결 | 토픽 I/O | ROS2 Humble |
+| ③ ROS2 제어 | 센서·명령·통신, 하드웨어 연결 | 토픽 I/O | ROS2 Jazzy |
 
 ---
 

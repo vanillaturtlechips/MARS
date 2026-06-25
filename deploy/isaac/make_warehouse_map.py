@@ -3,7 +3,7 @@ Generate a Nav2 occupancy map (.pgm + .yaml) from full_warehouse.usd so Nav2
 knows the warehouse walls/racks (the empty map made by deploy/nav2/make_empty_map.py
 is all-free and makes robots ram invisible warehouse geometry).
 
-Runs INSIDE Isaac (py3.11):  source deploy/isaac/env_isaac.sh
+Runs INSIDE Isaac (py3.12):  source deploy/isaac/env_isaac.sh
     python deploy/isaac/make_warehouse_map.py
 
 Output (written next to the Nav2 params so map_server can load it):
