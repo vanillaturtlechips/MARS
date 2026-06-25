@@ -1,0 +1,89 @@
+# diagnosis_cases 예시 — SCHEMA.md Part 1
+# end-to-end: seed_state 로드 → trigger 투입 → analyze() → ground_truth 비교
+
+- case_id: DC-001
+  description: "단일 로봇 1회 abort, 다른 신호 없음 → isolated transient (무행동이 정답)"
+  tags: [normal, thin_evidence]
+  seed_state:
+    failures: []                       # 과거 실패 없음 → 패턴 없음
+    incidents: []
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-1001
+    goal_id: G-1
+    zone: receiving_dock
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure: {battery_pct: 72, estop_active: false, fault_codes: []}
+    distribution: {per_robot_zone_spread: 1, per_zone_robot_spread: 1}
+  ground_truth:
+    cause: transient_glitch
+    scope: isolated
+    persistence: transient
+    relevant_precedent_ids: []
+    expected_validation: PASS          # 낮은 confidence + isolated 진단이면 PASS
+
+- case_id: DC-014
+  description: "dock에서 3대가 최근 10분 내 연속 abort → zone_wide recurring_blockage"
+  tags: [zone_wide, novel_cause]
+  seed_state:
+    failures:
+      - {robot_id: R2, mission_id: M-9, zone: receiving_dock, event_type: navigation.aborted,
+         nav_outcome: aborted, goal_status: 6,
+         health_at_failure: {battery_pct: 68, estop_active: false, fault_codes: []},
+         fault_flag: null, ts_offset_sec: 420}
+      - {robot_id: R3, mission_id: M-12, zone: receiving_dock, event_type: navigation.aborted,
+         nav_outcome: aborted, goal_status: 6,
+         health_at_failure: {battery_pct: 74, estop_active: false, fault_codes: []},
+         fault_flag: null, ts_offset_sec: 200}
+    incidents:
+      - {incident_id: INC-4412, is_relevant: true, true_cause: recurring_blockage,
+         text: "Pallet repeatedly left at receiving dock entrance during afternoon shift;
+                multiple AMRs aborted with progress failure until it was cleared."}
+      - {incident_id: INC-2201, is_relevant: false, true_cause: battery_depletion,
+         text: "Robot stalled mid-aisle due to battery cutoff; unrelated to dock."}
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-15
+    goal_id: G-15
+    zone: receiving_dock
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure: {battery_pct: 70, estop_active: false, fault_codes: []}
+    distribution: {per_robot_zone_spread: 1, per_zone_robot_spread: 3}
+  ground_truth:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    relevant_precedent_ids: [INC-4412]
+    expected_validation: PASS
+
+- case_id: DC-022
+  description: "겉보기엔 hardware_fault(estop) 같지만 실제는 battery_critical — 증거 봐야 구분(적대)"
+  tags: [adversarial]
+  seed_state:
+    failures: []
+    incidents:
+      - {incident_id: INC-3001, is_relevant: true, true_cause: battery_depletion,
+         text: "estop latched after battery dropped below cutoff; root cause was depletion, not e-stop hardware."}
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R4
+    mission_id: M-30
+    goal_id: G-30
+    zone: aisle_5
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure: {battery_pct: 11, estop_active: true, fault_codes: [ESTOP]}
+    distribution: {per_robot_zone_spread: 1, per_zone_robot_spread: 1}
+  ground_truth:
+    cause: battery_depletion          # estop은 증상, 원인은 배터리
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids: [INC-3001]
+    expected_validation: PASS

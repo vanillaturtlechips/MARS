@@ -1,0 +1,114 @@
+# validator_probes 예시 — SCHEMA.md Part 2
+# 격리: bundle + 후보 진단을 validate_diagnosis()에 직접 투입 → expected_verdict 비교
+# LLM 확률성과 무관하게 validator 정밀/재현율 측정 (안전 헤드라인)
+
+- probe_id: VP-001
+  description: "유효 진단 — 모든 ref가 bundle에 resolve, scope 근거 충분"
+  defect_type: none
+  bundle:
+    trigger_event: {robot_id: R1, zone: receiving_dock}
+    mission_failures:
+      - {robot_id: R2, zone: receiving_dock, goal_status: 6}
+      - {robot_id: R3, zone: receiving_dock, goal_status: 6}
+    zone_state: {zone: receiving_dock, recent_failures: 3}
+    retrieved_precedents:
+      - {incident_id: INC-4412, similarity: 0.88}
+    active_policies: []
+  retrieval_trust: {set_level: HIGH}
+  diagnosis:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    confidence: 0.82
+    evidence:
+      - {observation: "3 robots aborted in receiving_dock recently",
+         refs: ["mission_failures[0].zone", "mission_failures[1].zone"]}
+      - {observation: "matches prior dock-blockage incident",
+         refs: ["retrieved_precedents[0].incident_id"]}
+    relied_on_precedents: [INC-4412]
+  expected_verdict: PASS
+
+- probe_id: VP-002
+  description: "환각 ref — bundle에 없는 경로 인용"
+  defect_type: ungrounded_ref
+  bundle:
+    trigger_event: {robot_id: R1, zone: receiving_dock}
+    mission_failures: []
+    zone_state: {zone: receiving_dock, recent_failures: 1}
+    retrieved_precedents: []
+    active_policies: []
+  retrieval_trust: {set_level: LOW}
+  diagnosis:
+    cause: congestion_deadlock
+    scope: zone_wide
+    persistence: persistent
+    confidence: 0.9
+    evidence:
+      - {observation: "five robots jammed",
+         refs: ["mission_failures[4].robot_id"]}   # 존재하지 않음 → resolve 실패
+    relied_on_precedents: []
+  expected_verdict: REJECT
+
+- probe_id: VP-003
+  description: "scope 과대 — zone_wide 주장인데 mission_failures ref 1개뿐"
+  defect_type: scope_unsupported
+  bundle:
+    trigger_event: {robot_id: R1, zone: aisle_3}
+    mission_failures:
+      - {robot_id: R1, zone: aisle_3, goal_status: 6}
+    zone_state: {zone: aisle_3, recent_failures: 1}
+    retrieved_precedents: []
+    active_policies: []
+  retrieval_trust: {set_level: MEDIUM}
+  diagnosis:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: persistent
+    confidence: 0.7
+    evidence:
+      - {observation: "robot aborted in aisle_3",
+         refs: ["mission_failures[0].zone"]}        # zone_wide엔 ref ≥2 필요
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+
+- probe_id: VP-004
+  description: "검색 비일관 — LOW trust precedent에 의존하면서 高confidence"
+  defect_type: retrieval_incoherent
+  bundle:
+    trigger_event: {robot_id: R5, zone: aisle_1}
+    mission_failures:
+      - {robot_id: R5, zone: aisle_1, goal_status: 6}
+    zone_state: {zone: aisle_1, recent_failures: 1}
+    retrieved_precedents:
+      - {incident_id: INC-9, similarity: 0.41}
+    active_policies: []
+  retrieval_trust: {set_level: LOW}
+  diagnosis:
+    cause: sensor_degradation
+    scope: isolated
+    persistence: persistent
+    confidence: 0.93
+    evidence:
+      - {observation: "similar to past sensor incident",
+         refs: ["retrieved_precedents[0].incident_id"]}
+    relied_on_precedents: [INC-9]
+  expected_verdict: DEGRADE
+
+- probe_id: VP-005
+  description: "증거 없음"
+  defect_type: empty_evidence
+  bundle:
+    trigger_event: {robot_id: R1, zone: dock}
+    mission_failures: []
+    zone_state: {zone: dock, recent_failures: 0}
+    retrieved_precedents: []
+    active_policies: []
+  retrieval_trust: {set_level: LOW}
+  diagnosis:
+    cause: hardware_fault
+    scope: isolated
+    persistence: persistent
+    confidence: 0.6
+    evidence: []
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
