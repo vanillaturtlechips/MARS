@@ -3,8 +3,9 @@
 # Design choices:
 #  - Perfect localization: Isaac publishes tf map->base_link directly (no AMCL,
 #    no odom frame). So every server uses global_frame: map, base: base_link.
-#  - No lidar: costmaps use static + inflation (+ keepout filter) only —
-#    NO obstacle/voxel layer. Dynamic obstacle avoidance is the RL policy's job.
+#  - Lidar obstacle layer: each costmap marks/clears from /<ns>/scan so Nav2
+#    routes around other robots + dynamic obstacles (S1/S2/S5/S6). RL hybrid
+#    layer (close-range reactive) can still sit on top later.
 #  - KeepoutFilter on the global costmap consumes /costmap_filter_info (from
 #    costmap_filter_info_server) -> /keepout_filter_mask (from the MARS
 #    supervisor). avoid_zone -> lethal cells -> planner routes around.
@@ -81,16 +82,33 @@ global_costmap:
       track_unknown_space: false
       robot_radius: 0.35
       resolution: 0.05
-      plugins: ["static_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       filters: ["keepout_filter"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_topic: /map              # absolute so namespaced costmaps share the global map
         map_subscribe_transient_local: true
+      obstacle_layer:
+        # lidar /<ns>/scan -> mark/clear other robots + dynamic obstacles so the
+        # planner routes around them (S1/S2/S5/S6). "scan" is relative -> /R1/scan
+        # inside the robot namespace.
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: scan
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.0
+          obstacle_max_range: 10.0
+          obstacle_min_range: 0.0
+          raytrace_max_range: 12.0
+          raytrace_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.25
+        inflation_radius: 0.45
       keepout_filter:
         plugin: "nav2_costmap_2d::KeepoutFilter"
         enabled: true
@@ -109,11 +127,27 @@ local_costmap:
       height: 6
       resolution: 0.05
       robot_radius: 0.35
-      plugins: ["inflation_layer"]
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        # reactive avoidance: rolling local costmap marks other robots from
+        # /<ns>/scan each cycle so the controller swerves (S1/S2 head-on).
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: scan
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.0
+          obstacle_max_range: 8.0
+          obstacle_min_range: 0.0
+          raytrace_max_range: 10.0
+          raytrace_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.25
+        inflation_radius: 0.45
 
 bt_navigator:
   ros__parameters:
