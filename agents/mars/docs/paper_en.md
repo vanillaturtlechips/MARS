@@ -79,21 +79,52 @@ robot-in-the-loop measurement is left to future work.
 
 ## 2. Related Work
 
-*(To be completed; key threads to position against — ~20–30 refs total.)*
+**LLM agents and tool use.** Our diagnosis agent is a ReAct-style reason–act loop
+(Yao et al., 2022) that calls read-only tools to gather evidence before emitting a
+structured conclusion. A line of work has made LLM tool/function calling reliable
+and scalable — learning when and how to call APIs (Toolformer; Schick et al.,
+2023), orchestrating many real APIs (ToolLLM; Qin et al., 2023), and reducing
+malformed/hallucinated calls (Gorilla; Patil et al., 2023). We build on this
+mechanic but ask a different question: not how to *make* tool calls, but how to
+*validate the resulting decision* before it acts on a fleet.
 
-- **LLM agents and tool use:** ReAct-style reason–act loops, tool-calling /
-  function calling for structured action.
-- **Retrieval-augmented generation (RAG):** grounding LLM output in retrieved
-  evidence; trust/quality of retrieval.
-- **LLM safety and guardrails:** output validation, constrained decoding,
-  schema/whitelist enforcement, hallucination detection.
-- **Multi-robot / fleet management:** task allocation, congestion and charging
-  management, failure recovery in AMR fleets.
-- **LLMs for robotics:** natural-language instruction grounding, LLM planners.
+**Retrieval-augmented generation.** We ground diagnoses in retrieved incident
+precedents, following the RAG paradigm (Lewis et al., 2020) and multi-passage
+conditioning (Fusion-in-Decoder; Izacard & Grave, 2021). Crucially, retrieval
+quality — not mere retrieval — governs whether grounding helps: irrelevant or
+mis-placed context can degrade answers (Cuconasu et al., 2024), motivating our
+explicit per-precedent trust scoring. Self-RAG (Asai et al., 2023) learns to
+critique retrieved passages on the model side; we instead score precedent trust
+*deterministically* and feed it to an external validator.
 
-*Positioning:* prior work shows LLMs can act in robotic/operational settings; we
-focus on the **machinery that makes unreliable agent output safe to act on**, and
-measure where that machinery's guarantees stop.
+**LLM safety, guardrails, and validation.** The core of our system is
+deterministic validation of LLM I/O, akin to programmable guardrails (NeMo
+Guardrails; Rebedea et al., 2023) and constrained/structured decoding that
+guarantees well-formed output (Outlines; Willard & Louf, 2023). Position work
+argues such rule-based filters must be combined with learning-based ones because
+each alone is incomplete (Dong et al., 2024) — precisely our finding that
+structural checks miss *grounded-but-wrong* output. Detecting that residual class
+requires consistency- or evidence-based methods (SelfCheckGPT; Manakul et al.,
+2023) or self-critique (Self-Refine; Madaan et al., 2023), which rely on the
+model's own judgment; we quantify exactly where a deterministic validator's
+guarantees stop and this residual risk begins, across three models.
+
+**Multi-robot and fleet management.** Warehouse robot fleets descend from Kiva /
+Amazon Robotics (Wurman et al., 2008); their runtime bottlenecks — congestion,
+deadlock, blocked zones — are studied as lifelong multi-agent path finding (Li et
+al., 2021) and layout/throughput optimization (Zhang et al., 2023). These define
+the operational substrate and failure modes our supervisor observes; we add an
+LLM reasoning layer *above* this stack rather than改 the planner.
+
+**LLMs for robotics.** Grounding natural language in robot capability is
+established for single-robot control: feasibility-aware action selection (SayCan;
+Ahn et al., 2022), NL-to-executable-policy code (Code as Policies; Liang et al.,
+2023), and feedback-driven replanning (Inner Monologue; Huang et al., 2022).
+Multi-robot LLM coordination is emerging (RoCo; Mandi et al., 2023), and a recent
+survey maps LLMs onto multi-robot systems (Li et al., 2025). These translate
+language into robot action; we focus on the under-studied **supervisory** role —
+validating an operator's intent and a diagnosis at the *fleet* level — and on the
+machinery that makes unreliable LLM output safe to act on.
 
 ---
 
@@ -442,3 +473,38 @@ Single-model detail (GPT-4.1-mini), optional appendix:
 - `eval/figs/fig_intent_defense.png`: defense-in-depth, single model.
 
 All figures regenerate from the result JSONs via `python3 -m eval.make_figs`.
+
+---
+
+## References
+
+*LLM agents and tool use*
+- Yao, S., et al. (2022). ReAct: Synergizing Reasoning and Acting in Language Models. ICLR 2023. arXiv:2210.03629.
+- Schick, T., et al. (2023). Toolformer: Language Models Can Teach Themselves to Use Tools. NeurIPS 2023. arXiv:2302.04761.
+- Qin, Y., et al. (2023). ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs. ICLR 2024. arXiv:2307.16789.
+- Patil, S. G., et al. (2023). Gorilla: Large Language Model Connected with Massive APIs. NeurIPS 2024. arXiv:2305.15334.
+
+*Retrieval-augmented generation*
+- Lewis, P., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. NeurIPS 2020. arXiv:2005.11401.
+- Izacard, G., & Grave, E. (2021). Leveraging Passage Retrieval with Generative Models for Open Domain QA (Fusion-in-Decoder). EACL 2021. arXiv:2007.01282.
+- Asai, A., et al. (2023). Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection. ICLR 2024. arXiv:2310.11511.
+- Cuconasu, F., et al. (2024). The Power of Noise: Redefining Retrieval for RAG Systems. SIGIR 2024. arXiv:2401.14887.
+
+*LLM safety, guardrails, validation*
+- Rebedea, T., et al. (2023). NeMo Guardrails: A Toolkit for Controllable and Safe LLM Applications with Programmable Rails. EMNLP 2023 (Demo). arXiv:2310.10501.
+- Willard, B. T., & Louf, R. (2023). Efficient Guided Generation for Large Language Models (Outlines). arXiv:2307.09702.
+- Dong, Y., et al. (2024). Building Guardrails for Large Language Models. ICML 2024 (Position). arXiv:2402.01822.
+- Manakul, P., et al. (2023). SelfCheckGPT: Zero-Resource Black-Box Hallucination Detection. EMNLP 2023. arXiv:2303.08896.
+- Madaan, A., et al. (2023). Self-Refine: Iterative Refinement with Self-Feedback. NeurIPS 2023. arXiv:2303.17651.
+
+*Multi-robot and fleet management*
+- Wurman, P. R., D'Andrea, R., & Mountz, M. (2008). Coordinating Hundreds of Cooperative, Autonomous Vehicles in Warehouses. AI Magazine, 29(1).
+- Li, J., et al. (2021). Lifelong Multi-Agent Path Finding in Large-Scale Warehouses. AAAI 2021.
+- Zhang, Y., et al. (2023). Multi-Robot Coordination and Layout Design for Automated Warehousing. IJCAI 2023. arXiv:2305.06436.
+- Li, P., et al. (2025). Large Language Models for Multi-Robot Systems: A Survey. arXiv:2502.03814.
+
+*LLMs for robotics*
+- Ahn, M., et al. (2022). Do As I Can, Not As I Say: Grounding Language in Robotic Affordances (SayCan). CoRL 2022. arXiv:2204.01691.
+- Huang, W., et al. (2022). Inner Monologue: Embodied Reasoning through Planning with Language Models. CoRL 2022. arXiv:2207.05608.
+- Liang, J., et al. (2023). Code as Policies: Language Model Programs for Embodied Control. ICRA 2023. arXiv:2209.07753.
+- Mandi, Z., et al. (2023). RoCo: Dialectic Multi-Robot Collaboration with Large Language Models. arXiv:2307.04738 (ICRA 2024).
