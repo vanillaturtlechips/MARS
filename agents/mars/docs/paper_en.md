@@ -120,11 +120,48 @@ zone_congestion, zone_blocked, fleet_overload, unknown`), `scope`
 (`isolated, robot_specific, zone_wide, fleet_wide`), `persistence`, `confidence`,
 and `evidence` references.
 
-The **Decision Validator** is deterministic. It rejects/degrades a diagnosis when
-confidence < τ (=0.5), when evidence references are empty or unresolvable, when a
-zone/fleet-wide scope is not supported by ≥2 mission-failure references, or when
-the agent relied on low-trust retrieval at high confidence. The system *acts*
-only on PASS; DEGRADE/REJECT are held — a fail-safe.
+**Retrieval trust.** Before the validator runs, a *retrieval validator* scores
+each retrieved precedent so that "the agent used a precedent" can be weighed by
+how trustworthy that precedent is. The per-precedent trust score is a weighted
+sum of four gated components — metadata match (same zone / failure type),
+recency, scope coverage, and embedding similarity:
+
+```
+trust(p) = w_meta·meta(p) + w_rec·recency(p) + w_cov·coverage(p) + w_sim·sim(p)
+           w_meta=0.30, w_rec=0.20, w_cov=0.25, w_sim=0.25
+```
+
+Precedents with trust ≥ θ_accept (=0.5) survive; the surviving set is summarized
+to a set-level trust ∈ {HIGH, MEDIUM, LOW} from the survivor count and their
+consistency. This set-level feeds the validator's retrieval-coherence check.
+
+**Decision Validator.** The validator is deterministic and emits PASS / DEGRADE /
+REJECT (Algorithm 1). It applies four checks: (1) a confidence threshold
+τ_diag = 0.5; (2) *evidence grounding* — every `evidence.ref` must resolve as a
+JSON path against the agent's own input bundle, so a fabricated citation is
+caught; (3) *scope consistency* — a `zone_wide`/`fleet_wide` claim must cite ≥2
+`mission_failures` entries; (4) *retrieval coherence* — high confidence (>0.7)
+while relying on a LOW-trust retrieval set is downgraded. The system *acts* only
+on PASS; DEGRADE/REJECT are held — a fail-safe. REJECT is reserved for the
+unforgivable error (an unresolvable evidence reference); the softer failures
+DEGRADE.
+
+> **Algorithm 1 — Decision Validator (diagnosis).**
+> **Input:** diagnosis `d` (cause, scope, confidence, evidence, relied_on_precedents),
+> input bundle `B`, retrieval set-level `t`. **Output:** PASS | DEGRADE | REJECT.
+> ```
+> r ← PASS
+> if d.confidence < τ_diag:                 r ← DEGRADE
+> if d.evidence is empty:                    r ← DEGRADE
+> for each ref in d.evidence.refs:
+>     if not resolves(ref, B):               r ← REJECT       # fabricated citation
+> if d.scope ∈ {zone_wide, fleet_wide}
+>        and |{refs citing mission_failures}| < 2:
+>     r ← max(r, DEGRADE)
+> if d.relied_on_precedents ≠ ∅
+>        and t = LOW and d.confidence > 0.7:  r ← max(r, DEGRADE)
+> return r
+> ```
 
 ### 3.2 Intent pipeline (validating LLM input)
 
@@ -139,11 +176,35 @@ policies drawn *strictly* from a five-entry whitelist (`avoid_zone`,
 `out_of_scope` (no whitelist policy expresses the request) or
 `needs_clarification` (utterance too vague).
 
-The **Policy Guardrail** is deterministic and stateful. It validates each
-candidate against: schema/whitelist membership, referential integrity (zone
-exists), impact tier (HIGH-impact → DEFER_HUMAN), feasibility invariants
-(e.g., `avoid_zone` must not strand all robots from chargers; cannot avoid a
-mandatory zone), conflict/duplicate detection, duration bounds, and rate limits.
+The **Policy Guardrail** is deterministic and stateful (Algorithm 2). It runs
+each candidate policy through seven ordered stages; the first stage that fails
+returns immediately. The stages encode, in order, structural validity
+(whitelist, required fields), referential integrity (zone exists), impact gating
+(HIGH-impact → DEFER_HUMAN), *liveness invariants* (an `avoid_zone` must not
+strand all robots from chargers and must not target a mandatory zone; a charger
+reservation must leave ≥1 charger for normal robots), conflict/duplicate
+detection against active policies, bound normalization (duration clamped to
+[60, 7200] s), and rate limiting (per-type cooldown). A policy that passes with
+adjustments returns MODIFY; otherwise ACCEPT.
+
+> **Algorithm 2 — Policy Guardrail.**
+> **Input:** candidate policy `p`, active policies `A`, world state `W`,
+> last-applied times `L`. **Output:** ACCEPT | MODIFY | REJECT | DEFER_HUMAN.
+> ```
+> if p.type ∉ WHITELIST or p.duration is missing:        return REJECT
+> if p.zone is set and p.zone ∉ W.zones:                  return REJECT     # nonexistent
+> if impact_tier(p.type) = HIGH:                          return DEFER_HUMAN
+> if violates_liveness(p, W):                             return REJECT     # strands fleet
+> if ∃ a ∈ A with a.type=p.type and a.params=p.params:    return REJECT     # duplicate
+> p.duration ← clamp(p.duration, 60, 7200)                                  # → MODIFY
+> if now − L[p.type] < cooldown:                          return REJECT     # rate limit
+> return (MODIFY if adjusted else ACCEPT)
+> ```
+
+A key consequence, returned to in §6: both validators verify *structure*. A
+policy that is structurally valid but semantically unintended (e.g.
+`avoid_zone(aisle_3)` produced from "make the robots faster") passes Algorithm 2,
+just as a grounded-but-wrong diagnosis passes Algorithm 1.
 
 ---
 
@@ -228,6 +289,17 @@ unsafe ones (avoiding a charger/mandatory zone, reserving all chargers,
 nonexistent zones, duplicates).
 
 ---
+
+### 5.4 Validator stress test
+
+To measure the validator in isolation from the agent, we built 30 adversarial
+probes — diagnoses crafted to contain a specific defect (ungrounded reference,
+empty evidence, sub-threshold confidence, unsupported zone/fleet scope, incoherent
+high-confidence/low-trust retrieval) plus clean controls. The Decision Validator
+flagged 30/30 defects with the correct verdict and produced **zero false blocks**
+on the clean controls (block precision = recall = 1.0). This confirms the
+validator does exactly what it is designed to do — it is the *coverage* of that
+design (structural defects only) that bounds overall safety, not its reliability.
 
 ## 6. Analysis
 
