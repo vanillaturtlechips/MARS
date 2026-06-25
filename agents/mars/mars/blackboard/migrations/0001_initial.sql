@@ -408,9 +408,9 @@ CREATE TABLE policy_history (
 --   1. zone / failure_type / scope / recorded_at present for Retrieval Validator
 --   2. outcome_id links the embedding back to its labeled outcome (closes RAG loop)
 --
--- Embedding model: LocalEmbedder BAAI/bge-small-en-v1.5, 384 dimensions
--- (Anthropic/Haiku-only setup — Anthropic has no embedding API). vector(N) MUST
--- equal EMBEDDING_DIM in config. For OpenAI text-embedding-3-small use vector(1536).
+-- Embedding model: OpenAI text-embedding-3-small, 1536 dimensions.
+-- vector(N) MUST equal EMBEDDING_DIM in config. For the local bge-small embedder
+-- (EMBEDDING_PROVIDER=local) use vector(384) instead.
 -- To switch models: drop inc_emb_hnsw, ALTER COLUMN embedding TYPE vector(N),
 -- recreate the index, and re-embed every source row (old vectors don't transfer).
 -------------------------------------------------------------------------------
@@ -427,9 +427,9 @@ CREATE TABLE incident_embeddings (
     outcome_label   TEXT,       -- improved/no_effect/worsened (from linked outcome)
     outcome_id      TEXT        REFERENCES outcomes (outcome_id),
     summary         TEXT        NOT NULL,
-    -- bge-small-en-v1.5 produces 384-dimensional embeddings.
+    -- text-embedding-3-small produces 1536-dimensional embeddings.
     -- MUST match EMBEDDING_DIM in config.py and get_embedder() dimension.
-    embedding       vector(384),
+    embedding       vector(1536),
     -- SIM TIME: the sim clock instant this record represents (for recency scoring).
     recorded_at     TIMESTAMPTZ NOT NULL,
     -- WALL TIME: when this row was written to Postgres.
