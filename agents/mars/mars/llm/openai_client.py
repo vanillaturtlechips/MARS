@@ -19,7 +19,7 @@ from typing import Any
 
 from openai import OpenAI
 
-from mars.config import OPENAI_API_KEY, OPENAI_MODEL, LLM_TEMPERATURE
+from mars.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL, LLM_TEMPERATURE
 from mars.llm.client import ToolCallRequest, ToolCallResponse
 
 log = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class OpenAIStructuredClient:
         model: str = OPENAI_MODEL,
         temperature: float = LLM_TEMPERATURE,
     ):
-        self._client = OpenAI(api_key=api_key)
+        self._client = OpenAI(api_key=api_key, base_url=OPENAI_BASE_URL or None)
         self._model  = model
         self._temperature = temperature
 
@@ -103,7 +103,7 @@ class OpenAIInvestigatorClient:
         model: str = OPENAI_MODEL,
         temperature: float = LLM_TEMPERATURE,
     ):
-        self._client      = OpenAI(api_key=api_key)
+        self._client      = OpenAI(api_key=api_key, base_url=OPENAI_BASE_URL or None)
         self._model       = model
         self._temperature = temperature
 

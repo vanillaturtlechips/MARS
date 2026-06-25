@@ -33,6 +33,9 @@ REDIS_URL: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "openai")
 
 OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
+# OpenAI-compatible endpoint (e.g. Upstage Solar: https://api.upstage.ai/v1).
+# Empty = real OpenAI. Set with OPENAI_MODEL + OPENAI_API_KEY for that provider.
+OPENAI_BASE_URL: str = os.environ.get("OPENAI_BASE_URL", "")
 # Chat completion model for structured-output agents and the investigator tool loop.
 OPENAI_MODEL: str = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
 LLM_TEMPERATURE: float = float(os.environ.get("LLM_TEMPERATURE", "0.0"))
