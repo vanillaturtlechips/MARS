@@ -360,6 +360,36 @@ valid-but-unintended policies) are the same phenomenon: deterministic checks
 verify *structure*, not *semantic correctness of intent*. This is why we frame
 validation as necessary but not sufficient.
 
+### 6.1 Case studies
+
+**The same case, three models (fleet-wide localization drift).** Cases DC-139…149
+describe a fleet-wide `localization_failure` — many robots aborting across zones —
+with a relevant precedent in the store. On these cases the relevant precedent is
+retrieved for all three models and its trust score is ≈0.71, *identical to the
+trust on cases the models get right*. Yet GPT-4.1-mini and Solar answer `unknown`
+(retrieved but not integrated → held by the validator → safe but unresolved),
+while Haiku reads the same precedent and answers `localization_failure`
+correctly. The bottleneck is therefore neither retrieval nor trust but the
+model's ability to *use* an available, adequately-trusted precedent on a hard
+case. Re-aggregating GPT-4.1-mini's 19 "wrong-despite-relevant-precedent" cases:
+all 19 are declines (`unknown`), zero are used-but-wrong — the weak model fails
+*safely*, by abstaining rather than fabricating.
+
+**Over-blocking is a conservatism cost, not a bug.** For GPT-4.1-mini, 13 correct
+diagnoses are nonetheless DEGRADED; 12 of these are because the agent's own
+confidence fell below τ=0.5 and the diagnosis happened to be right anyway. This is
+the intended fail-safe behaviour (low-confidence output is held), and it trades
+recall for safety; lowering τ would recover these but admit more confident-wrong
+output — the precision/safety knob.
+
+**The same unsafe intent, three models ("turn up the lighting").** IN-038 asks for
+something no whitelist policy expresses. Haiku correctly returns `out_of_scope`
+(no policy). GPT-4.1-mini force-fits it into `delay_low_priority_missions` and
+Solar into `avoid_zone(cold_zone)` — both *structurally valid* policies that the
+guardrail accepts, so the unsafe intent leaks. Only the agent's self-restraint
+distinguishes the safe model here, confirming that for valid-but-unintended
+policies the guardrail provides no protection.
+
 ---
 
 ## 7. Limitations
