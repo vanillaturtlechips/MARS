@@ -19,7 +19,7 @@ datasets across three LLMs (GPT-4.1-mini, Claude Haiku 4.5, Upstage Solar-Pro).
 Retrieval-augmented generation (RAG) improves diagnosis cause accuracy by
 38–47 percentage points *across all three models*, and reduces confident-wrong
 diagnoses. For operator intent, a defense-in-depth of agent self-restraint plus
-guardrail blocks 87–100% of unsafe instructions. Our central finding holds on
+guardrail blocks 73–100% of unsafe instructions (11–15 of 15) depending on model. Our central finding holds on
 both directions and all models: deterministic validation reliably catches
 *structurally* invalid output (ungrounded references, out-of-whitelist policies,
 nonexistent zones) but **cannot** catch *grounded-but-wrong* diagnoses or
@@ -114,7 +114,7 @@ Amazon Robotics (Wurman et al., 2008); their runtime bottlenecks — congestion,
 deadlock, blocked zones — are studied as lifelong multi-agent path finding (Li et
 al., 2021) and layout/throughput optimization (Zhang et al., 2023). These define
 the operational substrate and failure modes our supervisor observes; we add an
-LLM reasoning layer *above* this stack rather than改 the planner.
+LLM reasoning layer *above* this stack rather than replacing the planner.
 
 **LLMs for robotics.** Grounding natural language in robot capability is
 established for single-robot control: feasibility-aware action selection (SayCan;
