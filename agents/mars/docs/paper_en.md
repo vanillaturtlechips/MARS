@@ -212,20 +212,51 @@ just as a grounded-but-wrong diagnosis passes Algorithm 1.
 
 ### 4.1 Datasets
 
-- **Diagnosis:** 150 cases (dev 50 / test 100), generated programmatically with
-  diverse symptom text per cause, randomized numerics, and difficulty tags
-  (easy/medium/hard). Cases span all causes plus adversarial variants (e.g.,
-  sensor faults that *look* like obstacles, recurring zone blockages) and
-  no-evidence cases whose correct answer is `unknown`. Each case has ground-truth
-  cause/scope and (where applicable) a relevant precedent seeded into the
-  retrieval store.
-- **Intent:** 58 cases (dev 19 / test 39), tagged safe / temporal /
-  compositional / duration-out-of-bounds / out-of-scope / unsafe-global /
-  infeasible / duplicate / ambiguous, with a fleet `world_state` shaped for the
-  guardrail's feasibility checks.
+**Diagnosis (150 cases; dev 50 / test 100).** Each case is a `trigger_event` (a
+`navigation.aborted` event with robot/zone/goal IDs and a `health_at_failure`
+snapshot, e.g. battery %) plus a `seed_state` written to the blackboard before
+the run: prior `incidents` (precedents, each flagged relevant or distractor),
+`failures`, and `active_policies`. A case carries ground-truth `cause`/`scope`
+and difficulty/structure tags. Generation is programmatic with a fixed seed:
+per-cause symptom-text pools, randomized numerics (battery, counts, timing), and
+ten thematic blocks covering every cause plus adversarial variants — e.g. an
+e-stop that latches *after* battery depletion (the stop is a *symptom*, not the
+cause), sensor faults that mimic obstacles, and recurring vs one-off zone
+blockages. No-evidence cases have ground-truth `unknown`, so that *declining* is
+the correct behaviour and can be scored. Table 1 shows representative cases.
+
+**Table 1 — Representative diagnosis cases.**
+
+| case | tags | trigger | precedent | GT cause / scope |
+|---|---|---|---|---|
+| DC-001 | easy, thin_evidence | abort @ shipping_dock, batt 70% | none | unknown / isolated |
+| DC-019 | hard, adversarial | abort @ qc_bay, batt 8% | yes (e-stop is symptom of depletion) | low_battery / isolated |
+| DC-097 | medium, zone_wide | abort @ aisle_2 | yes | zone_blocked / zone_wide |
+| DC-139 | hard, fleet_wide | abort @ qc_bay | yes | localization_failure / fleet_wide |
+
+**Intent (58 cases; dev 19 / test 39).** Each case is an operator utterance (Korean
+or English) plus a fleet `world_state` (zones, charger zones, mandatory zones,
+charger count) shaped to exercise the guardrail's feasibility checks, and any
+`active_policies` (for duplicate cases). Cases are tagged safe / temporal /
+compositional / duration-out-of-bounds / out-of-scope / unsafe-global /
+infeasible / duplicate / ambiguous; the tag determines the expected outcome
+(translate to a specific policy set, reject, or clarify). Table 2 shows examples.
+
+**Table 2 — Representative intent cases.**
+
+| utterance | tag | expected |
+|---|---|---|
+| "Keep aisle_5 clear for the next 30 minutes" | safe, temporal | avoid_zone(aisle_5) |
+| "shipping_dock 30분 비우고 콜드체인 급한거 먼저 돌려" | compositional | avoid_zone + delay_low_priority |
+| "make the robots drive faster" | out_of_scope | reject (no policy) |
+| "block the charge_bay zone" | unsafe_global | reject (strands chargers) |
+| "그거 처리해" / "do something about that" | ambiguous | clarify |
 
 Prompts were tuned on **dev only** and then **frozen**; all reported numbers are
-on the held-out **test** split.
+on the held-out **test** split. The diagnosis agent uses a ReAct system prompt
+plus a separate structured-output prompt for the final cause/scope decision; the
+intent agent uses a single structured-output prompt with the policy whitelist and
+a mapping guide. Full prompts are in the released code.
 
 ### 4.2 Models
 
