@@ -47,12 +47,12 @@ class ScenarioRunner(Node):
         self.spec = SC.SCENARIOS[scenario]
         self.goals = SC.goals_for(scenario)            # [(name,x,y)...]
         self.shared = set(self.spec.get("shared_goal", []))
-        self._clients: dict[str, ActionClient] = {}
+        self.nav_clients: dict[str, ActionClient] = {}
         self.done: dict[str, str] = {}                 # name -> "reached"/"aborted"
         self.reassigned: set[str] = set()
 
         for name, _, _ in self.goals:
-            self._clients[name] = ActionClient(self, NavigateToPose, f"/{name}/navigate_to_pose")
+            self.nav_clients[name] = ActionClient(self, NavigateToPose, f"/{name}/navigate_to_pose")
 
         self.get_logger().info(f"[{scenario}] {self.spec['desc']}")
         for name, x, y in self.goals:
@@ -64,7 +64,7 @@ class ScenarioRunner(Node):
             self._send(name, x, y, idx=i)
 
     def _send(self, name: str, x: float, y: float, idx: int):
-        cli = self._clients[name]
+        cli = self.nav_clients[name]
         if not cli.wait_for_server(timeout_sec=10.0):
             self.get_logger().error(f"{name}: navigate_to_pose server not available")
             self.done[name] = "no_server"
