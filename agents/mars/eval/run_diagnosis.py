@@ -81,13 +81,24 @@ def run_mode(cases, rag_on: bool, limit: int):
         gt = case["ground_truth"]
         bundle = dx.get("_tool_transcript", {})
         verdict, _ = validate_diagnosis(dx, bundle)
+        # B: retrieval instrumentation — did search surface/use the relevant precedent?
+        retrieved = bundle.get("retrieved_precedents", []) or []
+        retrieved_ids = {p.get("id") for p in retrieved}
+        relevant = set(gt.get("relevant_precedent_ids", []) or [])
+        relied = set(dx.get("relied_on_precedents", []) or [])
+        diff = next((t for t in case.get("tags", []) if t in ("easy", "medium", "hard")), "?")
         rows.append({
-            "case": case["case_id"],
+            "case": case["case_id"], "difficulty": diff,
             "cause_ok": dx.get("cause") == gt["cause"],
             "scope_ok": dx.get("scope") == gt["scope"],
             "pred_cause": dx.get("cause"), "gt_cause": gt["cause"],
             "pred_scope": dx.get("scope"), "gt_scope": gt["scope"],
             "verdict": verdict.value,
+            "has_relevant": bool(relevant),
+            "searched": len(retrieved) > 0,
+            "n_retrieved": len(retrieved),
+            "relevant_retrieved": bool(relevant & retrieved_ids),
+            "relied_relevant": bool(relied & relevant),
         })
     conn.close()
     return rows
@@ -103,6 +114,27 @@ def summarize(tag, rows):
     print(f"  cause accuracy: {cause}/{n} ({100*cause/n:.1f}%)" if n else "  no cases")
     print(f"  scope accuracy: {scope}/{n} ({100*scope/n:.1f}%)" if n else "")
     print(f"  verdicts: {dict(Counter(r['verdict'] for r in ok))}")
+    # A: per-difficulty cause/scope accuracy
+    bydiff = defaultdict(lambda: [0, 0, 0])  # diff -> [cause_ok, scope_ok, total]
+    for r in ok:
+        d = bydiff[r.get("difficulty", "?")]
+        d[0] += r["cause_ok"]; d[1] += r["scope_ok"]; d[2] += 1
+    print("  by difficulty (cause / scope):")
+    for d in ("easy", "medium", "hard", "?"):
+        if d in bydiff:
+            c, s, t = bydiff[d]
+            print(f"    {d:7s} cause {c}/{t} ({100*c/t:.0f}%)  scope {s}/{t} ({100*s/t:.0f}%)")
+    # B: retrieval instrumentation (only meaningful when precedents exist)
+    rel = [r for r in ok if r.get("has_relevant")]
+    if rel:
+        searched = sum(r["searched"] for r in rel)
+        got = sum(r["relevant_retrieved"] for r in rel)
+        used = sum(r["relied_relevant"] for r in rel)
+        nrel = len(rel)
+        print(f"  retrieval (cases w/ a relevant precedent, n={nrel}):")
+        print(f"    searched: {searched}/{nrel} ({100*searched/nrel:.0f}%)  "
+              f"relevant retrieved: {got}/{nrel} ({100*got/nrel:.0f}%)  "
+              f"relied on it: {used}/{nrel} ({100*used/nrel:.0f}%)")
     # per-case pred vs gt (so accuracy is debuggable, not a black box)
     print("  case        cause(pred/gt)                    scope(pred/gt)        verdict")
     for r in ok:
@@ -128,10 +160,17 @@ def main():
         cases = [c for c in cases if c.get("split") == a.split]
     print(f"loaded {len(cases)} diagnosis cases (split={a.split})")
 
+    import json
+    out = {}
     if a.rag in ("on", "both"):
-        summarize("RAG ON", run_mode(cases, True, a.limit))
+        rows = run_mode(cases, True, a.limit); out["rag_on"] = rows
+        summarize("RAG ON", rows)
     if a.rag in ("off", "both"):
-        summarize("RAG OFF", run_mode(cases, False, a.limit))
+        rows = run_mode(cases, False, a.limit); out["rag_off"] = rows
+        summarize("RAG OFF", rows)
+    dump = Path(__file__).parent / f"results_{a.split}.json"
+    dump.write_text(json.dumps(out, indent=2))
+    print(f"\nsaved per-case results -> {dump}")
 
 
 if __name__ == "__main__":
