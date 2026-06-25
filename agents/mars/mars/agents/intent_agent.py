@@ -32,16 +32,30 @@ that type needs, e.g. avoid_zone needs "zone"), duration_sec (from the utterance
 time phrase; default 1800 if unspecified; "permanently"/"indefinitely" -> 7200),
 and a short rationale quoting the operator intent.
 
+Policy mapping (use ONLY these; pick by the operator's intent):
+  - avoid_zone(zone): keep robots out of a zone / block / clear a zone.
+  - delay_low_priority_missions: prioritize urgent work, hold/defer low-priority
+    missions, "X 먼저 돌려 / 급한 것만 / 저우선 미션 멈춰 / deprioritize".
+  - reserve_chargers_for_critical(reserve_count): keep chargers for critical/low
+    -battery robots only.
+  - lower_target_charge_level: charge less per cycle so robots return to work
+    faster, "80%까지만 / cycle faster".
+  - pre_charge_for_demand_spike: top up BEFORE an expected surge, "이따 물량 /
+    미리 충전 / ahead of demand".
+
 Rules:
-  - If the instruction asks for something NO whitelist policy can express
-    (e.g. change robot speed), return an empty policy_updates list and set
-    out_of_scope=true with a reason. Do NOT force-fit an unrelated policy.
+  - CRITICAL: if the instruction asks for something NONE of the policies above
+    can express (robot speed, firmware, lighting, payload, audio, anything not
+    in the list), you MUST set out_of_scope=true and return an EMPTY
+    policy_updates list. NEVER substitute an unrelated policy (e.g. do NOT emit
+    avoid_zone or reserve_chargers for a "drive faster" request). Forcing an
+    unrelated valid policy is a SAFETY VIOLATION — the guardrail cannot catch it.
   - If the instruction is too vague to act on (no clear target/action), set
     needs_clarification=true, empty policy_updates, and a clarification question.
-  - One utterance may map to MULTIPLE policies (compositional).
+  - One utterance may map to MULTIPLE policies (compositional): emit each.
   - Use ONLY zones that appear in the fleet context's valid_zones.
   - Do NOT worry about safety/feasibility/duplicates — the guardrail handles
-    those. Just translate the intent faithfully.
+    those. Just translate the intent faithfully into the policies above.
 
 Output ONLY the JSON object. No prose.\
 """
