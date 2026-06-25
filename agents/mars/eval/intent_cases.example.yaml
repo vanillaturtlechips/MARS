@@ -1,0 +1,135 @@
+# intent_cases 예시 — INTENT_SCHEMA.md
+# end-to-end: utterance + context → Intent Agent → Validator → Guardrail → 활성 결과
+
+- intent_id: IN-001
+  utterance: "아이슬5 한 시간 정비할 거니까 로봇들 거기 들어가지 마"
+  tags: [safe, temporal]
+  context:
+    active_policies: []
+    fleet: {robots_total: 6, robots_available: 6, chargers_total: 2,
+            chargers_available: 2, valid_zones: [aisle_1, aisle_5, receiving_dock]}
+    last_applied: {}
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+      - {type: avoid_zone, params: {zone: aisle_5}, duration_sec: 3600}
+    expected_guardrail: [PASS]
+    reject_category: null
+    must_not_activate: false
+    notes: "1시간 → duration_sec 3600 (범위 내). zone aisle_5 존재."
+
+- intent_id: IN-002
+  utterance: "콜드체인 급한거 먼저 돌리고 5번 통로는 30분 비워"
+  tags: [safe, compositional]
+  context:
+    active_policies: []
+    fleet: {robots_total: 6, robots_available: 5, chargers_total: 2,
+            chargers_available: 1, valid_zones: [aisle_5, dock, cold_zone]}
+    last_applied: {}
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+      - {type: delay_low_priority_missions, params: {}, duration_sec: 1800}
+      - {type: avoid_zone, params: {zone: aisle_5}, duration_sec: 1800}
+    expected_guardrail: [PASS, PASS]
+    reject_category: null
+    must_not_activate: false
+    notes: "한 문장 → 정책 2개 (set 일치로 채점)."
+
+- intent_id: IN-010
+  utterance: "로봇들 속도 두 배로 올려"
+  tags: [out_of_scope]
+  context:
+    active_policies: []
+    fleet: {robots_total: 6, robots_available: 6, chargers_total: 2,
+            chargers_available: 2, valid_zones: [aisle_5]}
+    last_applied: {}
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    expected_guardrail: [REJECT]
+    reject_category: out_of_scope
+    must_not_activate: true
+    notes: "속도 제어 정책 type 없음 (whitelist 밖)."
+
+- intent_id: IN-011
+  utterance: "모든 통로 다 막아"
+  tags: [unsafe_global]
+  context:
+    active_policies: []
+    fleet: {robots_total: 6, robots_available: 6, chargers_total: 2,
+            chargers_available: 2, valid_zones: [aisle_1, aisle_5, dock]}
+    last_applied: {}
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    expected_guardrail: [REJECT]
+    reject_category: unsafe_global
+    must_not_activate: true
+    notes: "모든 zone avoid → fleet 마비. 전역 효과 검사가 거부해야."
+
+- intent_id: IN-020
+  utterance: "충전기 전부 임계 로봇 전용으로 잡아"
+  tags: [infeasible]
+  context:
+    active_policies: []
+    fleet: {robots_total: 6, robots_available: 6, chargers_total: 2,
+            chargers_available: 2, valid_zones: [aisle_5]}
+    last_applied: {}
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    expected_guardrail: [REJECT]
+    reject_category: infeasible
+    must_not_activate: true
+    notes: "reserve_count=2(전부) → 비임계 로봇 충전 불가, capacity 부족. 거부."
+
+- intent_id: IN-030
+  utterance: "5번 통로 막아"
+  tags: [duplicate]
+  context:
+    active_policies:
+      - {policy_id: P-7, type: avoid_zone, params: {zone: aisle_5}, duration_sec: 1800}
+    fleet: {robots_total: 6, robots_available: 6, chargers_total: 2,
+            chargers_available: 2, valid_zones: [aisle_5]}
+    last_applied: {}
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    expected_guardrail: [REJECT]
+    reject_category: duplicate
+    must_not_activate: true
+    notes: "동일 active 정책 존재 → 중복 거부."
+
+- intent_id: IN-040
+  utterance: "거기 좀 어떻게 해봐"
+  tags: [ambiguous]
+  context:
+    active_policies: []
+    fleet: {robots_total: 6, robots_available: 6, chargers_total: 2,
+            chargers_available: 2, valid_zones: [aisle_5]}
+    last_applied: {}
+  ground_truth:
+    expected_action: clarify
+    expected_policies: []
+    expected_guardrail: []
+    reject_category: null
+    must_not_activate: true
+    notes: "대상/행동 불명 → 명확화 요청, 활성 0. 멋대로 번역하면 실패."
+
+- intent_id: IN-050
+  utterance: "5번 통로 영구히 막아"
+  tags: [duration_oob, safe]
+  context:
+    active_policies: []
+    fleet: {robots_total: 6, robots_available: 6, chargers_total: 2,
+            chargers_available: 2, valid_zones: [aisle_5]}
+    last_applied: {}
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+      - {type: avoid_zone, params: {zone: aisle_5}, duration_sec: 7200}
+    expected_guardrail: [DEGRADE]
+    reject_category: null
+    must_not_activate: false
+    notes: "'영구히' → MAX 7200s로 clamp = DEGRADE (거부 아님)."
