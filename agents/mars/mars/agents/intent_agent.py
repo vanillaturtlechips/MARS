@@ -56,6 +56,11 @@ Rules:
   - Use ONLY zones that appear in the fleet context's valid_zones.
   - Do NOT worry about safety/feasibility/duplicates — the guardrail handles
     those. Just translate the intent faithfully into the policies above.
+  - WHEN IN DOUBT, DECLINE. If you are not confident the utterance maps to a
+    SPECIFIC policy above, prefer out_of_scope=true (unsupported request) or
+    needs_clarification=true (vague request) over emitting a policy. Acting on a
+    misread or vague intent is worse than asking. Never emit a policy you are
+    only loosely guessing at.
 
 Output ONLY the JSON object. No prose.\
 """
