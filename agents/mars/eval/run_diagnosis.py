@@ -80,25 +80,32 @@ def run_mode(cases, rag_on: bool, limit: int):
             continue
         gt = case["ground_truth"]
         bundle = dx.get("_tool_transcript", {})
-        verdict, _ = validate_diagnosis(dx, bundle)
+        verdict, notes = validate_diagnosis(dx, bundle)   # keep notes (why DEGRADE/REJECT)
         # B: retrieval instrumentation — did search surface/use the relevant precedent?
         retrieved = bundle.get("retrieved_precedents", []) or []
         retrieved_ids = {p.get("id") for p in retrieved}
         relevant = set(gt.get("relevant_precedent_ids", []) or [])
         relied = set(dx.get("relied_on_precedents", []) or [])
         diff = next((t for t in case.get("tags", []) if t in ("easy", "medium", "hard")), "?")
+        trusts = [p.get("_trust_score") for p in retrieved if p.get("_trust_score") is not None]
+        # trust score of the RELEVANT precedent specifically (fleet/sensor 분석용)
+        rel_trust = [p.get("_trust_score") for p in retrieved
+                     if p.get("id") in relevant and p.get("_trust_score") is not None]
         rows.append({
             "case": case["case_id"], "difficulty": diff,
             "cause_ok": dx.get("cause") == gt["cause"],
             "scope_ok": dx.get("scope") == gt["scope"],
             "pred_cause": dx.get("cause"), "gt_cause": gt["cause"],
             "pred_scope": dx.get("scope"), "gt_scope": gt["scope"],
-            "verdict": verdict.value,
+            "verdict": verdict.value, "dv_notes": notes,
+            "confidence": dx.get("confidence"),
             "has_relevant": bool(relevant),
             "searched": len(retrieved) > 0,
             "n_retrieved": len(retrieved),
             "relevant_retrieved": bool(relevant & retrieved_ids),
             "relied_relevant": bool(relied & relevant),
+            "max_trust": max(trusts) if trusts else None,
+            "relevant_trust": max(rel_trust) if rel_trust else None,
         })
     conn.close()
     return rows
