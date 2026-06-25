@@ -23,7 +23,7 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
-from nav_msgs.msg import Odometry
+from tf2_ros import Buffer, TransformListener
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # deploy/
 import scenarios as SC  # noqa: E402
@@ -41,18 +41,26 @@ class ScenarioLogger(Node):
         self.tracks: dict[str, list] = {n: [] for n in self.names}
         self.pos: dict[str, tuple] = {}
         self.min_dist_seen = float("inf")
-        for n in self.names:
-            self.create_subscription(Odometry, f"/{n}/odom",
-                                     lambda m, nm=n: self._odom(m, nm), 10)
+        # /Rx/odom is zeroed at each robot's spawn (per-robot frame) -> useless for
+        # inter-robot distance. Read map->Rx/base_link from TF instead (common frame).
+        self.tfbuf = Buffer()
+        self.tfl = TransformListener(self.tfbuf, self)
+        self.create_timer(0.2, self._sample)
         self.create_timer(1.0, self._dash)
-        self.get_logger().info(f"[{scenario}] logging {self.names} -> {out}")
+        self.get_logger().info(f"[{scenario}] logging {self.names} (TF map->base_link) -> {out}")
 
-    def _odom(self, m: Odometry, name: str):
+    def _sample(self):
+        from rclpy.time import Time
         t = time.time() - self.t0
-        x = m.pose.pose.position.x
-        y = m.pose.pose.position.y
-        self.pos[name] = (x, y)
-        self.tracks[name].append([round(t, 2), round(x, 3), round(y, 3)])
+        for name in self.names:
+            try:
+                tr = self.tfbuf.lookup_transform("map", f"{name}/base_link", Time())
+            except Exception:
+                continue
+            x = tr.transform.translation.x
+            y = tr.transform.translation.y
+            self.pos[name] = (x, y)
+            self.tracks[name].append([round(t, 2), round(x, 3), round(y, 3)])
 
     def _min_pair(self) -> float:
         d = float("inf")
