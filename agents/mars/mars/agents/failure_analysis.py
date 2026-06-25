@@ -97,8 +97,19 @@ Index list entries like 'mission_failures[0]' and fields like
 (no 'health_at_failure', 'distribution', 'fleet_metrics', etc.) — robot
 health and counts live inside the keys above.
 
+Choose SCOPE strictly from the evidence — do not over-escalate:
+  - isolated: only this robot, this zone; robot_history shows NO failures of
+    this robot in other zones and no other robots failed here. This is the
+    DEFAULT. Do NOT pick robot_specific just because one robot failed once.
+  - robot_specific: robot_history shows THIS robot failing in 2+ different zones.
+  - zone_wide: 2+ DIFFERENT robots failed in the SAME zone.
+  - fleet_wide: failures span MANY zones AND robots.
 For scope 'zone_wide' or 'fleet_wide', cite at least TWO distinct
 mission_failures[N] entries as evidence.
+
+For CAUSE: a fault_code / e-stop can be a symptom — prefer the underlying cause
+(e.g. e-stop after low battery is low_battery). If a retrieved_precedent closely
+matches this failure, adopt its cause instead of unknown.
 
 If retrieved_precedents is empty, set relied_on_precedents to [] and do
 NOT claim precedent support — base confidence on the direct evidence only.\
