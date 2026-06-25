@@ -134,6 +134,7 @@ def main():
     ap.add_argument("--cases", default=str(Path(__file__).parent / "intent_cases.yaml"))
     ap.add_argument("--split", choices=["dev", "test", "all"], default="all")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--tag", default="", help="suffix for result file (e.g. model name)")
     a = ap.parse_args()
     cases = yaml.safe_load(Path(a.cases).read_text())
     if a.split != "all":
@@ -141,7 +142,8 @@ def main():
     print(f"loaded {len(cases)} intent cases (split={a.split})")
     rows = run(cases, a.limit)
     summarize(rows)
-    dump = Path(__file__).parent / f"results_intent_{a.split}.json"
+    suffix = f"_{a.tag}" if a.tag else ""
+    dump = Path(__file__).parent / f"results_intent_{a.split}{suffix}.json"
     dump.write_text(json.dumps(rows, indent=2, ensure_ascii=False))
     print(f"\nsaved -> {dump}")
 

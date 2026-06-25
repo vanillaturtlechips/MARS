@@ -161,6 +161,7 @@ def main():
     ap.add_argument("--split", choices=["dev", "test", "all"], default="all",
                     help="dev = tune prompts; test = report headline (no overfit)")
     ap.add_argument("--limit", type=int, default=0, help="0 = all cases")
+    ap.add_argument("--tag", default="", help="suffix for result file (e.g. model name)")
     a = ap.parse_args()
     cases = yaml.safe_load(Path(a.cases).read_text())
     if a.split != "all":
@@ -175,7 +176,8 @@ def main():
     if a.rag in ("off", "both"):
         rows = run_mode(cases, False, a.limit); out["rag_off"] = rows
         summarize("RAG OFF", rows)
-    dump = Path(__file__).parent / f"results_{a.split}.json"
+    suffix = f"_{a.tag}" if a.tag else ""
+    dump = Path(__file__).parent / f"results_{a.split}{suffix}.json"
     dump.write_text(json.dumps(out, indent=2))
     print(f"\nsaved per-case results -> {dump}")
 
