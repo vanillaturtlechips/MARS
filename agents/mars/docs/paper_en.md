@@ -10,7 +10,7 @@ Large language models (LLMs) are attractive as a supervisory layer for warehouse
 robot fleets: they can diagnose novel mission failures and translate a human
 operator's natural-language intent into fleet policies. But an LLM that drives
 robots can also hallucinate — emitting a confident but wrong diagnosis, or a
-fleet-wide policy the operator never intended. We present MARS, a supervisory
+fleet-wide policy the operator never intended. We present MARS (Multi-Agent Robot Supervision), a supervisory
 architecture that gates unreliable LLM input and output through deterministic
 validation: a retrieval-augmented diagnosis agent whose output is checked by a
 decision validator, and an intent agent whose proposed policies are checked by a
@@ -61,7 +61,7 @@ We make three contributions:
 2. **A multi-model quantitative evaluation** on controlled failure (n=100) and
    intent (n=39) test sets across three LLMs. RAG lifts diagnosis cause accuracy
    by 38–47 pp on every model and suppresses confident-wrong output; agent +
-   guardrail block 87–100% of unsafe operator intents.
+   guardrail block 73–100% of unsafe operator intents depending on model.
 3. **A characterization of the safety ceiling**: deterministic validation
    catches structurally invalid output but not grounded-but-wrong diagnoses or
    valid-but-unintended policies. This residual risk is model-dependent (e.g.,
@@ -111,8 +111,7 @@ guarantees stop and this residual risk begins, across three models.
 
 **Multi-robot and fleet management.** Warehouse robot fleets descend from Kiva /
 Amazon Robotics (Wurman et al., 2008); their runtime bottlenecks — congestion,
-deadlock, blocked zones — are studied as lifelong multi-agent path finding (Li et
-al., 2021) and layout/throughput optimization (Zhang et al., 2023). These define
+deadlock, blocked zones — are studied as lifelong multi-agent path finding (Li J. et al., 2021) and layout/throughput optimization (Zhang et al., 2023). These define
 the operational substrate and failure modes our supervisor observes; we add an
 LLM reasoning layer *above* this stack rather than replacing the planner.
 
@@ -121,7 +120,7 @@ established for single-robot control: feasibility-aware action selection (SayCan
 Ahn et al., 2022), NL-to-executable-policy code (Code as Policies; Liang et al.,
 2023), and feedback-driven replanning (Inner Monologue; Huang et al., 2022).
 Multi-robot LLM coordination is emerging (RoCo; Mandi et al., 2023), and a recent
-survey maps LLMs onto multi-robot systems (Li et al., 2025). These translate
+survey maps LLMs onto multi-robot systems (Li P. et al., 2025). These translate
 language into robot action; we focus on the under-studied **supervisory** role —
 validating an operator's intent and a diagnosis at the *fleet* level — and on the
 machinery that makes unreliable LLM output safe to act on.
@@ -324,7 +323,10 @@ text-embedding-3-small; retrieval quality is model-independent.
 
 **RAG helps every model** (cause +38 / +41 / +47 pp). The benefit is largest by
 difficulty on medium/hard cases (e.g., for GPT-4.1-mini, medium 12%→95% with
-RAG). See Figure 1.
+RAG). See Figure 1. Scope accuracy is high for GPT-4.1-mini and Haiku (93–96%)
+but notably lower for Solar (73%): Solar tends to *under-escalate*, labeling
+`zone_wide` incidents as `isolated`, even when it identifies the cause correctly —
+a model-specific weakness orthogonal to cause accuracy.
 
 ### 5.2 Diagnosis safety
 
@@ -349,8 +351,6 @@ Of 15 must-not-activate intents, the agent + guardrail block 13/15, 15/15, and
 declines out-of-scope/ambiguous requests, while the guardrail blocks structurally
 unsafe ones (avoiding a charger/mandatory zone, reserving all chargers,
 nonexistent zones, duplicates).
-
----
 
 ### 5.4 Validator stress test
 
