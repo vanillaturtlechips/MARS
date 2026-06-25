@@ -46,3 +46,14 @@ docker compose up -d (pgvector 1536) + .env(OPENAI_API_KEY, LLM_PROVIDER=openai,
 EMBEDDING_PROVIDER=openai, EMBEDDING_DIM=1536) →
 `python3 -m eval.run_diagnosis --rag both --split test` →
 `python3 -m eval.safety_delta test`
+
+## 한계 원인 규명 (analyze_limits, 재집계·LLM 0)
+- **fleet_wide / 센서 adversarial (precedent 19개 끌어왔는데 오답):** 19개 전부
+  거절(unknown), used-but-wrong 0. relevant precedent **trust 0.71**(정답 케이스와
+  동일) → **검색·신뢰 문제 아님.** 충분히 신뢰할 precedent가 있는데도 모델이
+  hard 케이스에서 **답으로 통합 못 함 = 추론 한계.** (future work: 더 센 모델/추론 보강)
+- **over-block 13개:** 12개가 confidence<0.5 → 에이전트가 불확실했는데 우연히
+  맞은 진단을 validator가 강등. **버그 아닌 보수적 안전 비용** (tau↓ 시 over-block↓
+  but confident-wrong↑ 트레이드오프).
+- **confident-wrong = 0:** RAG ON에서 틀린-확신-PASS 0건. 시스템이 위험한 잘못된
+  행동을 한 번도 내지 않음(안전 입증). 잔여 위험은 grounded-but-wrong인데 이 셋엔 없음.

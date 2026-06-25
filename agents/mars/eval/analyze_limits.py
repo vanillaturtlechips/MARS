@@ -30,10 +30,17 @@ def fleet_sensor(rows):
     print(f"  declined (pred=unknown): {len(declined)}   used-but-wrong: {len(usedwrong)}")
     trusts = [r["relevant_trust"] for r in bad if r.get("relevant_trust") is not None]
     if trusts:
+        mean_t = sum(trusts) / len(trusts)
         lo = sum(t < 0.5 for t in trusts)
-        print(f"  relevant-precedent trust: min {min(trusts):.2f} mean {sum(trusts)/len(trusts):.2f} "
+        print(f"  relevant-precedent trust: min {min(trusts):.2f} mean {mean_t:.2f} "
               f"max {max(trusts):.2f}  (<0.5: {lo}/{len(trusts)})")
-        print("  -> LOW trust = retrieval validator discounts it (the bottleneck).")
+        # data-driven verdict (don't assume LOW trust)
+        if lo > len(trusts) / 2:
+            print("  -> mostly LOW trust: retrieval validator discounts it (retrieval-side bottleneck).")
+        else:
+            print("  -> trust is ADEQUATE yet the agent still declined (pred=unknown):")
+            print("     NOT a retrieval/trust problem -> model fails to INTEGRATE an available")
+            print("     precedent on hard cases (reasoning limit; test a stronger model).")
     # compare to trust of CORRECT cases that used precedent
     good_trust = [r["relevant_trust"] for r in rows
                   if r["cause_ok"] and r.get("relevant_trust") is not None]
