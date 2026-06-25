@@ -65,7 +65,10 @@ def run_mode(cases, rag_on: bool, limit: int):
     embedder = get_embedder() if rag_on else MockEmbedder(dim=384)
     client = get_investigator_client()
     rows = []
-    for case in (cases[:limit] if limit else cases):
+    sel = cases[:limit] if limit else cases
+    tag = "RAG_ON" if rag_on else "RAG_OFF"
+    for i, case in enumerate(sel, 1):
+        print(f"  [{tag} {i}/{len(sel)}] {case['case_id']} ...", flush=True)
         _reset(conn)
         _seed(conn, case, embedder, rag_on)
         tools = InvestigatorTools(conn, embedder)
