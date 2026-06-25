@@ -1,0 +1,938 @@
+- probe_id: VP-001
+  description: grounded isolated diagnosis, conf 0.60 -> PASS
+  defect_type: none
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: receiving_dock
+    mission_failures:
+    - robot_id: R1
+      zone: receiving_dock
+      goal_status: 6
+    zone_state:
+      zone: receiving_dock
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: static_obstacle
+    scope: isolated
+    persistence: persistent
+    confidence: 0.6
+    evidence:
+    - observation: robot aborted
+      refs:
+      - mission_failures[0].zone
+      - trigger_event.robot_id
+    relied_on_precedents: []
+  expected_verdict: PASS
+- probe_id: VP-002
+  description: grounded zone_wide diagnosis, conf 0.63 -> PASS
+  defect_type: none
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_1
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_1
+      goal_status: 6
+    - robot_id: R2
+      zone: aisle_1
+      goal_status: 6
+    zone_state:
+      zone: aisle_1
+      recent_failures: 2
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: congestion_deadlock
+    scope: zone_wide
+    persistence: persistent
+    confidence: 0.63
+    evidence:
+    - observation: two robots aborted in zone
+      refs:
+      - mission_failures[0].zone
+      - mission_failures[1].zone
+    relied_on_precedents: []
+  expected_verdict: PASS
+- probe_id: VP-003
+  description: grounded isolated diagnosis, conf 0.66 -> PASS
+  defect_type: none
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_3
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_3
+      goal_status: 6
+    zone_state:
+      zone: aisle_3
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: recurring_blockage
+    scope: isolated
+    persistence: persistent
+    confidence: 0.66
+    evidence:
+    - observation: robot aborted
+      refs:
+      - mission_failures[0].zone
+      - trigger_event.robot_id
+    relied_on_precedents: []
+  expected_verdict: PASS
+- probe_id: VP-004
+  description: grounded zone_wide diagnosis, conf 0.69 -> PASS
+  defect_type: none
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_5
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_5
+      goal_status: 6
+    - robot_id: R2
+      zone: aisle_5
+      goal_status: 6
+    zone_state:
+      zone: aisle_5
+      recent_failures: 2
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: localization_loss
+    scope: zone_wide
+    persistence: persistent
+    confidence: 0.69
+    evidence:
+    - observation: two robots aborted in zone
+      refs:
+      - mission_failures[0].zone
+      - mission_failures[1].zone
+    relied_on_precedents: []
+  expected_verdict: PASS
+- probe_id: VP-005
+  description: grounded isolated diagnosis, conf 0.72 -> PASS
+  defect_type: none
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: cold_zone
+    mission_failures:
+    - robot_id: R1
+      zone: cold_zone
+      goal_status: 6
+    zone_state:
+      zone: cold_zone
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: battery_depletion
+    scope: isolated
+    persistence: persistent
+    confidence: 0.72
+    evidence:
+    - observation: robot aborted
+      refs:
+      - mission_failures[0].zone
+      - trigger_event.robot_id
+    relied_on_precedents: []
+  expected_verdict: PASS
+- probe_id: VP-006
+  description: grounded zone_wide diagnosis, conf 0.75 -> PASS
+  defect_type: none
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: shipping_dock
+    mission_failures:
+    - robot_id: R1
+      zone: shipping_dock
+      goal_status: 6
+    - robot_id: R2
+      zone: shipping_dock
+      goal_status: 6
+    zone_state:
+      zone: shipping_dock
+      recent_failures: 2
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: hardware_fault
+    scope: zone_wide
+    persistence: persistent
+    confidence: 0.75
+    evidence:
+    - observation: two robots aborted in zone
+      refs:
+      - mission_failures[0].zone
+      - mission_failures[1].zone
+    relied_on_precedents: []
+  expected_verdict: PASS
+- probe_id: VP-007
+  description: grounded isolated diagnosis, conf 0.78 -> PASS
+  defect_type: none
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: staging
+    mission_failures:
+    - robot_id: R1
+      zone: staging
+      goal_status: 6
+    zone_state:
+      zone: staging
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: sensor_degradation
+    scope: isolated
+    persistence: persistent
+    confidence: 0.78
+    evidence:
+    - observation: robot aborted
+      refs:
+      - mission_failures[0].zone
+      - trigger_event.robot_id
+    relied_on_precedents: []
+  expected_verdict: PASS
+- probe_id: VP-008
+  description: grounded zone_wide diagnosis, conf 0.81 -> PASS
+  defect_type: none
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: receiving_dock
+    mission_failures:
+    - robot_id: R1
+      zone: receiving_dock
+      goal_status: 6
+    - robot_id: R2
+      zone: receiving_dock
+      goal_status: 6
+    zone_state:
+      zone: receiving_dock
+      recent_failures: 2
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: transient_glitch
+    scope: zone_wide
+    persistence: persistent
+    confidence: 0.81
+    evidence:
+    - observation: two robots aborted in zone
+      refs:
+      - mission_failures[0].zone
+      - mission_failures[1].zone
+    relied_on_precedents: []
+  expected_verdict: PASS
+- probe_id: VP-009
+  description: unresolvable ref 'mission_failures[5].robot_id' -> REJECT
+  defect_type: ungrounded_ref
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: receiving_dock
+    mission_failures:
+    - robot_id: R1
+      zone: receiving_dock
+      goal_status: 6
+    zone_state:
+      zone: receiving_dock
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust: null
+  diagnosis:
+    cause: static_obstacle
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence:
+    - observation: cites missing evidence
+      refs:
+      - mission_failures[5].robot_id
+    relied_on_precedents: []
+  expected_verdict: REJECT
+- probe_id: VP-010
+  description: unresolvable ref 'zone_state.nonexistent_field' -> REJECT
+  defect_type: ungrounded_ref
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_1
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_1
+      goal_status: 6
+    zone_state:
+      zone: aisle_1
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust: null
+  diagnosis:
+    cause: congestion_deadlock
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence:
+    - observation: cites missing evidence
+      refs:
+      - zone_state.nonexistent_field
+    relied_on_precedents: []
+  expected_verdict: REJECT
+- probe_id: VP-011
+  description: unresolvable ref 'trigger_event.mission_id' -> REJECT
+  defect_type: ungrounded_ref
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_3
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_3
+      goal_status: 6
+    zone_state:
+      zone: aisle_3
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust: null
+  diagnosis:
+    cause: recurring_blockage
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence:
+    - observation: cites missing evidence
+      refs:
+      - trigger_event.mission_id
+    relied_on_precedents: []
+  expected_verdict: REJECT
+- probe_id: VP-012
+  description: unresolvable ref 'retrieved_precedents[3].incident_id' -> REJECT
+  defect_type: ungrounded_ref
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_5
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_5
+      goal_status: 6
+    zone_state:
+      zone: aisle_5
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust: null
+  diagnosis:
+    cause: localization_loss
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence:
+    - observation: cites missing evidence
+      refs:
+      - retrieved_precedents[3].incident_id
+    relied_on_precedents: []
+  expected_verdict: REJECT
+- probe_id: VP-013
+  description: unresolvable ref 'fleet_metrics.total' -> REJECT
+  defect_type: ungrounded_ref
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: cold_zone
+    mission_failures:
+    - robot_id: R1
+      zone: cold_zone
+      goal_status: 6
+    zone_state:
+      zone: cold_zone
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust: null
+  diagnosis:
+    cause: battery_depletion
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence:
+    - observation: cites missing evidence
+      refs:
+      - fleet_metrics.total
+    relied_on_precedents: []
+  expected_verdict: REJECT
+- probe_id: VP-014
+  description: unresolvable ref 'mission_failures[0].battery_pct' -> REJECT
+  defect_type: ungrounded_ref
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: shipping_dock
+    mission_failures:
+    - robot_id: R1
+      zone: shipping_dock
+      goal_status: 6
+    zone_state:
+      zone: shipping_dock
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust: null
+  diagnosis:
+    cause: hardware_fault
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence:
+    - observation: cites missing evidence
+      refs:
+      - mission_failures[0].battery_pct
+    relied_on_precedents: []
+  expected_verdict: REJECT
+- probe_id: VP-015
+  description: unresolvable ref 'active_policies[0].type' -> REJECT
+  defect_type: ungrounded_ref
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: staging
+    mission_failures:
+    - robot_id: R1
+      zone: staging
+      goal_status: 6
+    zone_state:
+      zone: staging
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust: null
+  diagnosis:
+    cause: sensor_degradation
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence:
+    - observation: cites missing evidence
+      refs:
+      - active_policies[0].type
+    relied_on_precedents: []
+  expected_verdict: REJECT
+- probe_id: VP-016
+  description: evidence empty -> DEGRADE
+  defect_type: empty_evidence
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: receiving_dock
+    mission_failures:
+    - robot_id: R1
+      zone: receiving_dock
+      goal_status: 6
+    zone_state:
+      zone: receiving_dock
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: static_obstacle
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence: []
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-017
+  description: evidence empty -> DEGRADE
+  defect_type: empty_evidence
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_1
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_1
+      goal_status: 6
+    zone_state:
+      zone: aisle_1
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: congestion_deadlock
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence: []
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-018
+  description: evidence empty -> DEGRADE
+  defect_type: empty_evidence
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_3
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_3
+      goal_status: 6
+    zone_state:
+      zone: aisle_3
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: recurring_blockage
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence: []
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-019
+  description: evidence empty -> DEGRADE
+  defect_type: empty_evidence
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_5
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_5
+      goal_status: 6
+    zone_state:
+      zone: aisle_5
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: localization_loss
+    scope: isolated
+    persistence: persistent
+    confidence: 0.7
+    evidence: []
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-020
+  description: confidence 0.20 < tau 0.5 -> DEGRADE
+  defect_type: low_confidence
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: receiving_dock
+    mission_failures:
+    - robot_id: R1
+      zone: receiving_dock
+      goal_status: 6
+    zone_state:
+      zone: receiving_dock
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: static_obstacle
+    scope: isolated
+    persistence: transient
+    confidence: 0.2
+    evidence:
+    - observation: weak signal
+      refs:
+      - mission_failures[0].zone
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-021
+  description: confidence 0.27 < tau 0.5 -> DEGRADE
+  defect_type: low_confidence
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_1
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_1
+      goal_status: 6
+    zone_state:
+      zone: aisle_1
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: congestion_deadlock
+    scope: isolated
+    persistence: transient
+    confidence: 0.27
+    evidence:
+    - observation: weak signal
+      refs:
+      - mission_failures[0].zone
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-022
+  description: confidence 0.34 < tau 0.5 -> DEGRADE
+  defect_type: low_confidence
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_3
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_3
+      goal_status: 6
+    zone_state:
+      zone: aisle_3
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: recurring_blockage
+    scope: isolated
+    persistence: transient
+    confidence: 0.34
+    evidence:
+    - observation: weak signal
+      refs:
+      - mission_failures[0].zone
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-023
+  description: confidence 0.41 < tau 0.5 -> DEGRADE
+  defect_type: low_confidence
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_5
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_5
+      goal_status: 6
+    zone_state:
+      zone: aisle_5
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: HIGH
+  diagnosis:
+    cause: localization_loss
+    scope: isolated
+    persistence: transient
+    confidence: 0.41
+    evidence:
+    - observation: weak signal
+      refs:
+      - mission_failures[0].zone
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-024
+  description: scope=zone_wide but <2 mission_failures refs -> DEGRADE
+  defect_type: scope_unsupported
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: receiving_dock
+    mission_failures:
+    - robot_id: R1
+      zone: receiving_dock
+      goal_status: 6
+    zone_state:
+      zone: receiving_dock
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: MEDIUM
+  diagnosis:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    confidence: 0.7
+    evidence:
+    - observation: claims zone-wide on one robot
+      refs:
+      - mission_failures[0].zone
+      - zone_state.recent_failures
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-025
+  description: scope=zone_wide but <2 mission_failures refs -> DEGRADE
+  defect_type: scope_unsupported
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_1
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_1
+      goal_status: 6
+    zone_state:
+      zone: aisle_1
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: MEDIUM
+  diagnosis:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    confidence: 0.7
+    evidence:
+    - observation: claims zone-wide on one robot
+      refs:
+      - mission_failures[0].zone
+      - zone_state.recent_failures
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-026
+  description: scope=zone_wide but <2 mission_failures refs -> DEGRADE
+  defect_type: scope_unsupported
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_3
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_3
+      goal_status: 6
+    zone_state:
+      zone: aisle_3
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: MEDIUM
+  diagnosis:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    confidence: 0.7
+    evidence:
+    - observation: claims zone-wide on one robot
+      refs:
+      - mission_failures[0].zone
+      - zone_state.recent_failures
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-027
+  description: scope=zone_wide but <2 mission_failures refs -> DEGRADE
+  defect_type: scope_unsupported
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_5
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_5
+      goal_status: 6
+    zone_state:
+      zone: aisle_5
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: MEDIUM
+  diagnosis:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    confidence: 0.7
+    evidence:
+    - observation: claims zone-wide on one robot
+      refs:
+      - mission_failures[0].zone
+      - zone_state.recent_failures
+    relied_on_precedents: []
+  expected_verdict: DEGRADE
+- probe_id: VP-028
+  description: relied + LOW trust + conf>0.7 -> DEGRADE
+  defect_type: retrieval_incoherent
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: receiving_dock
+    mission_failures:
+    - robot_id: R1
+      zone: receiving_dock
+      goal_status: 6
+    zone_state:
+      zone: receiving_dock
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: LOW
+  diagnosis:
+    cause: static_obstacle
+    scope: isolated
+    persistence: persistent
+    confidence: 0.9
+    evidence:
+    - observation: leans on weak precedent
+      refs:
+      - retrieved_precedents[0].incident_id
+    relied_on_precedents:
+    - INC-1
+  expected_verdict: DEGRADE
+- probe_id: VP-029
+  description: relied + LOW trust + conf>0.7 -> DEGRADE
+  defect_type: retrieval_incoherent
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_1
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_1
+      goal_status: 6
+    zone_state:
+      zone: aisle_1
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: LOW
+  diagnosis:
+    cause: congestion_deadlock
+    scope: isolated
+    persistence: persistent
+    confidence: 0.9
+    evidence:
+    - observation: leans on weak precedent
+      refs:
+      - retrieved_precedents[0].incident_id
+    relied_on_precedents:
+    - INC-1
+  expected_verdict: DEGRADE
+- probe_id: VP-030
+  description: relied + LOW trust + conf>0.7 -> DEGRADE
+  defect_type: retrieval_incoherent
+  bundle:
+    trigger_event:
+      robot_id: R1
+      zone: aisle_3
+    mission_failures:
+    - robot_id: R1
+      zone: aisle_3
+      goal_status: 6
+    zone_state:
+      zone: aisle_3
+      recent_failures: 1
+    retrieved_precedents:
+    - incident_id: INC-1
+      similarity: 0.8
+    active_policies: []
+  retrieval_trust:
+    set_level: LOW
+  diagnosis:
+    cause: recurring_blockage
+    scope: isolated
+    persistence: persistent
+    confidence: 0.9
+    evidence:
+    - observation: leans on weak precedent
+      refs:
+      - retrieved_precedents[0].incident_id
+    relied_on_precedents:
+    - INC-1
+  expected_verdict: DEGRADE
