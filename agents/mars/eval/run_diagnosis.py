@@ -119,10 +119,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cases", default=str(Path(__file__).parent / "diagnosis_cases.yaml"))
     ap.add_argument("--rag", choices=["on", "off", "both"], default="both")
+    ap.add_argument("--split", choices=["dev", "test", "all"], default="all",
+                    help="dev = tune prompts; test = report headline (no overfit)")
     ap.add_argument("--limit", type=int, default=0, help="0 = all cases")
     a = ap.parse_args()
     cases = yaml.safe_load(Path(a.cases).read_text())
-    print(f"loaded {len(cases)} diagnosis cases")
+    if a.split != "all":
+        cases = [c for c in cases if c.get("split") == a.split]
+    print(f"loaded {len(cases)} diagnosis cases (split={a.split})")
 
     if a.rag in ("on", "both"):
         summarize("RAG ON", run_mode(cases, True, a.limit))
