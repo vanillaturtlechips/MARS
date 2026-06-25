@@ -1,5 +1,5 @@
 - case_id: DC-001
-  description: single abort, no history/precedent -> isolated transient
+  description: single abort, no evidence -> unknown/isolated (DEGRADE)
   tags:
   - normal
   - thin_evidence
@@ -23,13 +23,13 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: transient_obstacle
+    cause: unknown
     scope: isolated
     persistence: transient
     relevant_precedent_ids: []
-    expected_validation: PASS
+    expected_validation: DEGRADE
 - case_id: DC-002
-  description: single abort, no history/precedent -> isolated transient
+  description: single abort, no evidence -> unknown/isolated (DEGRADE)
   tags:
   - normal
   - thin_evidence
@@ -53,13 +53,13 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: transient_obstacle
+    cause: unknown
     scope: isolated
     persistence: transient
     relevant_precedent_ids: []
-    expected_validation: PASS
+    expected_validation: DEGRADE
 - case_id: DC-003
-  description: single abort, no history/precedent -> isolated transient
+  description: single abort, no evidence -> unknown/isolated (DEGRADE)
   tags:
   - normal
   - thin_evidence
@@ -83,11 +83,11 @@
       per_robot_zone_spread: 1
       per_zone_robot_spread: 1
   ground_truth:
-    cause: transient_obstacle
+    cause: unknown
     scope: isolated
     persistence: transient
     relevant_precedent_ids: []
-    expected_validation: PASS
+    expected_validation: DEGRADE
 - case_id: DC-004
   description: estop symptom but battery is the cause (needs precedent/evidence)
   tags:

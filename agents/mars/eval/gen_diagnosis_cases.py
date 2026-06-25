@@ -57,12 +57,13 @@ def add(tags, seed, trigger, cause, scope, persistence, prec_ids, desc, exp_val=
     })
 
 
-# 1-3 isolated transient (no history, no precedent)
+# 1-3 isolated, no evidence -> correct diagnosis is UNKNOWN (decline to guess),
+# which the validator should DEGRADE (safe). Tests the thin-evidence safety path.
 for i in range(3):
     z = ZONES[i]
     add(["normal", "thin_evidence"], {}, trig(f"R{i+1}", z),
-        "transient_obstacle", "isolated", "transient", [],
-        "single abort, no history/precedent -> isolated transient")
+        "unknown", "isolated", "transient", [],
+        "single abort, no evidence -> unknown/isolated (DEGRADE)", exp_val="DEGRADE")
 
 # 4-7 battery_depletion isolated (adversarial: estop symptom, real cause battery)
 for i in range(4):
