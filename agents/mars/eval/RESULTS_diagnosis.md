@@ -1,39 +1,48 @@
-# 진단 평가 결과 (중강 Part 1) — 1차
+# 진단 평가 결과 (중강) — 최종
 
-실행: `python3 -m eval.run_diagnosis --rag both --limit 0`
-모델: OpenAI gpt-4.1-mini (진단), text-embedding-3-small (RAG), 30 cases.
-일자: 2026-06-25 (1차 — 데이터셋/프롬프트 개선 전 baseline).
+데이터: 150 cases (dev 50 / test 100), 다양한 텍스트 풀 + 난이도 + 수치 랜덤.
+모델: OpenAI gpt-4.1-mini (진단), text-embedding-3-small (RAG). 프롬프트는 dev로만
+튜닝 후 동결 — test는 unseen. 일자: 2026-06-25.
 
-## 헤드라인
+## 헤드라인 (test n=100)
 
-| | cause 정확도 | scope 정확도 | verdict (PASS/DEGRADE) |
-|---|---|---|---|
-| **RAG ON**  | **23/30 (76.7%)** | 12/30 (40.0%) | 21 / 9 |
-| **RAG OFF** | **7/30 (23.3%)**  | 2/30 (6.7%)   | 9 / 21 |
+| 지표 | RAG ON | RAG OFF |
+|---|---|---|
+| cause 정확도 | **83%** | 43% |
+| scope 정확도 | 93% | 90% |
+| confident-wrong (틀린 확신) | **0%** | 11% |
+| acted-precision (PASS 행동의 정답률) | **84.5%** | 43.5% |
+| 거절(unknown) | 29% | 62% |
+| over-block (정답인데 DEGRADE) | 12% | 12% |
 
-- **RAG가 cause 정확도를 23.3% → 76.7% (3.3×) 향상.** = 메인 기여.
-- **RAG OFF → DEGRADE 70%**: 증거 없으면 에이전트가 `unknown`/저신뢰로 떨어지고
-  validator가 DEGRADE → **환각 대신 안전 거절**. = 검증/안전 주장 입증.
+- **RAG: cause 43→83%, confident-wrong 11→0%, acted-precision 43.5→84.5%.**
+  RAG는 정확도뿐 아니라 **안전**도 올림 — 틀릴 때 오도(confident-wrong)하지 않고 거절.
+- **fail-safe:** RAG ON 오답은 전부 `unknown`(거절). 확신해서 틀린 행동 0건.
 
-## 분해
+## 난이도별 (RAG ON)
+| | cause | scope |
+|---|---|---|
+| easy | 100% | 100% |
+| medium | 100% | 100% |
+| hard | 55% | 82% |
+모든 오답이 hard(센서 adversarial, fleet_wide)에 집중.
 
-- **scope:** RAG ON 정답 12개 = zone_wide 12개 **전부 ✓**.
-  isolated(16) + fleet_wide(2)는 **전부 ✗** — 에이전트가 단일/fleet을 일관되게
-  `robot_specific`으로 출력. (프롬프트 spec은 "단일→isolated"인데 미준수.)
-  → 한계 + 프롬프트 개선 실험거리.
-- **adversarial:** DC-004/006(estop 증상→low_battery) 일부 오진, DC-014~016(센서
-  결함→robot_internal_fault) 오진. 증상에 낚이는 hard case.
-- **RAG 메커니즘:** zone_blocked/congestion/localization 케이스가 RAG OFF에선
-  `unknown`(증거 없음)으로 떨어지고 RAG ON에선 precedent로 정답. RAG가 "novel
-  cause를 과거사례로 식별"하는 경로가 데이터로 확인됨.
+## Retrieval 계측 (precedent 있는 78케이스, RAG ON)
+searched 100% · relevant retrieved 100% · **relied 8%**
+→ 검색은 완벽; 병목은 **활용**. (RAG OFF: searched 0% — precedent 미시드, 의도된 ablation)
 
-## 다음 (2차 개선거리)
-1. scope: isolated/robot_specific 혼동 — 프롬프트 명확화 후 재측정.
-2. fleet_wide 인식 실패 — distribution 신호를 프롬프트에서 강조.
-3. adversarial(증상≠원인) 케이스 — RAG precedent 강화 / 검증 규칙.
-4. validator probe(30, 100%)와 합쳐 "근거검증+RAG" 통합 figure.
+## Validator (안전의 두 번째 기둥 — 별도 입증)
+- validator probe 30/30 (100%): 근거 없는/과신/scope-미지원 진단 차단 (block P/R 1.0).
+- 단, **근거 있는데 틀린** 진단은 통과 → benign test의 safety-delta=0. validator 가치는
+  적대적 probe에서 증명; benign test는 에이전트 거절 행동이 안전을 담당.
+
+## 한계 (정직)
+- **fleet_wide**: cause unknown + scope 오판. precedent 검색은 되나 활용 못 함.
+- 센서 adversarial(증상≠원인): unknown으로 안전하게 거절(오답이지만 안전).
+- over-block 12%: 정밀/재현 트레이드오프 비용.
 
 ## 재현
-`docker compose up -d` (Postgres pgvector 1536) + `.env`(OPENAI_API_KEY,
-LLM_PROVIDER=openai, EMBEDDING_PROVIDER=openai, EMBEDDING_DIM=1536) →
-`python3 -m eval.run_diagnosis --rag both --limit 0`.
+docker compose up -d (pgvector 1536) + .env(OPENAI_API_KEY, LLM_PROVIDER=openai,
+EMBEDDING_PROVIDER=openai, EMBEDDING_DIM=1536) →
+`python3 -m eval.run_diagnosis --rag both --split test` →
+`python3 -m eval.safety_delta test`
