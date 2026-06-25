@@ -1,0 +1,1486 @@
+- case_id: DC-001
+  description: single abort, no history/precedent -> isolated transient
+  tags:
+  - normal
+  - thin_evidence
+  seed_state:
+    failures: []
+    incidents: []
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-R1
+    goal_id: G-R1
+    zone: receiving_dock
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: transient_glitch
+    scope: isolated
+    persistence: transient
+    relevant_precedent_ids: []
+    expected_validation: PASS
+- case_id: DC-002
+  description: single abort, no history/precedent -> isolated transient
+  tags:
+  - normal
+  - thin_evidence
+  seed_state:
+    failures: []
+    incidents: []
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R2
+    mission_id: M-R2
+    goal_id: G-R2
+    zone: aisle_1
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: transient_glitch
+    scope: isolated
+    persistence: transient
+    relevant_precedent_ids: []
+    expected_validation: PASS
+- case_id: DC-003
+  description: single abort, no history/precedent -> isolated transient
+  tags:
+  - normal
+  - thin_evidence
+  seed_state:
+    failures: []
+    incidents: []
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R3
+    mission_id: M-R3
+    goal_id: G-R3
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: transient_glitch
+    scope: isolated
+    persistence: transient
+    relevant_precedent_ids: []
+    expected_validation: PASS
+- case_id: DC-004
+  description: estop symptom but battery is the cause (needs precedent/evidence)
+  tags:
+  - adversarial
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-B0
+      true_cause: battery_depletion
+      text: estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-R1
+    goal_id: G-R1
+    zone: receiving_dock
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 10
+      estop_active: true
+      fault_codes:
+      - ESTOP
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: battery_depletion
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-B0
+    expected_validation: PASS
+- case_id: DC-005
+  description: estop symptom but battery is the cause (needs precedent/evidence)
+  tags:
+  - adversarial
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-B1
+      true_cause: battery_depletion
+      text: estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R2
+    mission_id: M-R2
+    goal_id: G-R2
+    zone: aisle_1
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 10
+      estop_active: true
+      fault_codes:
+      - ESTOP
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: battery_depletion
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-B1
+    expected_validation: PASS
+- case_id: DC-006
+  description: estop symptom but battery is the cause (needs precedent/evidence)
+  tags:
+  - adversarial
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-B2
+      true_cause: battery_depletion
+      text: estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R3
+    mission_id: M-R3
+    goal_id: G-R3
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 10
+      estop_active: true
+      fault_codes:
+      - ESTOP
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: battery_depletion
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-B2
+    expected_validation: PASS
+- case_id: DC-007
+  description: estop symptom but battery is the cause (needs precedent/evidence)
+  tags:
+  - adversarial
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-B3
+      true_cause: battery_depletion
+      text: estop latched after battery dropped below cutoff; root cause depletion not e-stop hardware.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R4
+    mission_id: M-R4
+    goal_id: G-R4
+    zone: aisle_5
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 10
+      estop_active: true
+      fault_codes:
+      - ESTOP
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: battery_depletion
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-B3
+    expected_validation: PASS
+- case_id: DC-008
+  description: motor fault code -> hardware_fault isolated
+  tags:
+  - normal
+  seed_state:
+    failures: []
+    incidents: []
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-R1
+    goal_id: G-R1
+    zone: aisle_1
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 80
+      estop_active: false
+      fault_codes:
+      - MOTOR_OVERCURRENT
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: hardware_fault
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids: []
+    expected_validation: PASS
+- case_id: DC-009
+  description: motor fault code -> hardware_fault isolated
+  tags:
+  - normal
+  seed_state:
+    failures: []
+    incidents: []
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R2
+    mission_id: M-R2
+    goal_id: G-R2
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 80
+      estop_active: false
+      fault_codes:
+      - MOTOR_OVERCURRENT
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: hardware_fault
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids: []
+    expected_validation: PASS
+- case_id: DC-010
+  description: motor fault code -> hardware_fault isolated
+  tags:
+  - normal
+  seed_state:
+    failures: []
+    incidents: []
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R3
+    mission_id: M-R3
+    goal_id: G-R3
+    zone: aisle_5
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 80
+      estop_active: false
+      fault_codes:
+      - MOTOR_OVERCURRENT
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: hardware_fault
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids: []
+    expected_validation: PASS
+- case_id: DC-011
+  description: localization drift near featureless area
+  tags:
+  - normal
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-L0
+      true_cause: localization_loss
+      text: AMCL pose covariance spiked near featureless wall; robot lost localization and aborted.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-R1
+    goal_id: G-R1
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 75
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: localization_loss
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-L0
+    expected_validation: PASS
+- case_id: DC-012
+  description: localization drift near featureless area
+  tags:
+  - normal
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-L1
+      true_cause: localization_loss
+      text: AMCL pose covariance spiked near featureless wall; robot lost localization and aborted.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R2
+    mission_id: M-R2
+    goal_id: G-R2
+    zone: aisle_5
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 75
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: localization_loss
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-L1
+    expected_validation: PASS
+- case_id: DC-013
+  description: localization drift near featureless area
+  tags:
+  - normal
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-L2
+      true_cause: localization_loss
+      text: AMCL pose covariance spiked near featureless wall; robot lost localization and aborted.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R3
+    mission_id: M-R3
+    goal_id: G-R3
+    zone: cold_zone
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 75
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: localization_loss
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-L2
+    expected_validation: PASS
+- case_id: DC-014
+  description: reflective surface -> sensor_degradation (distractor present)
+  tags:
+  - adversarial
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-S0
+      true_cause: sensor_degradation
+      text: Lidar returns corrupted by reflective shrink-wrap; phantom obstacles caused aborts.
+      is_relevant: true
+    - incident_id: INC-SX0
+      true_cause: battery_depletion
+      text: Unrelated battery cutoff mid-aisle.
+      is_relevant: false
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-R1
+    goal_id: G-R1
+    zone: receiving_dock
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 78
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: sensor_degradation
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-S0
+    expected_validation: PASS
+- case_id: DC-015
+  description: reflective surface -> sensor_degradation (distractor present)
+  tags:
+  - adversarial
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-S1
+      true_cause: sensor_degradation
+      text: Lidar returns corrupted by reflective shrink-wrap; phantom obstacles caused aborts.
+      is_relevant: true
+    - incident_id: INC-SX1
+      true_cause: battery_depletion
+      text: Unrelated battery cutoff mid-aisle.
+      is_relevant: false
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R2
+    mission_id: M-R2
+    goal_id: G-R2
+    zone: aisle_1
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 78
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: sensor_degradation
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-S1
+    expected_validation: PASS
+- case_id: DC-016
+  description: reflective surface -> sensor_degradation (distractor present)
+  tags:
+  - adversarial
+  seed_state:
+    failures: []
+    incidents:
+    - incident_id: INC-S2
+      true_cause: sensor_degradation
+      text: Lidar returns corrupted by reflective shrink-wrap; phantom obstacles caused aborts.
+      is_relevant: true
+    - incident_id: INC-SX2
+      true_cause: battery_depletion
+      text: Unrelated battery cutoff mid-aisle.
+      is_relevant: false
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R3
+    mission_id: M-R3
+    goal_id: G-R3
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 78
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: sensor_degradation
+    scope: isolated
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-S2
+    expected_validation: PASS
+- case_id: DC-017
+  description: two prior + this abort same zone -> static_obstacle zone_wide
+  tags:
+  - zone_wide
+  seed_state:
+    failures:
+    - robot_id: R1
+      mission_id: M-R1
+      zone: receiving_dock
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 400
+    - robot_id: R2
+      mission_id: M-R2
+      zone: receiving_dock
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 180
+    incidents:
+    - incident_id: INC-O0
+      true_cause: static_obstacle
+      text: Dropped pallet blocked the lane; robots aborted until removed.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: RX0
+    mission_id: M-RX0
+    goal_id: G-RX0
+    zone: receiving_dock
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 3
+  ground_truth:
+    cause: static_obstacle
+    scope: zone_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-O0
+    expected_validation: PASS
+- case_id: DC-018
+  description: two prior + this abort same zone -> static_obstacle zone_wide
+  tags:
+  - zone_wide
+  seed_state:
+    failures:
+    - robot_id: R3
+      mission_id: M-R3
+      zone: aisle_1
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 400
+    - robot_id: R4
+      mission_id: M-R4
+      zone: aisle_1
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 180
+    incidents:
+    - incident_id: INC-O1
+      true_cause: static_obstacle
+      text: Dropped pallet blocked the lane; robots aborted until removed.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: RX1
+    mission_id: M-RX1
+    goal_id: G-RX1
+    zone: aisle_1
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 3
+  ground_truth:
+    cause: static_obstacle
+    scope: zone_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-O1
+    expected_validation: PASS
+- case_id: DC-019
+  description: two prior + this abort same zone -> static_obstacle zone_wide
+  tags:
+  - zone_wide
+  seed_state:
+    failures:
+    - robot_id: R5
+      mission_id: M-R5
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 400
+    - robot_id: R6
+      mission_id: M-R6
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 180
+    incidents:
+    - incident_id: INC-O2
+      true_cause: static_obstacle
+      text: Dropped pallet blocked the lane; robots aborted until removed.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: RX2
+    mission_id: M-RX2
+    goal_id: G-RX2
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 3
+  ground_truth:
+    cause: static_obstacle
+    scope: zone_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-O2
+    expected_validation: PASS
+- case_id: DC-020
+  description: two prior + this abort same zone -> static_obstacle zone_wide
+  tags:
+  - zone_wide
+  seed_state:
+    failures:
+    - robot_id: R7
+      mission_id: M-R7
+      zone: aisle_5
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 400
+    - robot_id: R8
+      mission_id: M-R8
+      zone: aisle_5
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 180
+    incidents:
+    - incident_id: INC-O3
+      true_cause: static_obstacle
+      text: Dropped pallet blocked the lane; robots aborted until removed.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: RX3
+    mission_id: M-RX3
+    goal_id: G-RX3
+    zone: aisle_5
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 3
+  ground_truth:
+    cause: static_obstacle
+    scope: zone_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-O3
+    expected_validation: PASS
+- case_id: DC-021
+  description: repeated same-zone failures -> recurring_blockage (distractor present)
+  tags:
+  - zone_wide
+  - novel_cause
+  seed_state:
+    failures:
+    - robot_id: A0
+      mission_id: M-A0
+      zone: receiving_dock
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 600
+    - robot_id: B0
+      mission_id: M-B0
+      zone: receiving_dock
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 300
+    - robot_id: C0
+      mission_id: M-C0
+      zone: receiving_dock
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 120
+    incidents:
+    - incident_id: INC-R0
+      true_cause: recurring_blockage
+      text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
+        cleared.
+      is_relevant: true
+    - incident_id: INC-RX0
+      true_cause: hardware_fault
+      text: Single robot gearbox fault, unrelated.
+      is_relevant: false
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-R1
+    goal_id: G-R1
+    zone: receiving_dock
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 4
+  ground_truth:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    relevant_precedent_ids:
+    - INC-R0
+    expected_validation: PASS
+- case_id: DC-022
+  description: repeated same-zone failures -> recurring_blockage (distractor present)
+  tags:
+  - zone_wide
+  - novel_cause
+  seed_state:
+    failures:
+    - robot_id: A1
+      mission_id: M-A1
+      zone: aisle_1
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 600
+    - robot_id: B1
+      mission_id: M-B1
+      zone: aisle_1
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 300
+    - robot_id: C1
+      mission_id: M-C1
+      zone: aisle_1
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 120
+    incidents:
+    - incident_id: INC-R1
+      true_cause: recurring_blockage
+      text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
+        cleared.
+      is_relevant: true
+    - incident_id: INC-RX1
+      true_cause: hardware_fault
+      text: Single robot gearbox fault, unrelated.
+      is_relevant: false
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R2
+    mission_id: M-R2
+    goal_id: G-R2
+    zone: aisle_1
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 4
+  ground_truth:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    relevant_precedent_ids:
+    - INC-R1
+    expected_validation: PASS
+- case_id: DC-023
+  description: repeated same-zone failures -> recurring_blockage (distractor present)
+  tags:
+  - zone_wide
+  - novel_cause
+  seed_state:
+    failures:
+    - robot_id: A2
+      mission_id: M-A2
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 600
+    - robot_id: B2
+      mission_id: M-B2
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 300
+    - robot_id: C2
+      mission_id: M-C2
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 120
+    incidents:
+    - incident_id: INC-R2
+      true_cause: recurring_blockage
+      text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
+        cleared.
+      is_relevant: true
+    - incident_id: INC-RX2
+      true_cause: hardware_fault
+      text: Single robot gearbox fault, unrelated.
+      is_relevant: false
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R3
+    mission_id: M-R3
+    goal_id: G-R3
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 4
+  ground_truth:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    relevant_precedent_ids:
+    - INC-R2
+    expected_validation: PASS
+- case_id: DC-024
+  description: repeated same-zone failures -> recurring_blockage (distractor present)
+  tags:
+  - zone_wide
+  - novel_cause
+  seed_state:
+    failures:
+    - robot_id: A3
+      mission_id: M-A3
+      zone: aisle_5
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 600
+    - robot_id: B3
+      mission_id: M-B3
+      zone: aisle_5
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 300
+    - robot_id: C3
+      mission_id: M-C3
+      zone: aisle_5
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 120
+    incidents:
+    - incident_id: INC-R3
+      true_cause: recurring_blockage
+      text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
+        cleared.
+      is_relevant: true
+    - incident_id: INC-RX3
+      true_cause: hardware_fault
+      text: Single robot gearbox fault, unrelated.
+      is_relevant: false
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R4
+    mission_id: M-R4
+    goal_id: G-R4
+    zone: aisle_5
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 4
+  ground_truth:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    relevant_precedent_ids:
+    - INC-R3
+    expected_validation: PASS
+- case_id: DC-025
+  description: repeated same-zone failures -> recurring_blockage (distractor present)
+  tags:
+  - zone_wide
+  - novel_cause
+  seed_state:
+    failures:
+    - robot_id: A4
+      mission_id: M-A4
+      zone: cold_zone
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 600
+    - robot_id: B4
+      mission_id: M-B4
+      zone: cold_zone
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 300
+    - robot_id: C4
+      mission_id: M-C4
+      zone: cold_zone
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 120
+    incidents:
+    - incident_id: INC-R4
+      true_cause: recurring_blockage
+      text: Pallet repeatedly left at zone entrance during afternoon shift; multiple AMRs aborted until
+        cleared.
+      is_relevant: true
+    - incident_id: INC-RX4
+      true_cause: hardware_fault
+      text: Single robot gearbox fault, unrelated.
+      is_relevant: false
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R5
+    mission_id: M-R5
+    goal_id: G-R5
+    zone: cold_zone
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 4
+  ground_truth:
+    cause: recurring_blockage
+    scope: zone_wide
+    persistence: recurring
+    relevant_precedent_ids:
+    - INC-R4
+    expected_validation: PASS
+- case_id: DC-026
+  description: multiple robots jammed same narrow zone -> congestion_deadlock
+  tags:
+  - zone_wide
+  seed_state:
+    failures:
+    - robot_id: D01
+      mission_id: M-D01
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 90
+    - robot_id: D02
+      mission_id: M-D02
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 60
+    incidents:
+    - incident_id: INC-C0
+      true_cause: congestion_deadlock
+      text: Three robots jammed at the aisle intersection; mutual blocking until one was rerouted.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-R1
+    goal_id: G-R1
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 3
+  ground_truth:
+    cause: congestion_deadlock
+    scope: zone_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-C0
+    expected_validation: PASS
+- case_id: DC-027
+  description: multiple robots jammed same narrow zone -> congestion_deadlock
+  tags:
+  - zone_wide
+  seed_state:
+    failures:
+    - robot_id: D11
+      mission_id: M-D11
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 90
+    - robot_id: D12
+      mission_id: M-D12
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 60
+    incidents:
+    - incident_id: INC-C1
+      true_cause: congestion_deadlock
+      text: Three robots jammed at the aisle intersection; mutual blocking until one was rerouted.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R2
+    mission_id: M-R2
+    goal_id: G-R2
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 3
+  ground_truth:
+    cause: congestion_deadlock
+    scope: zone_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-C1
+    expected_validation: PASS
+- case_id: DC-028
+  description: multiple robots jammed same narrow zone -> congestion_deadlock
+  tags:
+  - zone_wide
+  seed_state:
+    failures:
+    - robot_id: D21
+      mission_id: M-D21
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 90
+    - robot_id: D22
+      mission_id: M-D22
+      zone: aisle_3
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 60
+    incidents:
+    - incident_id: INC-C2
+      true_cause: congestion_deadlock
+      text: Three robots jammed at the aisle intersection; mutual blocking until one was rerouted.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R3
+    mission_id: M-R3
+    goal_id: G-R3
+    zone: aisle_3
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 1
+      per_zone_robot_spread: 3
+  ground_truth:
+    cause: congestion_deadlock
+    scope: zone_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-C2
+    expected_validation: PASS
+- case_id: DC-029
+  description: aborts across many zones -> fleet_wide
+  tags:
+  - fleet_wide
+  seed_state:
+    failures:
+    - robot_id: F1
+      mission_id: M-F1
+      zone: aisle_1
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 300
+    - robot_id: F2
+      mission_id: M-F2
+      zone: aisle_5
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 250
+    - robot_id: F3
+      mission_id: M-F3
+      zone: shipping_dock
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 150
+    - robot_id: F4
+      mission_id: M-F4
+      zone: cold_zone
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 90
+    incidents:
+    - incident_id: INC-F0
+      true_cause: localization_loss
+      text: Fleet-wide localization degraded after a map server restart; aborts across all zones.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R1
+    mission_id: M-R1
+    goal_id: G-R1
+    zone: staging
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 4
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: localization_loss
+    scope: fleet_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-F0
+    expected_validation: PASS
+- case_id: DC-030
+  description: aborts across many zones -> fleet_wide
+  tags:
+  - fleet_wide
+  seed_state:
+    failures:
+    - robot_id: F1
+      mission_id: M-F1
+      zone: aisle_1
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 300
+    - robot_id: F2
+      mission_id: M-F2
+      zone: aisle_5
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 250
+    - robot_id: F3
+      mission_id: M-F3
+      zone: shipping_dock
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 150
+    - robot_id: F4
+      mission_id: M-F4
+      zone: cold_zone
+      event_type: navigation.aborted
+      nav_outcome: aborted
+      goal_status: 6
+      health_at_failure:
+        battery_pct: 70
+        estop_active: false
+        fault_codes: []
+      fault_flag: null
+      ts_offset_sec: 90
+    incidents:
+    - incident_id: INC-F1
+      true_cause: localization_loss
+      text: Fleet-wide localization degraded after a map server restart; aborts across all zones.
+      is_relevant: true
+    active_policies: []
+  trigger_event:
+    event_type: navigation.aborted
+    robot_id: R2
+    mission_id: M-R2
+    goal_id: G-R2
+    zone: staging
+    goal_status: 6
+    nav_outcome: aborted
+    health_at_failure:
+      battery_pct: 70
+      estop_active: false
+      fault_codes: []
+    distribution:
+      per_robot_zone_spread: 4
+      per_zone_robot_spread: 1
+  ground_truth:
+    cause: localization_loss
+    scope: fleet_wide
+    persistence: persistent
+    relevant_precedent_ids:
+    - INC-F1
+    expected_validation: PASS
