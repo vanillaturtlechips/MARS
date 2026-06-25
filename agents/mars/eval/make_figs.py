@@ -95,6 +95,92 @@ def fig_intent_defense(intent):
     print("wrote", f)
 
 
+DIAG_MODELS = {"gpt-4.1-mini": "results_test.json", "haiku": "results_test_haiku.json",
+               "solar": "results_test_solar.json"}
+INTENT_MODELS = {"gpt-4.1-mini": "results_intent_test.json",
+                 "haiku": "results_intent_test_haiku.json",
+                 "solar": "results_intent_test_solar.json"}
+
+
+def _cause(rows):
+    rows = [r for r in rows if "err" not in r]
+    return 100 * sum(r["cause_ok"] for r in rows) / max(len(rows), 1)
+
+
+def _confwrong(rows):
+    rows = [r for r in rows if "err" not in r]
+    return 100 * sum(1 for r in rows if not r["cause_ok"] and r["pred_cause"] != "unknown") / max(len(rows), 1)
+
+
+def fig_mm_rag():
+    """Grouped bars: cause accuracy RAG on vs off, per model."""
+    models, on, off = [], [], []
+    for m, fn in DIAG_MODELS.items():
+        d = _load(fn)
+        if not d:
+            continue
+        models.append(m); on.append(_cause(d["rag_on"])); off.append(_cause(d["rag_off"]))
+    x = range(len(models)); w = 0.38
+    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+    ax.bar([i - w/2 for i in x], on, w, label="RAG on", color="tab:blue")
+    ax.bar([i + w/2 for i in x], off, w, label="RAG off", color="tab:gray")
+    for i, v in enumerate(on): ax.text(i - w/2, v + 1, f"{v:.0f}", ha="center", fontsize=8)
+    for i, v in enumerate(off): ax.text(i + w/2, v + 1, f"{v:.0f}", ha="center", fontsize=8)
+    ax.set_xticks(list(x)); ax.set_xticklabels(models)
+    ax.set_ylabel("cause accuracy (%)"); ax.set_ylim(0, 105)
+    ax.set_title("Diagnosis cause accuracy by model: RAG ablation (test n=100)")
+    ax.legend()
+    f = FIGS / "fig_mm_rag.png"; fig.savefig(f, dpi=130, bbox_inches="tight"); print("wrote", f)
+
+
+def fig_mm_safety():
+    """Grouped bars: confident-wrong RAG on vs off, per model."""
+    models, on, off = [], [], []
+    for m, fn in DIAG_MODELS.items():
+        d = _load(fn)
+        if not d:
+            continue
+        models.append(m); on.append(_confwrong(d["rag_on"])); off.append(_confwrong(d["rag_off"]))
+    x = range(len(models)); w = 0.38
+    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+    ax.bar([i - w/2 for i in x], on, w, label="RAG on", color="tab:green")
+    ax.bar([i + w/2 for i in x], off, w, label="RAG off", color="tab:red")
+    for i, v in enumerate(on): ax.text(i - w/2, v + 1, f"{v:.0f}", ha="center", fontsize=8)
+    for i, v in enumerate(off): ax.text(i + w/2, v + 1, f"{v:.0f}", ha="center", fontsize=8)
+    ax.set_xticks(list(x)); ax.set_xticklabels(models)
+    ax.set_ylabel("confident-wrong rate (%)"); ax.set_ylim(0, max(max(off), 1) + 6)
+    ax.set_title("Unsafe (confident-wrong) diagnoses by model: RAG ablation")
+    ax.legend()
+    f = FIGS / "fig_mm_safety.png"; fig.savefig(f, dpi=130, bbox_inches="tight"); print("wrote", f)
+
+
+def fig_mm_intent():
+    """Stacked bars per model: agent declined / guardrail blocked / leaked."""
+    models, agent, blocked, leaked = [], [], [], []
+    for m, fn in INTENT_MODELS.items():
+        rows = _load(fn)
+        if not rows:
+            continue
+        mn = [r for r in rows if "err" not in r and r.get("must_not")]
+        models.append(m)
+        agent.append(sum(1 for r in mn if r["agent_declined"]))
+        blocked.append(sum(1 for r in mn if (not r["agent_declined"]) and r["n_activated"] == 0))
+        leaked.append(sum(1 for r in mn if r["n_activated"] > 0))
+    x = range(len(models))
+    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+    ax.bar(x, agent, label="agent declined", color="tab:green")
+    ax.bar(x, blocked, bottom=agent, label="guardrail blocked", color="tab:blue")
+    ax.bar(x, leaked, bottom=[a + b for a, b in zip(agent, blocked)], label="leaked", color="tab:red")
+    for i in x:
+        if leaked[i]:
+            ax.text(i, agent[i] + blocked[i] + leaked[i] + 0.2, f"leak {leaked[i]}", ha="center", fontsize=8)
+    ax.set_xticks(list(x)); ax.set_xticklabels(models)
+    ax.set_ylabel("must-not-activate cases (of 15)")
+    ax.set_title("Intent defense-in-depth by model (test, 15 unsafe intents)")
+    ax.legend(loc="lower right")
+    f = FIGS / "fig_mm_intent.png"; fig.savefig(f, dpi=130, bbox_inches="tight"); print("wrote", f)
+
+
 def main():
     diag = _load("results_test.json")
     intent = _load("results_intent_test.json")
@@ -102,6 +188,8 @@ def main():
         fig_diag_rag(diag); fig_safety(diag)
     if intent:
         fig_intent_defense(intent)
+    # multi-model figures
+    fig_mm_rag(); fig_mm_safety(); fig_mm_intent()
     print(f"figs -> {FIGS}")
 
 

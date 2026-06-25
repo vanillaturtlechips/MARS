@@ -426,12 +426,19 @@ datasets, and semantic-level validation of agent intent.
 
 ## Figures
 
-- **Figure 1** (`eval/figs/fig_diag_rag.png`): diagnosis cause accuracy, RAG on vs
-  off, overall and by difficulty.
-- **Figure 2** (`eval/figs/fig_diag_safety.png`): confident-wrong and
-  acted-precision, RAG on vs off.
-- **Figure 3** (`eval/figs/fig_intent_defense.png`): intent defense-in-depth
-  (agent declined / guardrail blocked / leaked).
+Multi-model (main):
+- **Figure 1** (`eval/figs/fig_mm_rag.png`): diagnosis cause accuracy by model,
+  RAG on vs off — RAG lifts all three models (+38/+41/+47 pp).
+- **Figure 2** (`eval/figs/fig_mm_safety.png`): confident-wrong (unsafe) rate by
+  model, RAG on vs off — RAG suppresses confident-wrong; the effect is largest
+  for the boldest model (Haiku 22%→3%).
+- **Figure 3** (`eval/figs/fig_mm_intent.png`): intent defense-in-depth by model
+  (agent declined / guardrail blocked / leaked) over the 15 unsafe intents.
 
-*(Figures currently rendered for GPT-4.1-mini; regenerate per model or as a
-3-model grouped bar for the camera-ready.)*
+Single-model detail (GPT-4.1-mini), optional appendix:
+- `eval/figs/fig_diag_rag.png`: cause accuracy by difficulty (overall/easy/
+  medium/hard).
+- `eval/figs/fig_diag_safety.png`: confident-wrong and acted-precision.
+- `eval/figs/fig_intent_defense.png`: defense-in-depth, single model.
+
+All figures regenerate from the result JSONs via `python3 -m eval.make_figs`.
