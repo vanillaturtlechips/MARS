@@ -145,9 +145,15 @@ def get_embedder(provider: str | None = None) -> Embedder:
     Return the active embedder.  Defaults to OpenAI text-embedding-3-small.
     Dimension MUST match the schema vector(N) column.
     """
-    from mars.config import LLM_PROVIDER
-    p = provider or (LLM_PROVIDER if LLM_PROVIDER != "anthropic" else "openai")
+    from mars.config import LLM_PROVIDER, EMBEDDING_PROVIDER
+    # EMBEDDING_PROVIDER overrides; else derive from LLM_PROVIDER (anthropic has
+    # no embedding API -> default to local so a Haiku-only setup still does RAG).
+    p = provider or EMBEDDING_PROVIDER or (
+        LLM_PROVIDER if LLM_PROVIDER != "anthropic" else "local")
 
+    if p == "local":
+        from mars.llm.local_embedder import LocalEmbedder
+        return LocalEmbedder()
     if p == "openai":
         from mars.llm.openai_embedder import OpenAIEmbedder
         return OpenAIEmbedder()

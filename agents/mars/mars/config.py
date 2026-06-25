@@ -41,10 +41,14 @@ LLM_TEMPERATURE: float = float(os.environ.get("LLM_TEMPERATURE", "0.0"))
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL: str = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
-# Embeddings: OpenAI text-embedding-3-small (1536 dims).
-# EMBEDDING_DIM MUST match the vector(N) column in 0001_initial.sql.
+# Embeddings. EMBEDDING_DIM MUST match the vector(N) column in 0001_initial.sql.
 # Switching models requires dropping + recreating the HNSW index and re-embedding.
+#   EMBEDDING_PROVIDER: local | openai | voyage | mock   ("" = derive from LLM_PROVIDER;
+#   anthropic falls back to openai). For Anthropic(Haiku)-only, set
+#   EMBEDDING_PROVIDER=local + EMBEDDING_DIM=384 (Anthropic has no embedding API).
+EMBEDDING_PROVIDER: str = os.environ.get("EMBEDDING_PROVIDER", "")
 OPENAI_EMBEDDING_MODEL: str = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+LOCAL_EMBEDDING_MODEL: str = os.environ.get("LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 EMBEDDING_DIM: int = int(os.environ.get("EMBEDDING_DIM", "1536"))
 
 # Voyage kept as a fallback — not active by default.
