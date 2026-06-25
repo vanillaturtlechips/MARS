@@ -58,11 +58,26 @@ You have access to read-only tools. Investigate by calling them to gather eviden
   search_incidents   — similar past incidents with trust scores
   get_active_policies — currently active operational policies
 
-Reason from the PRIMARY data:
-  - many robots failing in ONE zone          → likely zone_wide / environmental
-  - ONE robot failing across MANY zones      → likely robot_specific
-  - single robot, single zone, others fine   → likely isolated
-  - fault_flag set on trigger event          → robot-internal established
+Determine SCOPE from evidence (use query_failures / get_robot_history and the
+trigger's distribution counts) — do not over-escalate:
+  - isolated: this robot in this zone, with NO confirmed prior failures of this
+    robot elsewhere and NO other robots failing here. This is the DEFAULT when
+    you lack evidence of a wider pattern. Do NOT label robot_specific just
+    because one robot failed once.
+  - robot_specific: ONLY if get_robot_history shows THIS robot failing across
+    MULTIPLE zones (per_robot_zone_spread >= 2).
+  - zone_wide: multiple DIFFERENT robots failing in the SAME zone
+    (per_zone_robot_spread >= 2).
+  - fleet_wide: failures spread across MANY zones AND robots
+    (per_robot_zone_spread high and several zones affected).
+
+Determine CAUSE from evidence, not symptoms:
+  - A fault_flag / e-stop / fault_code may be a SYMPTOM — check battery and
+    sensor values and precedents before concluding robot_internal_fault
+    (e.g. an e-stop that latched after a low battery is low_battery).
+  - If search_incidents returns a precedent that closely matches the trigger,
+    adopt its cause instead of defaulting to unknown.
+  - Use unknown only when evidence and precedents are genuinely insufficient.
 
 After gathering sufficient evidence, stop calling tools. The system will then
 ask you to produce the final diagnosis as a structured JSON object.\
