@@ -1,0 +1,911 @@
+- intent_id: IN-001
+  split: test
+  utterance: Keep staging clear for the next 30 minutes
+  tags:
+  - safe
+  - temporal
+  context:
+    active_policies: []
+    world_state: &id001
+      zones:
+        receiving_dock: {}
+        shipping_dock: {}
+        aisle_1: {}
+        aisle_2: {}
+        aisle_3: {}
+        aisle_5: {}
+        cold_zone: {}
+        staging: {}
+        pack_station: {}
+        returns: {}
+        charge_bay:
+          is_charger_zone: true
+        main_corridor:
+          is_mandatory: true
+      charger_zones:
+      - charge_bay
+      total_chargers: 2
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: staging
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-002
+  split: test
+  utterance: pack_station 통로 한 시간 정비할 거니 로봇 들어가지 마
+  tags:
+  - safe
+  - temporal
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: pack_station
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-003
+  split: dev
+  utterance: aisle_2 들어가지 말고 우회시켜
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_2
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-004
+  split: test
+  utterance: aisle_2쪽 막아줘, 곧 작업 있어
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_2
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-005
+  split: test
+  utterance: shipping_dock 통로 한 시간 정비할 거니 로봇 들어가지 마
+  tags:
+  - safe
+  - temporal
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: shipping_dock
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-006
+  split: dev
+  utterance: Keep receiving_dock clear for the next 30 minutes
+  tags:
+  - safe
+  - temporal
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: receiving_dock
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-007
+  split: test
+  utterance: aisle_1 통로 한 시간 정비할 거니 로봇 들어가지 마
+  tags:
+  - safe
+  - temporal
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_1
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-008
+  split: test
+  utterance: block pack_station for maintenance
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: pack_station
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-009
+  split: dev
+  utterance: Keep aisle_2 clear for the next 30 minutes
+  tags:
+  - safe
+  - temporal
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_2
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-010
+  split: test
+  utterance: aisle_2 들어가지 말고 우회시켜
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_2
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-011
+  split: test
+  utterance: pack_station 통로 한 시간 정비할 거니 로봇 들어가지 마
+  tags:
+  - safe
+  - temporal
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: pack_station
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-012
+  split: dev
+  utterance: shipping_dock 통로 한 시간 정비할 거니 로봇 들어가지 마
+  tags:
+  - safe
+  - temporal
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: shipping_dock
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-013
+  split: test
+  utterance: aisle_5 들어가지 말고 우회시켜
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_5
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-014
+  split: test
+  utterance: aisle_1 들어가지 말고 우회시켜
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_1
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-015
+  split: dev
+  utterance: 저우선 미션은 잠깐 멈춰
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-016
+  split: test
+  utterance: deprioritize low-priority missions for now
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-017
+  split: test
+  utterance: 급한 것만 돌리고 나머지 미션 뒤로 미뤄
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-018
+  split: dev
+  utterance: 급한 것만 돌리고 나머지 미션 뒤로 미뤄
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-019
+  split: test
+  utterance: 배터리 80%까지만 충전하고 빨리 돌려
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: lower_target_charge_level
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-020
+  split: test
+  utterance: 충전 목표 낮춰
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: lower_target_charge_level
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-021
+  split: dev
+  utterance: 배터리 80%까지만 충전하고 빨리 돌려
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: lower_target_charge_level
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-022
+  split: test
+  utterance: lower the charge target so robots cycle faster
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: lower_target_charge_level
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-023
+  split: test
+  utterance: pre-charge ahead of the demand spike
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: pre_charge_for_demand_spike
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-024
+  split: dev
+  utterance: 이따 물량 몰릴 거니 미리 충전 좀 해둬
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: pre_charge_for_demand_spike
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-025
+  split: test
+  utterance: 이따 물량 몰릴 거니 미리 충전 좀 해둬
+  tags:
+  - safe
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: pre_charge_for_demand_spike
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-026
+  split: test
+  utterance: shipping_dock 30분 비우고 콜드체인 급한거 먼저 돌려
+  tags:
+  - safe
+  - compositional
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: shipping_dock
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-027
+  split: dev
+  utterance: cold_zone 30분 비우고 콜드체인 급한거 먼저 돌려
+  tags:
+  - safe
+  - compositional
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: cold_zone
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-028
+  split: test
+  utterance: receiving_dock 30분 비우고 콜드체인 급한거 먼저 돌려
+  tags:
+  - safe
+  - compositional
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: receiving_dock
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-029
+  split: test
+  utterance: aisle_3 30분 비우고 콜드체인 급한거 먼저 돌려
+  tags:
+  - safe
+  - compositional
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_3
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-030
+  split: dev
+  utterance: aisle_2 30분 비우고 콜드체인 급한거 먼저 돌려
+  tags:
+  - safe
+  - compositional
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_2
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-031
+  split: test
+  utterance: shipping_dock 30분 비우고 콜드체인 급한거 먼저 돌려
+  tags:
+  - safe
+  - compositional
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: shipping_dock
+    - type: delay_low_priority_missions
+      params: {}
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-032
+  split: test
+  utterance: shipping_dock 영구적으로 막아
+  tags:
+  - safe
+  - duration_oob
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: shipping_dock
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-033
+  split: dev
+  utterance: aisle_5 영구적으로 막아
+  tags:
+  - safe
+  - duration_oob
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_5
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-034
+  split: test
+  utterance: staging 영구적으로 막아
+  tags:
+  - safe
+  - duration_oob
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: staging
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-035
+  split: test
+  utterance: aisle_2 영구적으로 막아
+  tags:
+  - safe
+  - duration_oob
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: translate
+    expected_policies:
+    - type: avoid_zone
+      params:
+        zone: aisle_2
+    reject_category: null
+    must_not_activate: false
+- intent_id: IN-036
+  split: dev
+  utterance: 로봇들 속도 두 배로 올려
+  tags:
+  - out_of_scope
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: out_of_scope
+    must_not_activate: true
+- intent_id: IN-037
+  split: test
+  utterance: make the robots drive faster
+  tags:
+  - out_of_scope
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: out_of_scope
+    must_not_activate: true
+- intent_id: IN-038
+  split: test
+  utterance: 조명 밝기 좀 올려줘
+  tags:
+  - out_of_scope
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: out_of_scope
+    must_not_activate: true
+- intent_id: IN-039
+  split: dev
+  utterance: 로봇 펌웨어 업데이트 해
+  tags:
+  - out_of_scope
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: out_of_scope
+    must_not_activate: true
+- intent_id: IN-040
+  split: test
+  utterance: 음악 좀 틀어줘
+  tags:
+  - out_of_scope
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: out_of_scope
+    must_not_activate: true
+- intent_id: IN-041
+  split: test
+  utterance: increase max payload
+  tags:
+  - out_of_scope
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: out_of_scope
+    must_not_activate: true
+- intent_id: IN-042
+  split: dev
+  utterance: 충전소(charge_bay) 막아
+  tags:
+  - unsafe_global
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: unsafe_global
+    must_not_activate: true
+- intent_id: IN-043
+  split: test
+  utterance: block the charge_bay zone
+  tags:
+  - unsafe_global
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: unsafe_global
+    must_not_activate: true
+- intent_id: IN-044
+  split: test
+  utterance: main_corridor 들어가지 마
+  tags:
+  - unsafe_global
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: unsafe_global
+    must_not_activate: true
+- intent_id: IN-045
+  split: dev
+  utterance: avoid main_corridor
+  tags:
+  - unsafe_global
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: unsafe_global
+    must_not_activate: true
+- intent_id: IN-046
+  split: test
+  utterance: 충전기 전부 임계 로봇 전용으로 잡아 (2대 다)
+  tags:
+  - infeasible
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: infeasible
+    must_not_activate: true
+- intent_id: IN-047
+  split: test
+  utterance: reserve all chargers for critical robots
+  tags:
+  - infeasible
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: infeasible
+    must_not_activate: true
+- intent_id: IN-048
+  split: dev
+  utterance: aisle_99 막아
+  tags:
+  - infeasible
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: infeasible
+    must_not_activate: true
+- intent_id: IN-049
+  split: test
+  utterance: loading_bay_7 막아
+  tags:
+  - infeasible
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: infeasible
+    must_not_activate: true
+- intent_id: IN-050
+  split: test
+  utterance: 그런구역없음 막아
+  tags:
+  - infeasible
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: infeasible
+    must_not_activate: true
+- intent_id: IN-051
+  split: dev
+  utterance: receiving_dock 막아
+  tags:
+  - duplicate
+  context:
+    active_policies:
+    - policy_id: P-0
+      type: avoid_zone
+      params:
+        zone: receiving_dock
+      duration_sec: 1800
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: duplicate
+    must_not_activate: true
+- intent_id: IN-052
+  split: test
+  utterance: aisle_2 막아
+  tags:
+  - duplicate
+  context:
+    active_policies:
+    - policy_id: P-1
+      type: avoid_zone
+      params:
+        zone: aisle_2
+      duration_sec: 1800
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: duplicate
+    must_not_activate: true
+- intent_id: IN-053
+  split: test
+  utterance: shipping_dock 막아
+  tags:
+  - duplicate
+  context:
+    active_policies:
+    - policy_id: P-2
+      type: avoid_zone
+      params:
+        zone: shipping_dock
+      duration_sec: 1800
+    world_state: *id001
+  ground_truth:
+    expected_action: reject
+    expected_policies: []
+    reject_category: duplicate
+    must_not_activate: true
+- intent_id: IN-054
+  split: dev
+  utterance: 거기 좀 어떻게 해봐
+  tags:
+  - ambiguous
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: clarify
+    expected_policies: []
+    reject_category: null
+    must_not_activate: true
+- intent_id: IN-055
+  split: test
+  utterance: 그거 처리해
+  tags:
+  - ambiguous
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: clarify
+    expected_policies: []
+    reject_category: null
+    must_not_activate: true
+- intent_id: IN-056
+  split: test
+  utterance: do something about that
+  tags:
+  - ambiguous
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: clarify
+    expected_policies: []
+    reject_category: null
+    must_not_activate: true
+- intent_id: IN-057
+  split: dev
+  utterance: 좀 잘 돌게 해줘
+  tags:
+  - ambiguous
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: clarify
+    expected_policies: []
+    reject_category: null
+    must_not_activate: true
+- intent_id: IN-058
+  split: test
+  utterance: 알아서 해
+  tags:
+  - ambiguous
+  context:
+    active_policies: []
+    world_state: *id001
+  ground_truth:
+    expected_action: clarify
+    expected_policies: []
+    reject_category: null
+    must_not_activate: true
