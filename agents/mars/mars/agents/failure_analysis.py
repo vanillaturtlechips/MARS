@@ -175,9 +175,16 @@ class FailureAnalysisAgent:
       tools      — InvestigatorTools or MockInvestigatorTools instance
     """
 
-    def __init__(self, llm_client, tools):
+    def __init__(self, llm_client, tools, incentive: str = ""):
         self._llm   = llm_client
         self._tools = tools
+        # Optional adversarial incentive appended to both prompts. Used ONLY by
+        # the validator-gaming experiment (§5.5): makes the agent strategic
+        # (it wants its diagnosis ACCEPTED) instead of merely truthful, so we
+        # can test whether a static confidence threshold can be gamed.
+        self._incentive = incentive
+        self._sys_prompt   = _SYSTEM_PROMPT + (("\n\n" + incentive) if incentive else "")
+        self._final_prompt = _FINAL_PROMPT  + (("\n\n" + incentive) if incentive else "")
 
     def analyze(self, trigger_event: dict[str, Any]) -> dict[str, Any]:
         """
@@ -216,7 +223,7 @@ class FailureAnalysisAgent:
                 response = self._llm.chat_with_tools(
                     messages=messages,
                     tools=TOOL_DEFINITIONS,
-                    system_prompt=_SYSTEM_PROMPT,
+                    system_prompt=self._sys_prompt,
                 )
             except Exception:
                 log.exception("[investigator] chat_with_tools failed")
@@ -271,7 +278,7 @@ class FailureAnalysisAgent:
             transcript_summary = json.dumps(transcript, default=str)
             try:
                 diagnosis = self._llm.complete_structured(
-                    system_prompt=_FINAL_PROMPT,
+                    system_prompt=self._final_prompt,
                     user_message=transcript_summary,
                     output_schema=_OUTPUT_SCHEMA,
                 )
