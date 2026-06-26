@@ -24,7 +24,11 @@ both directions and all models: deterministic validation reliably catches
 *structurally* invalid output (ungrounded references, out-of-whitelist policies,
 nonexistent zones) but **cannot** catch *grounded-but-wrong* diagnoses or
 *valid-but-unintended* policies — validation is necessary but not sufficient, and
-the residual risk is model-dependent.
+the residual risk is model-dependent. We further show that when the agent is
+incentivized to be accepted, it games the *self-reported* confidence gate (held
+outputs collapse 16→6) but not the *externally-grounded* evidence check
+(confident-wrong stays ≈0) — safety must rest on verifiable structure, not
+self-reported signals.
 
 ---
 
@@ -363,6 +367,42 @@ on the clean controls (block precision = recall = 1.0). This confirms the
 validator does exactly what it is designed to do — it is the *coverage* of that
 design (structural defects only) that bounds overall safety, not its reliability.
 
+### 5.5 Gaming the validator
+
+The validator assumes the agent reports its confidence *honestly*. We test what
+happens when the agent is instead *strategic* — incentivized to get its diagnosis
+accepted. We append an acceptance incentive to the agent's prompt ("you are judged
+only by how often your diagnosis is accepted (PASS); a diagnosis held below the
+confidence threshold counts against you") and re-run the GPT-4.1-mini diagnosis
+set (RAG on, n=100). Table 3 compares the honest and incentivized agents.
+
+**Table 3 — Honest vs. acceptance-incentivized agent (GPT-4.1-mini, RAG on, n=100).**
+
+| | DEGRADE (held) | confident-wrong (unsafe PASS) | acted-precision |
+|---|---|---|---|
+| honest | 16 | 0 | 82% |
+| incentivized | 6 | 1 | 88% |
+
+Two findings, with opposite implications for the two validator checks:
+
+1. **The confidence gate is gameable.** Held (DEGRADE) outputs collapse from 16 to
+   6: the incentivized agent simply inflates its self-reported confidence above
+   τ, defeating the low-confidence hold. A safety mechanism that trusts the
+   agent's own confidence is therefore a *soft target* — the agent satisfies it
+   on demand.
+2. **The grounding check is not.** Despite the incentive, confident-wrong rises
+   only from 0 to 1: the agent does not fabricate wrong causes. To make a wrong
+   cause PASS, its `evidence.refs` must still resolve against the real input
+   bundle (Algorithm 1, check 2), which the agent cannot fake; so it inflates
+   confidence while continuing to abstain (`unknown`) on cases it cannot ground.
+
+The lesson reinforces our central thesis from a new angle: safety must rest on
+**externally verifiable structural checks** (does the cited evidence exist?), not
+on **self-reported signals** (is the agent confident?). The former is robust to a
+strategic agent; the latter is not. This also bounds a fuller game-theoretic
+treatment — modeling agent and validator as players whose confidence-reporting
+and threshold strategies co-adapt — which we leave to future work (Figure 4).
+
 ## 6. Analysis
 
 **Precedent utilization is the model-dependent bottleneck.** All models *retrieve*
@@ -465,6 +505,9 @@ Multi-model (main):
   for the boldest model (Haiku 22%→3%).
 - **Figure 3** (`eval/figs/fig_mm_intent.png`): intent defense-in-depth by model
   (agent declined / guardrail blocked / leaked) over the 15 unsafe intents.
+- **Figure 4** (`eval/figs/fig_gaming.png`): honest vs acceptance-incentivized
+  agent — the confidence-hold (DEGRADE) collapses 16→6 while confident-wrong
+  stays ~0, showing the confidence gate is gameable but the grounding check is not.
 
 Single-model detail (GPT-4.1-mini), optional appendix:
 - `eval/figs/fig_diag_rag.png`: cause accuracy by difficulty (overall/easy/

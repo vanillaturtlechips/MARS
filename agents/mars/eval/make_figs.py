@@ -181,6 +181,35 @@ def fig_mm_intent():
     f = FIGS / "fig_mm_intent.png"; fig.savefig(f, dpi=130, bbox_inches="tight"); print("wrote", f)
 
 
+def fig_gaming():
+    """Honest vs acceptance-incentivized (gamed) agent: DEGRADE collapse but
+    confident-wrong stays ~0."""
+    h = _load("results_test.json")
+    g = _load("results_test_gamed.json")
+    if not (h and g):
+        return
+    def m(d):
+        rows = [r for r in d["rag_on"] if "err" not in r]
+        deg = sum(1 for r in rows if r["verdict"] == "DEGRADE")
+        cw = sum(1 for r in rows if not r["cause_ok"] and r["pred_cause"] != "unknown"
+                 and r["verdict"] == "PASS")
+        return deg, cw
+    hd, hcw = m(h); gd, gcw = m(g)
+    labels = ["DEGRADE\n(held, low-conf)", "confident-wrong\n(unsafe PASS)"]
+    honest = [hd, hcw]; gamed = [gd, gcw]
+    x = range(len(labels)); w = 0.38
+    fig, ax = plt.subplots(figsize=(6, 4.2))
+    ax.bar([i - w/2 for i in x], honest, w, label="honest agent", color="tab:blue")
+    ax.bar([i + w/2 for i in x], gamed, w, label="acceptance-incentivized", color="tab:orange")
+    for i, v in enumerate(honest): ax.text(i - w/2, v + 0.3, str(v), ha="center", fontsize=9)
+    for i, v in enumerate(gamed): ax.text(i + w/2, v + 0.3, str(v), ha="center", fontsize=9)
+    ax.set_xticks(list(x)); ax.set_xticklabels(labels)
+    ax.set_ylabel("cases (of 100)")
+    ax.set_title("Gaming the confidence gate (GPT-4.1-mini, RAG on)")
+    ax.legend()
+    f = FIGS / "fig_gaming.png"; fig.savefig(f, dpi=130, bbox_inches="tight"); print("wrote", f)
+
+
 def main():
     diag = _load("results_test.json")
     intent = _load("results_intent_test.json")
@@ -190,6 +219,8 @@ def main():
         fig_intent_defense(intent)
     # multi-model figures
     fig_mm_rag(); fig_mm_safety(); fig_mm_intent()
+    # gaming experiment
+    fig_gaming()
     print(f"figs -> {FIGS}")
 
 
