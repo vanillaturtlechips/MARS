@@ -6,29 +6,87 @@
 
 ## Abstract
 
-Large language models (LLMs) are attractive as a supervisory layer for warehouse
-robot fleets: they can diagnose novel mission failures and translate a human
-operator's natural-language intent into fleet policies. But an LLM that drives
-robots can also hallucinate — emitting a confident but wrong diagnosis, or a
-fleet-wide policy the operator never intended. We present MARS (Multi-Agent Robot Supervision), a supervisory
-architecture that gates unreliable LLM input and output through deterministic
-validation: a retrieval-augmented diagnosis agent whose output is checked by a
-decision validator, and an intent agent whose proposed policies are checked by a
-policy guardrail. We evaluate both directions on controlled failure/intent
-datasets across three LLMs (GPT-4.1-mini, Claude Haiku 4.5, Upstage Solar-Pro).
-Retrieval-augmented generation (RAG) improves diagnosis cause accuracy by
-38–47 percentage points *across all three models*, and reduces confident-wrong
-diagnoses. For operator intent, a defense-in-depth of agent self-restraint plus
-guardrail blocks 73–100% of unsafe instructions (11–15 of 15) depending on model. Our central finding holds on
-both directions and all models: deterministic validation reliably catches
-*structurally* invalid output (ungrounded references, out-of-whitelist policies,
-nonexistent zones) but **cannot** catch *grounded-but-wrong* diagnoses or
-*valid-but-unintended* policies — validation is necessary but not sufficient, and
-the residual risk is model-dependent. We further show that when the agent is
-incentivized to be accepted, it games the *self-reported* confidence gate (held
-outputs collapse 16→6) but not the *externally-grounded* evidence check
-(confident-wrong stays ≈0) — safety must rest on verifiable structure, not
-self-reported signals.
+Warehouse logistics increasingly rely on fleets of autonomous mobile robots
+that share aisles, chargers, and mission queues under a central operations stack.
+When a mission fails — a robot aborts a navigation goal, a zone becomes
+congested, a localization estimate diverges — a human operator must diagnose the
+underlying cause and decide what fleet-level action to take, and as fleets scale
+this supervisory reasoning becomes an operational bottleneck. Large language
+models (LLMs) are an attractive candidate for this supervisory layer because they
+can read heterogeneous evidence and produce a structured diagnosis, and can also
+translate a free-form operator instruction into a concrete fleet policy — tasks
+that classical rule engines handle poorly because the input space is open-ended.
+The obstacle is reliability: an LLM supervisor sits above the robots and its
+decisions change fleet behavior, so a hallucinated diagnosis or a misread
+instruction is not a harmless text error but can reroute or stall the entire
+fleet. The motivating question of this work is therefore not whether an LLM can
+perform fleet supervision, but how much safety a deterministic validation layer
+can add to an unreliable LLM supervisor, and where that safety stops.
+
+This paper presents MARS (Multi-Agent Robot Supervision), a supervisory
+architecture that gates unreliable LLM output and input through deterministic
+checks while separating "reason" (the LLM) from "act" (only validated decisions
+reach the fleet). On the output side, a Failure Analysis Agent runs a bounded
+reason–act tool loop, retrieves similar past incidents as precedents, and emits a
+structured diagnosis (cause, scope, persistence, confidence, evidence); a
+deterministic Decision Validator then accepts, degrades, or rejects this
+diagnosis by checking a confidence threshold, the resolvability of every cited
+evidence reference, scope consistency, and coherence with a separately computed
+retrieval-trust score. On the input side, an Intent Agent translates an operator
+utterance into zero or more policies drawn strictly from a five-entry whitelist,
+or declines as out-of-scope or needing clarification; a deterministic Policy
+Guardrail then validates each candidate through seven ordered stages including
+whitelist membership, referential integrity, impact gating, liveness invariants
+(for example, a zone-avoidance policy must not strand all robots from chargers),
+conflict detection, bound normalization, and rate limiting. The originality of
+the work is not in showing that an LLM can act in a robotic setting, which prior
+work has established, but in isolating and measuring the machinery that makes
+unreliable agent output safe to act on, and in characterizing precisely where the
+guarantees of deterministic validation end.
+
+We evaluate both pipelines on controlled, programmatically generated datasets —
+150 diagnosis cases and 58 operator-intent cases, each split into a development
+set used only to tune prompts and a held-out test set used for all reported
+numbers — across three different LLMs (GPT-4.1-mini, Claude Haiku 4.5, and
+Upstage Solar-Pro) run through identical prompts and schemas. Quantitatively,
+retrieval-augmented generation improves diagnosis cause accuracy by 38 to 47
+percentage points on every one of the three models (for example, from 43% to 81%
+on GPT-4.1-mini and from 52% to 93% on Claude Haiku 4.5), establishing that the
+benefit of grounding is model-independent. The decision validator passes a
+30-probe adversarial stress test with perfect detection and zero false blocks.
+For operator intent, a defense-in-depth of agent self-restraint plus the
+guardrail blocks 73% to 100% of unsafe instructions (11 to 15 of 15) depending on
+the model, with the two layers proving complementary: the agent declines
+out-of-scope and ambiguous requests while the guardrail blocks structurally
+unsafe ones. We also report acted-precision (the accuracy of diagnoses the system
+actually acts on), which reaches 82% to 96% across models, and we quantify the
+conservatism cost of the fail-safe design: a fraction of correct diagnoses are
+held because the agent's own confidence falls below threshold, exposing an
+explicit precision–safety operating point controlled by a single threshold rather
+than a hidden trade-off. Because every result is produced by re-runnable scripts
+over released datasets and the same three models, the comparison across models and
+the ablations are directly reproducible.
+
+The central lesson holds across both directions and all three models:
+deterministic validation reliably catches structurally invalid output — ungrounded
+evidence references, policies outside the whitelist, references to nonexistent
+zones — but cannot catch grounded-but-wrong diagnoses or valid-but-unintended
+policies, so validation is necessary but not sufficient, and the residual risk is
+model-dependent rather than fixed. We trace this residual risk to specific causes:
+precedent utilization, not retrieval, is the bottleneck (all models retrieve the
+relevant precedent but reliance ranges from 9% to 92%), and the failure mode
+differs by model, with weaker models declining ("unknown") rather than guessing,
+so that a stronger, more confident model is not automatically safer. Finally, we
+test an agent that is strategically incentivized to be accepted rather than
+truthful, and find that it games the self-reported confidence gate — held outputs
+collapse from 16 to 6 — but not the externally grounded evidence check, where
+confident-wrong output remains near zero, because fabricating a wrong cause would
+still require evidence references that resolve against the real input. The
+practical conclusion for safe LLM supervision is that safety must rest on
+externally verifiable structural checks rather than on self-reported signals such
+as confidence, and that it emerges from the interaction of retrieval grounding,
+agent self-restraint, and deterministic validation rather than from any single
+mechanism.
 
 ---
 
@@ -84,47 +142,42 @@ robot-in-the-loop measurement is left to future work.
 ## 2. Related Work
 
 **LLM agents and tool use.** Our diagnosis agent is a ReAct-style reason–act loop
-(Yao et al., 2022) that calls read-only tools to gather evidence before emitting a
+[1] that calls read-only tools to gather evidence before emitting a
 structured conclusion. A line of work has made LLM tool/function calling reliable
-and scalable — learning when and how to call APIs (Toolformer; Schick et al.,
-2023), orchestrating many real APIs (ToolLLM; Qin et al., 2023), and reducing
-malformed/hallucinated calls (Gorilla; Patil et al., 2023). We build on this
+and scalable — learning when and how to call APIs (Toolformer [2]), orchestrating many real APIs (ToolLLM [3]), and reducing
+malformed/hallucinated calls (Gorilla [4]). We build on this
 mechanic but ask a different question: not how to *make* tool calls, but how to
 *validate the resulting decision* before it acts on a fleet.
 
 **Retrieval-augmented generation.** We ground diagnoses in retrieved incident
-precedents, following the RAG paradigm (Lewis et al., 2020) and multi-passage
-conditioning (Fusion-in-Decoder; Izacard & Grave, 2021). Crucially, retrieval
+precedents, following the RAG paradigm [5] and multi-passage
+conditioning (Fusion-in-Decoder [6]). Crucially, retrieval
 quality — not mere retrieval — governs whether grounding helps: irrelevant or
-mis-placed context can degrade answers (Cuconasu et al., 2024), motivating our
-explicit per-precedent trust scoring. Self-RAG (Asai et al., 2023) learns to
+mis-placed context can degrade answers [7], motivating our
+explicit per-precedent trust scoring. Self-RAG [8] learns to
 critique retrieved passages on the model side; we instead score precedent trust
 *deterministically* and feed it to an external validator.
 
 **LLM safety, guardrails, and validation.** The core of our system is
-deterministic validation of LLM I/O, akin to programmable guardrails (NeMo
-Guardrails; Rebedea et al., 2023) and constrained/structured decoding that
-guarantees well-formed output (Outlines; Willard & Louf, 2023). Position work
+deterministic validation of LLM I/O, akin to programmable guardrails (NeMo Guardrails [9]) and constrained/structured decoding that
+guarantees well-formed output (Outlines [10]). Position work
 argues such rule-based filters must be combined with learning-based ones because
-each alone is incomplete (Dong et al., 2024) — precisely our finding that
+each alone is incomplete [11] — precisely our finding that
 structural checks miss *grounded-but-wrong* output. Detecting that residual class
-requires consistency- or evidence-based methods (SelfCheckGPT; Manakul et al.,
-2023) or self-critique (Self-Refine; Madaan et al., 2023), which rely on the
+requires consistency- or evidence-based methods (SelfCheckGPT [12]) or self-critique (Self-Refine [13]), which rely on the
 model's own judgment; we quantify exactly where a deterministic validator's
 guarantees stop and this residual risk begins, across three models.
 
 **Multi-robot and fleet management.** Warehouse robot fleets descend from Kiva /
-Amazon Robotics (Wurman et al., 2008); their runtime bottlenecks — congestion,
-deadlock, blocked zones — are studied as lifelong multi-agent path finding (Li J. et al., 2021) and layout/throughput optimization (Zhang et al., 2023). These define
+Amazon Robotics [14]; their runtime bottlenecks — congestion,
+deadlock, blocked zones — are studied as lifelong multi-agent path finding [15] and layout/throughput optimization [16]. These define
 the operational substrate and failure modes our supervisor observes; we add an
 LLM reasoning layer *above* this stack rather than replacing the planner.
 
 **LLMs for robotics.** Grounding natural language in robot capability is
-established for single-robot control: feasibility-aware action selection (SayCan;
-Ahn et al., 2022), NL-to-executable-policy code (Code as Policies; Liang et al.,
-2023), and feedback-driven replanning (Inner Monologue; Huang et al., 2022).
-Multi-robot LLM coordination is emerging (RoCo; Mandi et al., 2023), and a recent
-survey maps LLMs onto multi-robot systems (Li P. et al., 2025). These translate
+established for single-robot control: feasibility-aware action selection (SayCan [17]), NL-to-executable-policy code (Code as Policies [19]), and feedback-driven replanning (Inner Monologue [18]).
+Multi-robot LLM coordination is emerging (RoCo [20]), and a recent
+survey maps LLMs onto multi-robot systems [21]. These translate
 language into robot action; we focus on the under-studied **supervisory** role —
 validating an operator's intent and a diagnosis at the *fleet* level — and on the
 machinery that makes unreliable LLM output safe to act on.
@@ -522,32 +575,49 @@ All figures regenerate from the result JSONs via `python3 -m eval.make_figs`.
 ## References
 
 *LLM agents and tool use*
-- Yao, S., et al. (2022). ReAct: Synergizing Reasoning and Acting in Language Models. ICLR 2023. arXiv:2210.03629.
-- Schick, T., et al. (2023). Toolformer: Language Models Can Teach Themselves to Use Tools. NeurIPS 2023. arXiv:2302.04761.
-- Qin, Y., et al. (2023). ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs. ICLR 2024. arXiv:2307.16789.
-- Patil, S. G., et al. (2023). Gorilla: Large Language Model Connected with Massive APIs. NeurIPS 2024. arXiv:2305.15334.
+IEEE style, numbered in citation order. NOTE (for camera-ready): JKROS requires
+the *full* author list (all names, full surnames) and page numbers; the entries
+below carry "et al." where the full list was not yet collected and omit pages for
+arXiv preprints — complete these from each source before final submission.
 
-*Retrieval-augmented generation*
-- Lewis, P., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. NeurIPS 2020. arXiv:2005.11401.
-- Izacard, G., & Grave, E. (2021). Leveraging Passage Retrieval with Generative Models for Open Domain QA (Fusion-in-Decoder). EACL 2021. arXiv:2007.01282.
-- Asai, A., et al. (2023). Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection. ICLR 2024. arXiv:2310.11511.
-- Cuconasu, F., et al. (2024). The Power of Noise: Redefining Retrieval for RAG Systems. SIGIR 2024. arXiv:2401.14887.
+[1] S. Yao et al., "ReAct: Synergizing reasoning and acting in language models," in *Proc. Int. Conf. Learn. Represent. (ICLR)*, 2023, arXiv:2210.03629.
 
-*LLM safety, guardrails, validation*
-- Rebedea, T., et al. (2023). NeMo Guardrails: A Toolkit for Controllable and Safe LLM Applications with Programmable Rails. EMNLP 2023 (Demo). arXiv:2310.10501.
-- Willard, B. T., & Louf, R. (2023). Efficient Guided Generation for Large Language Models (Outlines). arXiv:2307.09702.
-- Dong, Y., et al. (2024). Building Guardrails for Large Language Models. ICML 2024 (Position). arXiv:2402.01822.
-- Manakul, P., et al. (2023). SelfCheckGPT: Zero-Resource Black-Box Hallucination Detection. EMNLP 2023. arXiv:2303.08896.
-- Madaan, A., et al. (2023). Self-Refine: Iterative Refinement with Self-Feedback. NeurIPS 2023. arXiv:2303.17651.
+[2] T. Schick et al., "Toolformer: Language models can teach themselves to use tools," in *Proc. Adv. Neural Inf. Process. Syst. (NeurIPS)*, 2023, arXiv:2302.04761.
 
-*Multi-robot and fleet management*
-- Wurman, P. R., D'Andrea, R., & Mountz, M. (2008). Coordinating Hundreds of Cooperative, Autonomous Vehicles in Warehouses. AI Magazine, 29(1).
-- Li, J., et al. (2021). Lifelong Multi-Agent Path Finding in Large-Scale Warehouses. AAAI 2021.
-- Zhang, Y., et al. (2023). Multi-Robot Coordination and Layout Design for Automated Warehousing. IJCAI 2023. arXiv:2305.06436.
-- Li, P., et al. (2025). Large Language Models for Multi-Robot Systems: A Survey. arXiv:2502.03814.
+[3] Y. Qin et al., "ToolLLM: Facilitating large language models to master 16000+ real-world APIs," in *Proc. Int. Conf. Learn. Represent. (ICLR)*, 2024, arXiv:2307.16789.
 
-*LLMs for robotics*
-- Ahn, M., et al. (2022). Do As I Can, Not As I Say: Grounding Language in Robotic Affordances (SayCan). CoRL 2022. arXiv:2204.01691.
-- Huang, W., et al. (2022). Inner Monologue: Embodied Reasoning through Planning with Language Models. CoRL 2022. arXiv:2207.05608.
-- Liang, J., et al. (2023). Code as Policies: Language Model Programs for Embodied Control. ICRA 2023. arXiv:2209.07753.
-- Mandi, Z., et al. (2023). RoCo: Dialectic Multi-Robot Collaboration with Large Language Models. arXiv:2307.04738 (ICRA 2024).
+[4] S. G. Patil et al., "Gorilla: Large language model connected with massive APIs," in *Proc. Adv. Neural Inf. Process. Syst. (NeurIPS)*, 2024, arXiv:2305.15334.
+
+[5] P. Lewis et al., "Retrieval-augmented generation for knowledge-intensive NLP tasks," in *Proc. Adv. Neural Inf. Process. Syst. (NeurIPS)*, 2020, arXiv:2005.11401.
+
+[6] G. Izacard and E. Grave, "Leveraging passage retrieval with generative models for open domain question answering," in *Proc. 16th Conf. Eur. Chapter Assoc. Comput. Linguist. (EACL)*, 2021, pp. 874–880.
+
+[7] F. Cuconasu et al., "The power of noise: Redefining retrieval for RAG systems," in *Proc. 47th Int. ACM SIGIR Conf. Res. Develop. Inf. Retr.*, 2024, arXiv:2401.14887.
+
+[8] A. Asai et al., "Self-RAG: Learning to retrieve, generate, and critique through self-reflection," in *Proc. Int. Conf. Learn. Represent. (ICLR)*, 2024, arXiv:2310.11511.
+
+[9] T. Rebedea et al., "NeMo Guardrails: A toolkit for controllable and safe LLM applications with programmable rails," in *Proc. Conf. Empirical Methods Natural Lang. Process. (EMNLP), Syst. Demonstrations*, 2023, arXiv:2310.10501.
+
+[10] B. T. Willard and R. Louf, "Efficient guided generation for large language models," arXiv:2307.09702, 2023.
+
+[11] Y. Dong et al., "Building guardrails for large language models," in *Proc. Int. Conf. Mach. Learn. (ICML)*, 2024, arXiv:2402.01822.
+
+[12] P. Manakul, A. Liusie, and M. J. F. Gales, "SelfCheckGPT: Zero-resource black-box hallucination detection for generative large language models," in *Proc. Conf. Empirical Methods Natural Lang. Process. (EMNLP)*, 2023, arXiv:2303.08896.
+
+[13] A. Madaan et al., "Self-Refine: Iterative refinement with self-feedback," in *Proc. Adv. Neural Inf. Process. Syst. (NeurIPS)*, 2023, arXiv:2303.17651.
+
+[14] P. R. Wurman, R. D'Andrea, and M. Mountz, "Coordinating hundreds of cooperative, autonomous vehicles in warehouses," *AI Mag.*, vol. 29, no. 1, pp. 9–19, 2008.
+
+[15] J. Li et al., "Lifelong multi-agent path finding in large-scale warehouses," in *Proc. AAAI Conf. Artif. Intell.*, 2021, pp. 11272–11281.
+
+[16] Y. Zhang et al., "Multi-robot coordination and layout design for automated warehousing," in *Proc. Int. Joint Conf. Artif. Intell. (IJCAI)*, 2023, arXiv:2305.06436.
+
+[17] M. Ahn et al., "Do as I can, not as I say: Grounding language in robotic affordances," in *Proc. Conf. Robot Learn. (CoRL)*, 2022, arXiv:2204.01691.
+
+[18] W. Huang et al., "Inner monologue: Embodied reasoning through planning with language models," in *Proc. Conf. Robot Learn. (CoRL)*, 2022, arXiv:2207.05608.
+
+[19] J. Liang et al., "Code as policies: Language model programs for embodied control," in *Proc. IEEE Int. Conf. Robot. Autom. (ICRA)*, 2023, arXiv:2209.07753.
+
+[20] Z. Mandi, S. Jain, and S. Song, "RoCo: Dialectic multi-robot collaboration with large language models," in *Proc. IEEE Int. Conf. Robot. Autom. (ICRA)*, 2024, arXiv:2307.04738.
+
+[21] P. Li et al., "Large language models for multi-robot systems: A survey," arXiv:2502.03814, 2025.
