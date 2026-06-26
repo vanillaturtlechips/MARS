@@ -222,7 +222,7 @@ trust(p) = w_meta·meta(p) + w_rec·recency(p) + w_cov·coverage(p) + w_sim·sim
 강등. 시스템은 PASS에서만 *행동*하고 DEGRADE/REJECT는 보류된다(페일세이프). REJECT는
 해소 불가능한 증거 참조에 한정하고, 더 가벼운 실패는 DEGRADE한다.
 
-> **Algorithm 1 — Decision Validator (diagnosis).** (캡션 영문)
+> **Algorithm 1 — Decision Validator (diagnosis).**
 > **Input:** diagnosis `d`, input bundle `B`, retrieval set-level `t`.
 > **Output:** PASS | DEGRADE | REJECT.
 > ```
@@ -257,7 +257,7 @@ trust(p) = w_meta·meta(p) + w_rec·recency(p) + w_cov·coverage(p) + w_sim·sim
 충전기 예약은 일반 로봇용 ≥1개를 남겨야 함), 충돌/중복 탐지, 경계 정규화(지속시간
 [60, 7200]초), 속도 제한(쿨다운). 조정과 함께 통과하면 MODIFY, 아니면 ACCEPT.
 
-> **Algorithm 2 — Policy Guardrail.** (캡션 영문)
+> **Algorithm 2 — Policy Guardrail.**
 > **Input:** candidate `p`, active `A`, world state `W`, last-applied `L`.
 > **Output:** ACCEPT | MODIFY | REJECT | DEFER_HUMAN.
 > ```
@@ -291,7 +291,7 @@ ID와 `health_at_failure` 스냅샷을 가진 `navigation.aborted` 이벤트)와
 케이스는 정답이 `unknown`이라 *거절*이 올바른 행동이며 채점 가능하다. 대표 케이스는
 표 1(Table 1).
 
-**Table 1 — Representative diagnosis cases.** (캡션 영문)
+**Table 1 — Representative diagnosis cases.**
 
 | case | tags | trigger | precedent | GT cause / scope |
 |---|---|---|---|---|
@@ -307,7 +307,7 @@ safe / temporal / compositional / duration-out-of-bounds / out-of-scope /
 unsafe-global / infeasible / duplicate / ambiguous로 태깅되며, 태그가 기대 결과를
 결정한다. 예시는 표 2(Table 2).
 
-**Table 2 — Representative intent cases.** (캡션 영문)
+**Table 2 — Representative intent cases.**
 
 | utterance | tag | expected |
 |---|---|---|
@@ -385,7 +385,7 @@ RAG가 정확도를 올리고 에이전트가 불확실할 때 거절(`unknown`)
 수용 인센티브("너는 진단이 PASS되는 빈도로만 평가된다; 임계값 미만으로 보류되면
 불리하다")를 덧붙여 GPT-4.1-mini 진단 셋(RAG on, n=100)을 재실행했다. 표 3.
 
-**Table 3 — Honest vs. acceptance-incentivized agent (GPT-4.1-mini, RAG on, n=100).** (캡션 영문)
+**Table 3 — Honest vs. acceptance-incentivized agent (GPT-4.1-mini, RAG on, n=100).**
 
 | | DEGRADE (held) | confident-wrong (unsafe PASS) | acted-precision |
 |---|---|---|---|
@@ -481,7 +481,7 @@ DEGRADE되는데 12개는 confidence가 τ=0.5 미만으로 떨어졌고 진단�
 
 ---
 
-## Figures (캡션 영문 — paper_en.md와 동일)
+## Figures
 
 - **Figure 1** (`fig_mm_rag.png`): diagnosis cause accuracy by model, RAG on vs off.
 - **Figure 2** (`fig_mm_safety.png`): confident-wrong rate by model, RAG on vs off.

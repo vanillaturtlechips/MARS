@@ -60,7 +60,9 @@ def para(doc, align=AL.JUSTIFY, indent=None, before=0, after=0, ls=1.0):
 
 
 def strip_md(t):
-    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t); t = t.replace("`", "")
+    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)
+    t = re.sub(r"\*(.+?)\*", r"\1", t)
+    t = t.replace("`", "")
     return t
 
 
@@ -190,8 +192,16 @@ def main():
             continue
         if s.startswith("Table ") or s.startswith("**Table"):  # table caption
             p = para(doc, AL.LEFT); setfont(p.add_run(strip_md(s)), TNR, 9.5); i += 1; continue
-        # normal body paragraph
-        p = para(doc, AL.JUSTIFY, indent=Cm(0.35)); body_run(p, s); i += 1
+        # normal body paragraph — JOIN wrapped lines until blank/special line
+        buf = []
+        while i < len(blk):
+            cur = blk[i].strip()
+            if (not cur or cur.startswith(("## ", "### ", "```", ">", "|", "Table ", "**Table"))):
+                break
+            if buf and re.match(r"^(\d+\.|-)\s", cur):   # new list item -> new paragraph
+                break
+            buf.append(cur); i += 1
+        p = para(doc, AL.JUSTIFY, indent=Cm(0.35)); body_run(p, " ".join(buf))
 
     # --- figures ---
     p = para(doc, AL.CENTER, before=12, after=6); setfont(p.add_run("Figures"), F_HEAD, 12)
