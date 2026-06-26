@@ -1,19 +1,103 @@
 # 물류 로봇 fleet을 위한 LLM 감독 에이전트의 결정론적 검증: 다중 모델 연구
 # Deterministic Validation of LLM Supervisory Agents for Warehouse Robot Fleets: A Multi-Model Study
 
-*작업 초안 — 단독 저자. JKROS 제출본(본문 한글). JKROS 규정 제12조에 따라 초록·키워드·
-참고문헌·그림/표 캡션은 영문으로 작성. paper_en.md(영문 전체본)와 내용 동일. 모든 수치는
-eval/RESULTS_*.md 기준(test 분할, 프롬프트 동결).*
+**저자:** 이명일 (Myong-Il Lee)†
+†Corresponding author: Student, Korea Polytechnic University, Korea
+(2220110150@office.kopo.ac.kr)
+*(소속 학과/캠퍼스는 최종본에서 보완: "Student, Dept. of ___, Korea Polytechnic
+University, ___, Korea")*
+
+*JKROS 제출본(본문 한글). JKROS 규정 제12조에 따라 초록·키워드·참고문헌·그림/표 캡션은
+영문으로 작성. paper_en.md(영문 전체본)와 내용 동일. 모든 수치는 eval/RESULTS_*.md
+기준(test 분할, 프롬프트 동결).*
 
 ---
 
-## Abstract (영문 — 규정상 영문 전용, paper_en.md와 동일)
+## Abstract
 
-> 초록은 JKROS 규정상 영문 전용입니다. paper_en.md의 Abstract(876단어)를 그대로 사용하세요.
-> 동기(motivation)·기여(contribution)·독창성(originality)·방법(methods)·정량결과
-> (quantitative results)를 모두 포함한 단일 문단 영문 초록입니다.
+Warehouse logistics increasingly rely on fleets of autonomous mobile robots
+that share aisles, chargers, and mission queues under a central operations stack.
+When a mission fails — a robot aborts a navigation goal, a zone becomes
+congested, a localization estimate diverges — a human operator must diagnose the
+underlying cause and decide what fleet-level action to take, and as fleets scale
+this supervisory reasoning becomes an operational bottleneck. Large language
+models (LLMs) are an attractive candidate for this supervisory layer because they
+can read heterogeneous evidence and produce a structured diagnosis, and can also
+translate a free-form operator instruction into a concrete fleet policy — tasks
+that classical rule engines handle poorly because the input space is open-ended.
+The obstacle is reliability: an LLM supervisor sits above the robots and its
+decisions change fleet behavior, so a hallucinated diagnosis or a misread
+instruction is not a harmless text error but can reroute or stall the entire
+fleet. The motivating question of this work is therefore not whether an LLM can
+perform fleet supervision, but how much safety a deterministic validation layer
+can add to an unreliable LLM supervisor, and where that safety stops.
 
-**Keywords (영문):** LLM agents; retrieval-augmented generation; deterministic
+This paper presents MARS (Multi-Agent Robot Supervision), a supervisory
+architecture that gates unreliable LLM output and input through deterministic
+checks while separating "reason" (the LLM) from "act" (only validated decisions
+reach the fleet). On the output side, a Failure Analysis Agent runs a bounded
+reason–act tool loop, retrieves similar past incidents as precedents, and emits a
+structured diagnosis (cause, scope, persistence, confidence, evidence); a
+deterministic Decision Validator then accepts, degrades, or rejects this
+diagnosis by checking a confidence threshold, the resolvability of every cited
+evidence reference, scope consistency, and coherence with a separately computed
+retrieval-trust score. On the input side, an Intent Agent translates an operator
+utterance into zero or more policies drawn strictly from a five-entry whitelist,
+or declines as out-of-scope or needing clarification; a deterministic Policy
+Guardrail then validates each candidate through seven ordered stages including
+whitelist membership, referential integrity, impact gating, liveness invariants
+(for example, a zone-avoidance policy must not strand all robots from chargers),
+conflict detection, bound normalization, and rate limiting. The originality of
+the work is not in showing that an LLM can act in a robotic setting, which prior
+work has established, but in isolating and measuring the machinery that makes
+unreliable agent output safe to act on, and in characterizing precisely where the
+guarantees of deterministic validation end.
+
+We evaluate both pipelines on controlled, programmatically generated datasets —
+150 diagnosis cases and 58 operator-intent cases, each split into a development
+set used only to tune prompts and a held-out test set used for all reported
+numbers — across three different LLMs (GPT-4.1-mini, Claude Haiku 4.5, and
+Upstage Solar-Pro) run through identical prompts and schemas. Quantitatively,
+retrieval-augmented generation improves diagnosis cause accuracy by 38 to 47
+percentage points on every one of the three models (for example, from 43% to 81%
+on GPT-4.1-mini and from 52% to 93% on Claude Haiku 4.5), establishing that the
+benefit of grounding is model-independent. The decision validator passes a
+30-probe adversarial stress test with perfect detection and zero false blocks.
+For operator intent, a defense-in-depth of agent self-restraint plus the
+guardrail blocks 73% to 100% of unsafe instructions (11 to 15 of 15) depending on
+the model, with the two layers proving complementary: the agent declines
+out-of-scope and ambiguous requests while the guardrail blocks structurally
+unsafe ones. We also report acted-precision (the accuracy of diagnoses the system
+actually acts on), which reaches 82% to 96% across models, and we quantify the
+conservatism cost of the fail-safe design: a fraction of correct diagnoses are
+held because the agent's own confidence falls below threshold, exposing an
+explicit precision–safety operating point controlled by a single threshold rather
+than a hidden trade-off. Because every result is produced by re-runnable scripts
+over released datasets and the same three models, the comparison across models and
+the ablations are directly reproducible.
+
+The central lesson holds across both directions and all three models:
+deterministic validation reliably catches structurally invalid output — ungrounded
+evidence references, policies outside the whitelist, references to nonexistent
+zones — but cannot catch grounded-but-wrong diagnoses or valid-but-unintended
+policies, so validation is necessary but not sufficient, and the residual risk is
+model-dependent rather than fixed. We trace this residual risk to specific causes:
+precedent utilization, not retrieval, is the bottleneck (all models retrieve the
+relevant precedent but reliance ranges from 9% to 92%), and the failure mode
+differs by model, with weaker models declining ("unknown") rather than guessing,
+so that a stronger, more confident model is not automatically safer. Finally, we
+test an agent that is strategically incentivized to be accepted rather than
+truthful, and find that it games the self-reported confidence gate — held outputs
+collapse from 16 to 6 — but not the externally grounded evidence check, where
+confident-wrong output remains near zero, because fabricating a wrong cause would
+still require evidence references that resolve against the real input. The
+practical conclusion for safe LLM supervision is that safety must rest on
+externally verifiable structural checks rather than on self-reported signals such
+as confidence, and that it emerges from the interaction of retrieval grounding,
+agent self-restraint, and deterministic validation rather than from any single
+mechanism.
+
+**Keywords:** LLM agents; retrieval-augmented generation; deterministic
 validation; warehouse robot fleet; fleet supervision; AI safety
 
 ---

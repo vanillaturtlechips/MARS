@@ -1,5 +1,9 @@
 # Deterministic Validation of LLM Supervisory Agents for Warehouse Robot Fleets: A Multi-Model Study
 
+**Myong-Il Lee†**
+†Corresponding author: Student, Korea Polytechnic University, Korea (2220110150@office.kopo.ac.kr)
+*(complete affiliation for camera-ready: Student, Dept. of ___, Korea Polytechnic University, ___, Korea)*
+
 *Working draft — single author. Target: arXiv → workshop / domestic venue (KIISE/KIPS/KROS). All numbers from eval/RESULTS_*.md (test split, frozen prompts).*
 
 ---
