@@ -2,10 +2,8 @@
 # Deterministic Validation of LLM Supervisory Agents for Warehouse Robot Fleets: A Multi-Model Study
 
 **저자:** 이명일 (Myong-Il Lee)†
-†Corresponding author: Student, Korea Polytechnic University, Korea
-(2220110150@office.kopo.ac.kr)
-*(소속 학과/캠퍼스는 최종본에서 보완: "Student, Dept. of ___, Korea Polytechnic
-University, ___, Korea")*
+†Corresponding author: Student, Dept. of Cyber Security, Korea Polytechnic
+University Gangseo Campus, Seoul, Korea (2220110150@office.kopo.ac.kr)
 
 *JKROS 제출본(본문 한글). JKROS 규정 제12조에 따라 초록·키워드·참고문헌·그림/표 캡션은
 영문으로 작성. paper_en.md(영문 전체본)와 내용 동일. 모든 수치는 eval/RESULTS_*.md
