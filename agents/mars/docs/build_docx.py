@@ -35,7 +35,6 @@ FIGS = [
     ("fig_mm_rag.png", "Fig. 1. Diagnosis cause accuracy by model, RAG on vs. off (test, n=100)."),
     ("fig_mm_safety.png", "Fig. 2. Confident-wrong rate by model, RAG on vs. off."),
     ("fig_mm_intent.png", "Fig. 3. Intent defense-in-depth by model over 15 unsafe intents."),
-    ("fig_gaming.png", "Fig. 4. Honest vs. acceptance-incentivized agent (GPT-4.1-mini, RAG on)."),
 ]
 
 

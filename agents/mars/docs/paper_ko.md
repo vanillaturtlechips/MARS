@@ -407,7 +407,7 @@ Decision Validator는 30개의 결함을 모두 올바른 판정으로 탐지하
 존재하는지를 묻는 외부 검증 가능한 구조적 검사에 기반해야 하며, 에이전트가 확신하는지를
 묻는 자기보고 신호에 기반해서는 안 된다. 전자는 전략적 에이전트에 강건하지만 후자는
 그렇지 않다. 에이전트와 검증기를 신뢰도 보고 전략과 임계값 전략이 상호 적응하는
-참가자로 모델링하는 완전한 게임이론적 분석은 향후 과제로 남긴다(Fig. 4).
+참가자로 모델링하는 완전한 게임이론적 분석은 향후 과제로 남긴다(Table 5 참조).
 
 ---
 
@@ -499,10 +499,9 @@ Nav2 브릿지를 통한 robot-in-the-loop 평가, 더 크고 실제에서 수�
 - **Fig. 1.** Diagnosis cause accuracy by model, RAG on vs. off (test, n=100).
 - **Fig. 2.** Confident-wrong rate by model, RAG on vs. off.
 - **Fig. 3.** Intent defense-in-depth by model over 15 unsafe intents.
-- **Fig. 4.** Honest vs. acceptance-incentivized agent (GPT-4.1-mini, RAG on).
 
-이미지 파일: eval/figs/fig_mm_rag.png, fig_mm_safety.png, fig_mm_intent.png,
-fig_gaming.png. 모든 그림은 결과 JSON으로부터 재생성 가능하다.
+이미지 파일: eval/figs/fig_mm_rag.png, fig_mm_safety.png, fig_mm_intent.png.
+모든 그림은 결과 JSON으로부터 재생성 가능하다.
 
 ---
 
