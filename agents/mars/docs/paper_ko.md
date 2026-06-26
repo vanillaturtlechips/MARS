@@ -183,11 +183,10 @@ MARS는 기존 군집 스택의 상위에 위치하는 감독 계층이다. 로�
 
 ### 3.1 진단 파이프라인
 
-진단 파이프라인은 LLM의 출력을 검증한다.
+진단 파이프라인은 LLM의 출력을 검증한다(Fig. 5).
 
-```
-실패 이벤트 → Failure Analysis Agent (ReAct 도구 루프) → 진단 → Decision Validator → PASS | DEGRADE | REJECT
-```
+[FIG: fig_arch_diag.png]
+Fig. 5. Diagnosis pipeline: a ReAct agent produces a structured diagnosis that the Decision Validator gates.
 
 Failure Analysis Agent는 제한된 ReAct 루프를 실행한다. 읽기 전용 도구를 호출하여
 증거를 수집하고, 벡터 유사도를 이용해 유사한 과거 사건(선례)을 검색하며, 구조화된
@@ -203,7 +202,7 @@ robot_specific, zone_wide, fleet_wide 중 하나다.
 커버리지, 임베딩 유사도의 가중합으로 정의된다.
 
 ```
-trust(p) = w_meta·meta(p) + w_rec·recency(p) + w_cov·coverage(p) + w_sim·sim(p)
+trust(p) = w_meta*meta(p) + w_rec*recency(p) + w_cov*coverage(p) + w_sim*sim(p)
            w_meta=0.30, w_rec=0.20, w_cov=0.25, w_sim=0.25
 ```
 
@@ -220,28 +219,14 @@ mission_failures 항목을 인용해야 한다. 넷째, 높은 신뢰도(0.7 초
 REJECT는 보류하는 페일세이프 구조를 따른다. REJECT는 해소 불가능한 증거 참조라는
 중대한 오류에 한정하고, 그보다 가벼운 실패는 DEGRADE로 처리한다.
 
-> Algorithm 1. Decision Validator (diagnosis). Input: diagnosis d, input bundle B, retrieval set-level t. Output: PASS | DEGRADE | REJECT.
-> ```
-> r ← PASS
-> if d.confidence < τ_diag:                 r ← DEGRADE
-> if d.evidence is empty:                    r ← DEGRADE
-> for each ref in d.evidence.refs:
->     if not resolves(ref, B):               r ← REJECT
-> if d.scope ∈ {zone_wide, fleet_wide}
->        and |{refs citing mission_failures}| < 2:
->     r ← max(r, DEGRADE)
-> if d.relied_on_precedents ≠ ∅
->        and t = LOW and d.confidence > 0.7:  r ← max(r, DEGRADE)
-> return r
-> ```
+[FIG: fig_algo1.png]
 
 ### 3.2 의도 파이프라인
 
-의도 파이프라인은 LLM의 입력을 검증한다.
+의도 파이프라인은 LLM의 입력을 검증한다(Fig. 6).
 
-```
-운영자 자연어 발화 → Intent Agent → 후보 정책 → Policy Guardrail → ACCEPT | MODIFY | REJECT | DEFER_HUMAN
-```
+[FIG: fig_arch_intent.png]
+Fig. 6. Intent pipeline: an operator utterance is translated to whitelist policies that the Policy Guardrail validates.
 
 Intent Agent는 자유형식 지시를 다섯 개의 화이트리스트 정책(avoid_zone,
 delay_low_priority_missions, reserve_chargers_for_critical,
@@ -258,17 +243,7 @@ Policy Guardrail은 결정론적이며 상태를 유지한다(알고리즘 2). �
 속도 제한(정책 유형별 쿨다운)으로 구성된다. 조정을 거쳐 통과하면 MODIFY를, 그렇지
 않으면 ACCEPT를 반환한다.
 
-> Algorithm 2. Policy Guardrail. Input: candidate p, active A, world state W, last-applied L. Output: ACCEPT | MODIFY | REJECT | DEFER_HUMAN.
-> ```
-> if p.type ∉ WHITELIST or p.duration is missing:        return REJECT
-> if p.zone is set and p.zone ∉ W.zones:                  return REJECT
-> if impact_tier(p.type) = HIGH:                          return DEFER_HUMAN
-> if violates_liveness(p, W):                             return REJECT
-> if ∃ a ∈ A with a.type=p.type and a.params=p.params:    return REJECT
-> p.duration ← clamp(p.duration, 60, 7200)
-> if now − L[p.type] < cooldown:                          return REJECT
-> return (MODIFY if adjusted else ACCEPT)
-> ```
+[FIG: fig_algo2.png]
 
 두 검증기는 모두 구조를 검사한다는 공통점을 가지며, 이 점은 6장에서 다시 논의한다.
 구조적으로 유효하지만 의미적으로 의도와 다른 정책, 예를 들어 로봇을 더 빠르게 하라는

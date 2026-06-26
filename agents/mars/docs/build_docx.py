@@ -164,7 +164,13 @@ def main():
         if s.startswith("### "):      # 중제목 (N.N)
             p = para(doc, AL.LEFT, before=10, after=10)
             setfont(p.add_run(strip_md(s[4:])), F_BODY, 10.5, bold=True); i += 1; continue
-        if s.startswith("```"):       # algorithm listing
+        if s.startswith("[FIG:"):     # inline architecture/algorithm image
+            fn = s[5:].rstrip("]").strip()
+            fp = FIGDIR / fn
+            if fp.exists():
+                pic = para(doc, AL.CENTER); pic.add_run().add_picture(str(fp), width=Inches(3.4))
+            i += 1; continue
+        if s.startswith("```"):       # trust formula listing (monospace)
             i += 1; buf = []
             while i < len(blk) and not blk[i].strip().startswith("```"):
                 buf.append(blk[i]); i += 1
