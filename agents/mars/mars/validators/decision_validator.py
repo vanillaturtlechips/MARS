@@ -15,6 +15,7 @@ Outcomes: PASS | DEGRADE | REJECT
 from __future__ import annotations
 
 import logging
+import re
 from enum import Enum
 from typing import Any
 
@@ -44,6 +45,7 @@ class DVResult(str, Enum):
 
 
 _MISSING = object()  # sentinel: field does not exist
+_MISSION_ENTRY_RE = re.compile(r"^mission_failures\[(\d+)\]")
 
 
 def _resolve_ref(ref: str, bundle: dict[str, Any]) -> bool:
@@ -65,13 +67,14 @@ def _resolve_ref(ref: str, bundle: dict[str, Any]) -> bool:
     for segment in ref.split("."):
         if "[" in segment:
             name, rest = segment.split("[", 1)
-            try:
-                idx = int(rest.rstrip("]"))
-            except ValueError:
-                # Malformed index (e.g. "field[]" or "field[x]") — the ref
-                # cannot be resolved, so it fails grounding rather than crashing.
+            idx_str = rest.rstrip("]")
+            if not idx_str.isdigit():
+                # Malformed index ("field[]", "field[x]", "field[-1]") — the
+                # contract grammar (CONTRACT_C.md C4.2) only admits key[i], i >= 0.
+                # Python-style negative indices would silently resolve, so they
+                # are rejected here rather than crashing or passing.
                 return False
-            parts.append((name, idx))
+            parts.append((name, int(idx_str)))
         else:
             parts.append((segment, None))
 
@@ -136,7 +139,10 @@ def validate_diagnosis(
     scope = agent_output.get("scope", "")
     if scope in ("zone_wide", "fleet_wide"):
         refs_all = [r for item in evidence for r in item.get("refs", [])]
-        mission_refs = [r for r in refs_all if "mission_failures" in r]
+        # Count DISTINCT mission_failures entries (C4.3): two refs into the same
+        # entry, or a ref to the whole list, do not evidence multiple robots.
+        mission_refs = {m.group(1) for r in refs_all
+                        if (m := _MISSION_ENTRY_RE.match(r))}
         if len(mission_refs) < 2:
             notes.append(
                 f"scope={scope} but evidence references <2 mission_failures entries"

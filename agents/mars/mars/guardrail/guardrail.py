@@ -36,6 +36,15 @@ class GuardrailResult(str, Enum):
     DEFER_HUMAN  = "DEFER_HUMAN"
 
 
+# Params each policy type requires (mars_agent_contracts.md §2: "params — the
+# fields that type needs").  Without this, avoid_zone with no zone skipped the
+# referential and feasibility stages entirely and was ACCEPTed (found by
+# eval/run_mutations.py, operator P-C1.7).
+_REQUIRED_PARAMS: dict[str, tuple[str, ...]] = {
+    "avoid_zone":                    ("zone",),
+    "reserve_chargers_for_critical": ("reserve_count",),
+}
+
 # Impact tiers per policy type
 _IMPACT_TIER: dict[str, str] = {
     "prefer_alternate_route":       "LOW",
@@ -76,6 +85,11 @@ def check(
 
     if not policy.get("duration_sec"):
         return GuardrailResult.REJECT, modified, "duration_sec is required"
+
+    params = policy.get("params") or {}
+    missing = [k for k in _REQUIRED_PARAMS.get(p_type, ()) if params.get(k) in (None, "")]
+    if missing:
+        return GuardrailResult.REJECT, modified, f"{p_type} requires params {missing}"
 
     # Stage 2 — Referential validation
     zone = policy.get("params", {}).get("zone")
