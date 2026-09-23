@@ -211,6 +211,7 @@ class FailureAnalysisAgent:
         # ReAct loop
         # ------------------------------------------------------------------
         converged = False
+        llm_error: str | None = None
         for _iteration in range(INVESTIGATOR_MAX_ITERATIONS):
             if time.monotonic() > deadline:
                 log.warning("[investigator] timeout after %d tool calls", tool_count)
@@ -225,8 +226,13 @@ class FailureAnalysisAgent:
                     tools=TOOL_DEFINITIONS,
                     system_prompt=self._sys_prompt,
                 )
-            except Exception:
+            except Exception as e:  # noqa: BLE001
+                # A dead API call used to break the loop and fall through to the
+                # fallback diagnosis, which is indistinguishable from the agent
+                # deliberately answering 'unknown'. An evaluation then reports a
+                # clean result for a model that never ran. Record it instead.
                 log.exception("[investigator] chat_with_tools failed")
+                llm_error = f"{type(e).__name__}: {e}"
                 break
 
             if response.finish_reason == "stop" or not response.tool_calls:
@@ -282,8 +288,9 @@ class FailureAnalysisAgent:
                     user_message=transcript_summary,
                     output_schema=_OUTPUT_SCHEMA,
                 )
-            except Exception:
+            except Exception as e:  # noqa: BLE001
                 log.exception("[investigator] final structured output failed — using fallback")
+                llm_error = llm_error or f"{type(e).__name__}: {e}"
                 diagnosis = dict(_FALLBACK_DIAGNOSIS)
 
         # Deterministic guard against hallucinated precedent reliance.
@@ -312,6 +319,11 @@ class FailureAnalysisAgent:
 
         # Attach transcript (same key conventions as old _input_bundle)
         diagnosis["_tool_transcript"] = transcript
+        if llm_error:
+            # Surfaced so an evaluation can refuse to score a run whose model
+            # never answered. Without it a dead API key produces a full set of
+            # 'unknown' diagnoses that looks like deliberate abstention.
+            diagnosis["_llm_error"] = llm_error
         return diagnosis
 
 

@@ -90,7 +90,10 @@ class Judge:
     """Verdict: True = SUPPORTED (act), False = UNSUPPORTED (hold)."""
 
     def __init__(self, client=None, model: str | None = None, use_cache: bool = True):
-        self.model = model or os.environ.get("JUDGE_MODEL", "") or "default"
+        from mars.config import ANTHROPIC_MODEL, OPENAI_MODEL, LLM_PROVIDER
+        self.model = (model or os.environ.get("JUDGE_MODEL", "")
+                      or (ANTHROPIC_MODEL if LLM_PROVIDER == "anthropic" else OPENAI_MODEL)
+                      or "default")
         self._client = client
         self._use_cache = use_cache
         self._cache: dict[str, dict] = {}
@@ -100,9 +103,28 @@ class Judge:
         self.hits = 0
 
     def _get_client(self):
-        if self._client is None:
-            from mars.llm.client import get_llm_client
-            self._client = get_llm_client(os.environ.get("JUDGE_PROVIDER") or None)
+        """Build the judge client, honouring JUDGE_MODEL.
+
+        get_llm_client() would hand back a client bound to the *supervisor's*
+        model, which would have the judge grading its own output — a weak
+        baseline and an easy objection. When JUDGE_MODEL names a model we
+        construct the client directly so the judge can be a different, stronger
+        one than the supervisor it reviews.
+        """
+        if self._client is not None:
+            return self._client
+        from mars.llm.client import get_llm_client
+        from mars.config import LLM_PROVIDER
+        provider = os.environ.get("JUDGE_PROVIDER") or LLM_PROVIDER
+        want = os.environ.get("JUDGE_MODEL", "")
+        if want and provider == "anthropic":
+            from mars.llm.anthropic_client import AnthropicLLMClient
+            self._client = AnthropicLLMClient(model=want)
+        elif want and provider == "openai":
+            from mars.llm.openai_client import OpenAIStructuredClient
+            self._client = OpenAIStructuredClient(model=want)
+        else:
+            self._client = get_llm_client(provider)
         return self._client
 
     def review(self, dx: dict[str, Any], bundle: dict[str, Any]) -> tuple[bool, str]:

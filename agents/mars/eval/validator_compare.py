@@ -195,10 +195,16 @@ def main():
         if not p.exists():
             print(f"{tag:16s} (missing {fn})"); continue
         data = json.loads(p.read_text())
-        base = data.get("rag_on") or []
-        if base and "dx" not in base[0]:
-            print(f"{tag:16s} ({fn} predates dx/bundle persistence — rerun run_diagnosis "
-                  f"to score Judge or attacks)")
+        base = [r for r in (data.get("rag_on") or []) if "err" not in r]
+        legacy = bool(base) and "dx" not in base[0]
+        if legacy:
+            note = "Judge and attack columns need it" if (judge or len(conds) > 2) else ""
+            print(f"{tag:16s} ({fn} predates dx/bundle persistence{'; ' + note if note else ''})")
+            if judge or len(conds) > 2:
+                # Scoring it anyway would either crash or silently report a table
+                # with different validator sets per row. Rerun run_diagnosis.
+                print()
+                continue
         for cond in conds:
             rows = (data.get(cond) if cond in ("rag_on", "rag_off")
                     else attacked_rows(base, cond))

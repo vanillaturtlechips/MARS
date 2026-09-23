@@ -23,7 +23,13 @@ _TOOL_NAME = "structured_output"
 
 def _structured_via_forced_tool(client, model, system_prompt, user_message,
                                 output_schema, temperature) -> dict[str, Any]:
-    """Force a single tool call whose input_schema is the desired output schema."""
+    """Force a single tool call whose input_schema is the desired output schema.
+
+    `temperature` is accepted and ignored: anthropic>=1.0 removed it from
+    messages.create(). The parameter stays in the signature so the OpenAI-side
+    callers keep one interface, and the evaluation is unaffected because every
+    run is at the API default rather than a temperature we chose.
+    """
     tool_def = {
         "name": _TOOL_NAME,
         "description": "Return structured output matching the schema.",
@@ -32,7 +38,6 @@ def _structured_via_forced_tool(client, model, system_prompt, user_message,
     response = client.messages.create(
         model=model,
         max_tokens=2048,
-        temperature=temperature,
         system=system_prompt,
         tools=[tool_def],
         tool_choice={"type": "tool", "name": _TOOL_NAME},
@@ -67,8 +72,7 @@ class AnthropicLLMClient:
 
         response = self._client.messages.create(
             model=self._model,
-            max_tokens=2048,
-            temperature=temperature,
+            max_tokens=2048,   # no temperature: removed from messages.create() in anthropic>=1.0
             system=system_prompt,
             tools=[tool_def],
             tool_choice={"type": "tool", "name": _TOOL_NAME},
@@ -165,8 +169,7 @@ class AnthropicInvestigatorClient:
     def chat_with_tools(self, messages, tools, system_prompt=None) -> ToolCallResponse:
         response = self._client.messages.create(
             model=self._model,
-            max_tokens=2048,
-            temperature=self._temperature,
+            max_tokens=2048,   # no temperature: removed from messages.create() in anthropic>=1.0
             system=system_prompt or anthropic.NOT_GIVEN,
             tools=_openai_tools_to_anthropic(tools),
             messages=_openai_messages_to_anthropic(messages),

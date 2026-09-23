@@ -95,6 +95,11 @@ def run_mode(cases, rag_on: bool, limit: int, gamed: bool = False, seed: int = 0
         except Exception as e:  # noqa: BLE001
             rows.append({"case": case["case_id"], "err": str(e)})
             continue
+        if dx.get("_llm_error"):
+            # Not a diagnosis — the model never answered. Counted as an error so
+            # summarize() reports it instead of scoring the fallback as a decline.
+            rows.append({"case": case["case_id"], "err": dx["_llm_error"]})
+            continue
         gt = case["ground_truth"]
         bundle = dx.get("_tool_transcript", {})
         verdict, notes = validate_diagnosis(dx, bundle)   # keep notes (why DEGRADE/REJECT)
@@ -142,6 +147,9 @@ def summarize(tag, rows):
     scope = sum(r["scope_ok"] for r in ok)
     errs = [r for r in rows if "err" in r]
     print(f"\n=== {tag}  (n={n}, errors={len(errs)}) ===")
+    if errs and len(errs) >= max(1, len(rows) // 10):
+        print(f"  !! {len(errs)}/{len(rows)} cases failed before the model answered — "
+              f"this run is NOT a result. First: {errs[0]['err'][:120]}")
     print(f"  cause accuracy: {cause}/{n} ({100*cause/n:.1f}%)" if n else "  no cases")
     print(f"  scope accuracy: {scope}/{n} ({100*scope/n:.1f}%)" if n else "")
     print(f"  verdicts: {dict(Counter(r['verdict'] for r in ok))}")
