@@ -1,0 +1,357 @@
+{
+ "D-C1.1": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "SCHEMA_REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C1.2": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "SCHEMA_REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C1.3": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "SCHEMA_REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C1.4": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "SCHEMA_REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C4.1": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "DEGRADE": 60
+  },
+  "fails": []
+ },
+ "D-C4.2a": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C4.2b": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C4.2c": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C4.2d": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C4.2e": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C4.3": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "DEGRADE": 60
+  },
+  "fails": []
+ },
+ "D-C5.1": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "DEGRADE": 60
+  },
+  "fails": []
+ },
+ "D-C5.2": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "DEGRADE": 60
+  },
+  "fails": []
+ },
+ "D-C4.2a+D-C5.1": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "REJECT": 30
+  },
+  "fails": []
+ },
+ "D-C4.1+D-C5.1": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "DEGRADE": 30
+  },
+  "fails": []
+ },
+ "D-C4.3+D-C5.2": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "DEGRADE": 30
+  },
+  "fails": []
+ },
+ "D-C4.2b+D-C4.3": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "DEGRADE": 15,
+   "REJECT": 15
+  },
+  "fails": []
+ },
+ "D-C5.1+D-C5.2": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "DEGRADE": 30
+  },
+  "fails": []
+ },
+ "B-dx-1": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "PASS": 30
+  },
+  "fails": []
+ },
+ "B-dx-2": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "PASS": 30
+  },
+  "fails": []
+ },
+ "B-dx-3": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "PASS": 30
+  },
+  "fails": []
+ },
+ "B-dx-4": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "PASS": 30
+  },
+  "fails": []
+ },
+ "B-dx-5": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "PASS": 30
+  },
+  "fails": []
+ },
+ "B-dx-6": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "PASS": 30
+  },
+  "fails": []
+ },
+ "P-C1.5": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C1.6a": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "SCHEMA_REJECT": 23,
+   "MODIFY": 23,
+   "REJECT": 14
+  },
+  "fails": []
+ },
+ "P-C1.6b": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "SCHEMA_REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C1.7": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C2.1": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C3.1": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C3.2": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C3.3": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C3.4": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C5.3": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "MODIFY": 60
+  },
+  "fails": []
+ },
+ "P-C5.4": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "REJECT": 60
+  },
+  "fails": []
+ },
+ "P-C2.1+P-C5.3": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "REJECT": 30
+  },
+  "fails": []
+ },
+ "P-C3.2+P-C5.4": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "REJECT": 30
+  },
+  "fails": []
+ },
+ "P-C3.3+P-C5.3": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "REJECT": 30
+  },
+  "fails": []
+ },
+ "P-C3.4+P-C5.4": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "REJECT": 30
+  },
+  "fails": []
+ },
+ "B-pol-1": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "ACCEPT": 30
+  },
+  "fails": []
+ },
+ "B-pol-2": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "ACCEPT": 30
+  },
+  "fails": []
+ },
+ "B-pol-3": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "ACCEPT": 30
+  },
+  "fails": []
+ },
+ "B-pol-4": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "ACCEPT": 30
+  },
+  "fails": []
+ },
+ "B-pol-5": {
+  "n": 30,
+  "ok": 30,
+  "verdicts": {
+   "ACCEPT": 30
+  },
+  "fails": []
+ }
+}
