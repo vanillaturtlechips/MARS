@@ -408,9 +408,12 @@ CREATE TABLE policy_history (
 --   1. zone / failure_type / scope / recorded_at present for Retrieval Validator
 --   2. outcome_id links the embedding back to its labeled outcome (closes RAG loop)
 --
--- Embedding model: OpenAI text-embedding-3-small, 1536 dimensions.
--- vector(N) MUST equal EMBEDDING_DIM in config. For the local bge-small embedder
--- (EMBEDDING_PROVIDER=local) use vector(384) instead.
+-- Embedding model: a local 1024-dim embedder (EMBEDDING_PROVIDER=local,
+-- LOCAL_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B or BAAI/bge-m3 — both 1024-dim,
+-- so either can be swapped in without touching the schema). Local weights are
+-- pinned, which keeps retrieval reproducible across runs; an API embedder is not.
+-- vector(N) MUST equal EMBEDDING_DIM in config: OpenAI text-embedding-3-small
+-- would be vector(1536), bge-small-en-v1.5 vector(384).
 -- To switch models: drop inc_emb_hnsw, ALTER COLUMN embedding TYPE vector(N),
 -- recreate the index, and re-embed every source row (old vectors don't transfer).
 -------------------------------------------------------------------------------
@@ -427,9 +430,9 @@ CREATE TABLE incident_embeddings (
     outcome_label   TEXT,       -- improved/no_effect/worsened (from linked outcome)
     outcome_id      TEXT        REFERENCES outcomes (outcome_id),
     summary         TEXT        NOT NULL,
-    -- text-embedding-3-small produces 1536-dimensional embeddings.
+    -- 1024 dimensions (Qwen3-Embedding-0.6B / bge-m3).
     -- MUST match EMBEDDING_DIM in config.py and get_embedder() dimension.
-    embedding       vector(1536),
+    embedding       vector(1024),
     -- SIM TIME: the sim clock instant this record represents (for recency scoring).
     recorded_at     TIMESTAMPTZ NOT NULL,
     -- WALL TIME: when this row was written to Postgres.

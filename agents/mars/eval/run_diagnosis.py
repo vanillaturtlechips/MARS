@@ -6,7 +6,7 @@ Decision Validator on the output. Supports a RAG ablation (precedents present
 vs absent) so we can measure RAG's contribution.
 
 Needs: Postgres+pgvector up (docker compose up -d), .env with ANTHROPIC_API_KEY,
-LLM_PROVIDER=anthropic, EMBEDDING_PROVIDER=local, EMBEDDING_DIM=384.
+LLM_PROVIDER=anthropic, EMBEDDING_PROVIDER=local, EMBEDDING_DIM matching the vector(N) column.
 
     cd agents/mars && source .venv/bin/activate
     python3 -m eval.run_diagnosis --rag both --limit 0     # 0 = all
@@ -26,6 +26,7 @@ import yaml
 
 import mars.blackboard.queries as Q
 from mars.blackboard.db import connect
+from mars.config import EMBEDDING_DIM
 from mars.llm.client import get_investigator_client, get_embedder, MockEmbedder
 from mars.agents.tools import InvestigatorTools
 from mars.agents.failure_analysis import FailureAnalysisAgent
@@ -72,14 +73,17 @@ _GAMING_INCENTIVE = (
 )
 
 
-def run_mode(cases, rag_on: bool, limit: int, gamed: bool = False):
+def run_mode(cases, rag_on: bool, limit: int, gamed: bool = False, seed: int = 0):
     conn = connect(autocommit=False)
-    embedder = get_embedder() if rag_on else MockEmbedder(dim=384)
+    # dim must match the vector(N) column, or a RAG-off search query is rejected by pgvector
+    embedder = get_embedder() if rag_on else MockEmbedder(dim=EMBEDDING_DIM)
     client = get_investigator_client()
     incentive = _GAMING_INCENTIVE if gamed else ""
     rows = []
     sel = cases[:limit] if limit else cases
     tag = ("GAMED_" if gamed else "") + ("RAG_ON" if rag_on else "RAG_OFF")
+    if seed:
+        tag += f"/s{seed}"
     for i, case in enumerate(sel, 1):
         print(f"  [{tag} {i}/{len(sel)}] {case['case_id']} ...", flush=True)
         _reset(conn)
@@ -101,6 +105,11 @@ def run_mode(cases, rag_on: bool, limit: int, gamed: bool = False):
         relied = set(dx.get("relied_on_precedents", []) or [])
         diff = next((t for t in case.get("tags", []) if t in ("easy", "medium", "hard")), "?")
         trusts = [p.get("_trust_score") for p in retrieved if p.get("_trust_score") is not None]
+        # The supervisor output and the bundle it saw. Table II post-processes the
+        # SAME output with five validators, and the A2/A3 attacks are transforms of
+        # it, so both must be on disk or every validator would need its own API run
+        # (and the comparison would stop being paired).
+        dx_raw = {k: v for k, v in dx.items() if k != "_tool_transcript"}
         # trust score of the RELEVANT precedent specifically (fleet/sensor 분석용)
         rel_trust = [p.get("_trust_score") for p in retrieved
                      if p.get("id") in relevant and p.get("_trust_score") is not None]
@@ -119,6 +128,8 @@ def run_mode(cases, rag_on: bool, limit: int, gamed: bool = False):
             "relied_relevant": bool(relied & relevant),
             "max_trust": max(trusts) if trusts else None,
             "relevant_trust": max(rel_trust) if rel_trust else None,
+            "dx": dx_raw,
+            "bundle": bundle,
         })
     conn.close()
     return rows
@@ -175,6 +186,10 @@ def main():
                     help="dev = tune prompts; test = report headline (no overfit)")
     ap.add_argument("--limit", type=int, default=0, help="0 = all cases")
     ap.add_argument("--tag", default="", help="suffix for result file (e.g. model name)")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="repeat id. The API is not seedable, so this labels an "
+                         "independent repeat of the same condition (RAL_PLAN: 3 "
+                         "repeats per condition, reported as mean+-sd).")
     ap.add_argument("--gamed", action="store_true",
                     help="§5.5: give the agent an acceptance incentive (validator-gaming test)")
     a = ap.parse_args()
@@ -186,12 +201,16 @@ def main():
     import json
     out = {}
     if a.rag in ("on", "both"):
-        rows = run_mode(cases, True, a.limit, gamed=a.gamed); out["rag_on"] = rows
+        rows = run_mode(cases, True, a.limit, gamed=a.gamed, seed=a.seed); out["rag_on"] = rows
         summarize("RAG ON" + (" GAMED" if a.gamed else ""), rows)
     if a.rag in ("off", "both"):
-        rows = run_mode(cases, False, a.limit, gamed=a.gamed); out["rag_off"] = rows
+        rows = run_mode(cases, False, a.limit, gamed=a.gamed, seed=a.seed); out["rag_off"] = rows
         summarize("RAG OFF" + (" GAMED" if a.gamed else ""), rows)
+    out["_meta"] = {"split": a.split, "seed": a.seed, "gamed": a.gamed,
+                    "n_cases": len(cases), "model": a.tag or None}
     suffix = f"_{a.tag}" if a.tag else ""
+    if a.seed:
+        suffix += f"_s{a.seed}"
     dump = Path(__file__).parent / f"results_{a.split}{suffix}.json"
     dump.write_text(json.dumps(out, indent=2))
     print(f"\nsaved per-case results -> {dump}")

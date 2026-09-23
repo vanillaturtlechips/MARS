@@ -233,3 +233,6 @@ __marimo__/
 !logs/warehouse_manipulation_teacher/model_2999.pt
 !logs/warehouse_mappo_extobs/model_600.pt
 !logs/warehouse_mappo_extobs/model_shelf_final.pt
+
+# judge verdict cache — regenerable, and large once Table II is filled
+agents/mars/eval/.judge_cache.json
