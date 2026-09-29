@@ -106,9 +106,16 @@ def validate_diagnosis(
     agent_output: dict[str, Any],
     input_bundle: dict[str, Any],
     retrieval_trust: dict[str, Any] | None = None,
+    tau: float | None = None,
 ) -> tuple[DVResult, str]:
     """
     Validate Failure Analysis Agent output.
+
+    `tau` overrides the configured confidence threshold. Runtime callers leave it
+    None and get the configured value; the evaluation passes it so this validator
+    can be swept across operating points and compared with other validators at a
+    matched hold rate (comparing hold-rate-mismatched validators just rewards
+    whichever one blocks more).
 
     Returns (DVResult, notes_string).
     """
@@ -116,7 +123,7 @@ def validate_diagnosis(
     result = DVResult.PASS
 
     confidence = float(agent_output.get("confidence", 0.0))
-    tau = _tau_for_diagnosis()
+    tau = _tau_for_diagnosis() if tau is None else tau
 
     # 1. Confidence threshold
     if confidence < tau:

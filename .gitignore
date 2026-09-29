@@ -237,3 +237,4 @@ __marimo__/
 # judge verdict cache — regenerable, and large once Table II is filled
 agents/mars/eval/.judge_cache.json
 agents/mars/eval/results_test_smoke*.json
+agents/mars/eval/.a3_cache.json
