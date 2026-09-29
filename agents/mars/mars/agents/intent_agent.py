@@ -92,8 +92,14 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
 
 
 class IntentAgent:
-    def __init__(self, llm_client):
+    def __init__(self, llm_client, suffix: str = ""):
         self._llm = llm_client
+        # Appended to the system prompt. Used ONLY by the evaluation, to switch
+        # the agent's own self-restraint off so the guardrail's standalone
+        # contribution can be measured: while the agent declines, those cases
+        # never reach the guardrail, and "the guardrail blocked M" is always
+        # measured on whatever the agent happened to leave behind.
+        self._sys = _SYSTEM_PROMPT + (("\n\n" + suffix) if suffix else "")
 
     def translate(
         self,
@@ -109,7 +115,7 @@ class IntentAgent:
         }
         log.info("[intent_agent] translating: %r", utterance)
         out = self._llm.complete_structured(
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=self._sys,
             user_message=json.dumps(bundle, default=str),
             output_schema=_OUTPUT_SCHEMA,
         )

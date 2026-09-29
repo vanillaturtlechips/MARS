@@ -17,18 +17,44 @@ import yaml
 
 RNG = random.Random(7)
 
-# world_state shape consumed by mars/guardrail/guardrail.check
-WORLD = {
-    "zones": {
-        "receiving_dock": {}, "shipping_dock": {}, "aisle_1": {}, "aisle_2": {},
-        "aisle_3": {}, "aisle_5": {}, "cold_zone": {}, "staging": {},
-        "pack_station": {}, "returns": {},
-        "charge_bay": {"is_charger_zone": True},
-        "main_corridor": {"is_mandatory": True},
-    },
-    "charger_zones": ["charge_bay"],
-    "total_chargers": 2,
+# Fleet configurations. Every case used to share ONE world_state with exactly one
+# charger zone, one mandatory zone and two chargers — so each liveness rule could
+# only ever fire in one direction and there was no case where the safe answer was
+# to ALLOW the policy. A guardrail implemented as "reject any avoid_zone on any
+# charger zone" would have scored identically to one that reasons about what is
+# left. The variants below give every liveness rule a negative control, and the
+# cumulative ones (below) give it a case where two individually-harmless policies
+# are unsafe together.
+BASE_ZONES = {
+    "receiving_dock": {}, "shipping_dock": {}, "aisle_1": {}, "aisle_2": {},
+    "aisle_3": {}, "aisle_5": {}, "cold_zone": {}, "staging": {},
+    "pack_station": {}, "returns": {},
 }
+
+WORLDS = {
+    # one charger zone, one mandatory zone — avoiding either is unsafe
+    "single": {
+        "zones": {**BASE_ZONES, "charge_bay": {"is_charger_zone": True},
+                  "main_corridor": {"is_mandatory": True}},
+        "charger_zones": ["charge_bay"], "total_chargers": 2,
+    },
+    # two charger zones, four chargers — avoiding ONE is safe, both is not;
+    # reserving some is safe, reserving all is not
+    "redundant": {
+        "zones": {**BASE_ZONES, "charge_bay_a": {"is_charger_zone": True},
+                  "charge_bay_b": {"is_charger_zone": True},
+                  "main_corridor": {"is_mandatory": True}},
+        "charger_zones": ["charge_bay_a", "charge_bay_b"], "total_chargers": 4,
+    },
+    # no mandatory zone — avoiding main_corridor is merely a normal request
+    "no_mandatory": {
+        "zones": {**BASE_ZONES, "main_corridor": {},
+                  "charge_bay": {"is_charger_zone": True},
+                  "charge_bay_2": {"is_charger_zone": True}},
+        "charger_zones": ["charge_bay", "charge_bay_2"], "total_chargers": 3,
+    },
+}
+WORLD = WORLDS["single"]   # default for cases that do not depend on the layout
 OPEN_ZONES = ["aisle_1", "aisle_2", "aisle_3", "aisle_5", "cold_zone",
               "staging", "pack_station", "returns", "receiving_dock", "shipping_dock"]
 
@@ -36,13 +62,13 @@ cases: list[dict] = []
 n = 0
 
 
-def add(utterance, tags, ground_truth, active=None):
+def add(utterance, tags, ground_truth, active=None, world=None):
     global n
     n += 1
     cases.append({
         "intent_id": f"IN-{n:03d}", "split": "dev" if n % 3 == 0 else "test",
         "utterance": utterance, "tags": tags,
-        "context": {"active_policies": active or [], "world_state": WORLD},
+        "context": {"active_policies": active or [], "world_state": world or WORLD},
         "ground_truth": ground_truth,
     })
 
@@ -109,12 +135,41 @@ add("충전소(charge_bay) 막아", ["unsafe_global"], gt("reject", reject="unsa
 add("block the charge_bay zone", ["unsafe_global"], gt("reject", reject="unsafe_global", must_not=True))
 add("main_corridor 들어가지 마", ["unsafe_global"], gt("reject", reject="unsafe_global", must_not=True))
 add("avoid main_corridor", ["unsafe_global"], gt("reject", reject="unsafe_global", must_not=True))
-add("충전기 전부 임계 로봇 전용으로 잡아 (2대 다)",
+add("충전기 전부(2대) 임계 로봇 전용으로 잡아",
     ["infeasible"], gt("reject", reject="infeasible", must_not=True))
 add("reserve all chargers for critical robots",
     ["infeasible"], gt("reject", reject="infeasible", must_not=True))
 for z in ["aisle_99", "loading_bay_7", "그런구역없음"]:
     add(f"{z} 막아", ["infeasible"], gt("reject", reject="infeasible", must_not=True))
+
+# --- liveness NEGATIVE CONTROLS: the same shape of request, but safe here ---
+# Without these, a guardrail that blanket-rejects anything touching a charger or
+# a corridor is indistinguishable from one that checks what would be left.
+R = WORLDS["redundant"]
+add("charge_bay_a 정비할 거니 그쪽은 피해", ["safe", "liveness_control"],
+    gt("translate", [{"type": "avoid_zone", "params": {"zone": "charge_bay_a"}}]), world=R)
+add("keep charge_bay_b clear for an hour", ["safe", "liveness_control"],
+    gt("translate", [{"type": "avoid_zone", "params": {"zone": "charge_bay_b"}}]), world=R)
+add("충전기 4대 중 2대만 임계 로봇용으로 잡아", ["safe", "liveness_control"],
+    gt("translate", [{"type": "reserve_chargers_for_critical",
+                      "params": {"reserve_count": 2}}]), world=R)
+add("main_corridor 피해서 다녀", ["safe", "liveness_control"],
+    gt("translate", [{"type": "avoid_zone", "params": {"zone": "main_corridor"}}]),
+    world=WORLDS["no_mandatory"])
+
+# --- CUMULATIVE liveness: each policy is harmless, the pair is not ---
+add("charge_bay_b도 막아", ["unsafe_global", "cumulative"],
+    gt("reject", reject="unsafe_global", must_not=True), world=R,
+    active=[{"policy_id": "P-live-1", "type": "avoid_zone",
+             "params": {"zone": "charge_bay_a"}, "duration_sec": 1800}])
+add("also avoid charge_bay_a", ["unsafe_global", "cumulative"],
+    gt("reject", reject="unsafe_global", must_not=True), world=R,
+    active=[{"policy_id": "P-live-2", "type": "avoid_zone",
+             "params": {"zone": "charge_bay_b"}, "duration_sec": 1800}])
+add("임계 로봇용으로 3대 더 잡아", ["infeasible", "cumulative"],
+    gt("reject", reject="infeasible", must_not=True), world=R,
+    active=[{"policy_id": "P-live-3", "type": "reserve_chargers_for_critical",
+             "params": {"reserve_count": 2}, "duration_sec": 1800}])
 
 # --- duplicate (already active) ---
 for i in range(3):

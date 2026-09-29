@@ -105,7 +105,7 @@ def check(
         return GuardrailResult.DEFER_HUMAN, modified, "; ".join(notes)
 
     # Stage 4 — Feasibility / safety invariants
-    result, feas_notes = _feasibility_check(policy, world_state)
+    result, feas_notes = _feasibility_check(policy, world_state, active_policies)
     if result == GuardrailResult.REJECT:
         return GuardrailResult.REJECT, modified, feas_notes
     notes.extend([feas_notes] if feas_notes else [])
@@ -140,13 +140,21 @@ def check(
 
 
 def _feasibility_check(
-    policy: dict[str, Any], world_state: dict[str, Any]
+    policy: dict[str, Any],
+    world_state: dict[str, Any],
+    active_policies: list[dict[str, Any]] | None = None,
 ) -> tuple[GuardrailResult, str]:
     """
     Stage 4: ensure the policy doesn't violate global invariants.
 
-    Critical check for this build:
-      avoid_zone must not block ALL paths to chargers.
+    Liveness is a property of the policy SET, not of one policy. Checking a
+    candidate alone accepts two individually-harmless policies that strand the
+    fleet together: with two charger zones, avoiding one is fine, and avoiding
+    the second is also fine when judged on its own — so the fleet ends up cut off
+    from every charger with each step approved. Same for reservations: 2 of 4
+    chargers reserved, then 3 more, each passes and 5 of 4 end up reserved.
+    The candidate is therefore evaluated against the UNION with what is already
+    active.
     """
     if not world_state:
         return GuardrailResult.ACCEPT, ""
@@ -154,19 +162,29 @@ def _feasibility_check(
     p_type = policy.get("type", "")
     zone = policy.get("params", {}).get("zone")
 
+    active = active_policies or []
+
     if p_type == "avoid_zone" and zone:
         charger_zones = world_state.get("charger_zones", [])
         zones = world_state.get("zones", {})
 
-        # Check if every charger zone is reachable only through the avoided zone
-        # (simplified: reject if the only charger zone IS the avoided zone)
         charger_zone_ids = [
             zid for zid, zdata in zones.items()
             if zdata.get("is_charger_zone") or zid in charger_zones
         ]
-        if charger_zone_ids and all(czid == zone for czid in charger_zone_ids):
+        # Zones that WOULD be avoided if this policy activates. No topology is
+        # available, so "stranded" still means "no charger zone left un-avoided"
+        # rather than a reachability test — but over the union, not one policy.
+        avoided = {zone} | {
+            a.get("params", {}).get("zone")
+            for a in active if a.get("type") == "avoid_zone"
+        }
+        if charger_zone_ids and all(czid in avoided for czid in charger_zone_ids):
             return (
                 GuardrailResult.REJECT,
+                f"avoid_zone {zone!r} would strand all robots from chargers "
+                f"(together with active avoid_zone policies {sorted(avoided - {zone})})"
+                if len(avoided) > 1 else
                 f"avoid_zone {zone!r} would strand all robots from chargers",
             )
 
@@ -187,11 +205,15 @@ def _feasibility_check(
     if p_type == "reserve_chargers_for_critical":
         reserve_count   = int(policy.get("params", {}).get("reserve_count", 1))
         total_chargers  = world_state.get("total_chargers", 0)
-        if total_chargers > 0 and reserve_count >= total_chargers:
+        already = sum(int(a.get("params", {}).get("reserve_count", 0))
+                      for a in active if a.get("type") == "reserve_chargers_for_critical")
+        total_reserved = reserve_count + already
+        if total_chargers > 0 and total_reserved >= total_chargers:
+            extra = f" (+{already} already reserved)" if already else ""
             return (
                 GuardrailResult.REJECT,
-                f"reserve_chargers_for_critical count={reserve_count} ≥ "
-                f"total_chargers={total_chargers}: would leave no chargers for normal robots",
+                f"reserve_chargers_for_critical count={reserve_count}{extra} "
+                f"≥ total_chargers={total_chargers}: would leave no chargers for normal robots",
             )
 
     return GuardrailResult.ACCEPT, ""
