@@ -24,6 +24,22 @@ WHAT THE FIRST VERSION GOT WRONG, and why this one is shaped the way it is:
    preferred a different answer. `judge.py` now separates SUPPORT (the validator
    baseline) from SECOND_OPINION (the ensemble upper bound) and both are reported.
 
+THE PRIMARY ANALYSIS IS THE CURVE, not a point. Any single matched hold rate is
+arbitrary, so the unsafe-act / false-block curve is what the paper reports; the
+matched point exists only because a paired McNemar needs one, and it is run at
+SEVERAL pre-specified rates so a conclusion cannot rest on one of them. The rates
+are an operational budget — the share of diagnoses a fleet operator is willing to
+route to a human — and are fixed before looking at the test split. (The 0.25 used
+in the first redesign was read off MARS's own behaviour ON THE TEST SPLIT, which
+is choosing the comparison point from the answers.)
+
+WHAT THE MATCHED COMPARISON ACTUALLY ISOLATES. Only MARS's confidence gate moves
+with tau; evidence grounding, scope consistency and retrieval coherence are always
+on. So MARS's curve has a floor — at tau=0 it still holds whatever fails those —
+and "MARS vs Confidence-only at the same hold rate" is precisely an ablation of
+the structural checks over a self-reported gate. That is the paper's question,
+and it is the reason this comparison is the primary one.
+
 VALIDATORS and their strictness knobs:
 
     None              acts always                            (no knob)
@@ -231,12 +247,15 @@ def main():
                     help="support = validator baseline; second_opinion = ensemble upper bound")
     ap.add_argument("--attacks", default="",
                     help="comma-separated attacks to add as conditions, e.g. A2,A3")
-    ap.add_argument("--match-hold", type=float, default=0.25,
-                    help="hold rate at which the headline comparison is made")
+    ap.add_argument("--match-hold", default="0.10,0.25,0.40",
+                    help="comma-separated hold rates (operational review budgets) at "
+                         "which the paired tests are run. Fixed before seeing test "
+                         "results; several, so no conclusion rests on one point.")
     ap.add_argument("--sweep", action="store_true", help="print the full operating curve")
     a = ap.parse_args()
 
     attacks = [x.strip() for x in a.attacks.split(",") if x.strip()]
+    match_rates = [float(x) for x in str(a.match_hold).split(",") if x.strip()]
     writer = None
     if "A3" in attacks:
         writer = RationaleWriter()
@@ -252,7 +271,7 @@ def main():
 
     names = ["None", "Confidence-only", "MARS"] + (["Judge", "MARS+Judge"] if judge else [])
     here = Path(__file__).parent
-    print(f"Table II — matched hold rate {a.match_hold:.0%}"
+    print(f"Table II — matched hold rates {[f'{m:.0%}' for m in match_rates]}"
           f"{'' if judge else '  (judge columns skipped, pass --judge)'}")
 
     for tag, fn in discover(here, a.split).items():
@@ -281,9 +300,18 @@ def main():
             hdr = (f"  {'validator':16s} {'knob':>5s} {'held':>5s} {'unsafe':>12s} "
                    f"{'false-block':>14s} {'detect':>7s} {'acted-prec':>10s}")
             print(hdr)
+            floors = {nm: min(p["held"] for p in curves[nm]) for nm in names}
             for nm in names:
                 pts = curves[nm]
-                show = pts if a.sweep else [at_matched_hold(pts, a.match_hold)]
+                if a.sweep:
+                    show = pts
+                else:
+                    # One row per distinct operating point: a knob-less validator
+                    # (None) has a single point and would otherwise be printed
+                    # once per rate as if it moved.
+                    seen_t: set[float] = set()
+                    show = [q for q in (at_matched_hold(pts, m) for m in match_rates)
+                            if not (q["t"] in seen_t or seen_t.add(q["t"]))]
                 for p in show:
                     lo, hi = p["unsafe_ci"]
                     flo, fhi = p["fb_ci"]
@@ -293,16 +321,30 @@ def main():
                           f"{p['false_block']:3d}/{p['n_ok_clean']:<3d}[{100*flo:4.1f},{100*fhi:4.1f}] "
                           f"{det} {100*p['acted_prec']:9.1f}%")
 
-            # Pre-specified tests, only at the matched operating point.
-            m = {nm: at_matched_hold(curves[nm], a.match_hold) for nm in names}
-            if PRIMARY[1] in m and PRIMARY[0] in m:
+            # MARS cannot be matched below its floor: tau only moves the
+            # confidence gate, the structural checks never switch off. A rate
+            # under the floor would compare MARS against itself.
+            print(f"    lowest reachable hold rate: "
+                  + ", ".join(f"{nm} {100*floors[nm]:.0f}%" for nm in names))
+
+            # Pre-specified tests, at each pre-specified rate.
+            for rate in match_rates:
+                if rate < floors.get(PRIMARY[0], 0.0):
+                    print(f"    @hold~{rate:.0%}: below {PRIMARY[0]}'s floor "
+                          f"({100*floors[PRIMARY[0]]:.0f}%) — not comparable, skipped")
+                    continue
+                m = {nm: at_matched_hold(curves[nm], rate) for nm in names}
+                # How well the match actually held, over the validators being
+                # compared. `None` has no knob and sits at 0% by definition, so
+                # including it would report a mismatch that is not one.
+                matched = [m[nm]["held"] for nm in names if nm != "None"]
+                spread = max(matched) - min(matched)
                 x, y, p = paired(m[PRIMARY[0]], m[PRIMARY[1]])
-                print(f"    primary   {PRIMARY[0]} vs {PRIMARY[1]} @hold~{a.match_hold:.0%}: "
-                      f"discordant {x}/{y}  p={p:.3f}")
-            sec = [(u, w, paired(m[u], m[w])) for u, w in SECONDARY if u in m and w in m]
-            if sec:
+                print(f"    @hold~{rate:.0%} (achieved spread {100*spread:.0f}pp)  "
+                      f"primary {PRIMARY[0]} vs {PRIMARY[1]}: discordant {x}/{y}  p={p:.3f}")
+                sec = [(u, w, paired(m[u], m[w])) for u, w in SECONDARY if u in m and w in m]
                 for (u, w, t), q in zip(sec, holm([t[2] for _, _, t in sec])):
-                    print(f"    secondary {u} vs {w}: discordant {t[0]}/{t[1]}  "
+                    print(f"        secondary {u} vs {w}: discordant {t[0]}/{t[1]}  "
                           f"p={t[2]:.3f}  Holm={q:.3f}")
 
     if writer is not None:
