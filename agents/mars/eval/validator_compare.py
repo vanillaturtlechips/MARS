@@ -291,7 +291,8 @@ def main():
 
             js = None
             if judge is not None:
-                js = {r["_key"]: judge.score(r["dx"], r.get("bundle") or {})[0] for r in rows}
+                scored = judge.score_many([(r["dx"], r.get("bundle") or {}) for r in rows])
+                js = {r["_key"]: sc[0] for r, sc in zip(rows, scored)}
 
             curves = {nm: curve(rows, nm, js) for nm in names}
             n_att = sum(r["_attacked"] for r in rows)

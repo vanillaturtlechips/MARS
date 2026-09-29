@@ -61,6 +61,7 @@ def check(
     active_policies: list[dict[str, Any]],
     world_state: dict[str, Any],
     last_applied: dict[str, float] | None = None,
+    cumulative_liveness: bool = True,
 ) -> tuple[GuardrailResult, dict[str, Any], str]:
     """
     Run all guardrail stages.
@@ -71,6 +72,12 @@ def check(
         world_state:     {zones: {zone_id: {charger_zone: bool, mandatory: bool}},
                           charger_zones: [zone_ids], ...}
         last_applied:    {policy_type: last_applied_timestamp}  for cooldown
+        cumulative_liveness: evaluate the liveness invariant over the union with
+                         active policies (the correct behaviour, and the default).
+                         False reproduces the pre-fix defect, where each policy was
+                         judged alone and two individually-harmless ones could
+                         strand the fleet together. Only the evaluation passes
+                         False, to measure what that defect does to a real robot.
 
     Returns:
         (GuardrailResult, possibly_modified_policy, notes_string)
@@ -105,7 +112,8 @@ def check(
         return GuardrailResult.DEFER_HUMAN, modified, "; ".join(notes)
 
     # Stage 4 — Feasibility / safety invariants
-    result, feas_notes = _feasibility_check(policy, world_state, active_policies)
+    result, feas_notes = _feasibility_check(
+        policy, world_state, active_policies if cumulative_liveness else [])
     if result == GuardrailResult.REJECT:
         return GuardrailResult.REJECT, modified, feas_notes
     notes.extend([feas_notes] if feas_notes else [])

@@ -188,12 +188,33 @@ def validate_diagnosis(
     #    not a fabrication (REJECT). Collapsing the two spent REJECT on correct
     #    diagnoses with a mis-typed path — see resolve_ref().
     evidence = agent_output.get("evidence", [])
+    if not isinstance(evidence, list):
+        notes.append(f"evidence is not a list ({type(evidence).__name__})")
+        return DVResult.REJECT, "; ".join(notes)
     if not evidence:
         notes.append("evidence is empty")
         result = DVResult.DEGRADE
     else:
         for item in evidence:
-            for ref in item.get("refs", []):
+            # C1.4 requires each item to be {observation, refs}. The runtime does
+            # NOT enforce the output schema — the Anthropic structured-output path
+            # returns the tool input unvalidated — so a malformed item reaches this
+            # function, and it used to crash on item.get(). A schema violation is
+            # the clearest kind of unverifiable output, so it rejects.
+            if not isinstance(item, dict):
+                notes.append(f"evidence item is not an object ({type(item).__name__})")
+                result = DVResult.REJECT
+                continue
+            refs = item.get("refs", [])
+            if not isinstance(refs, list):
+                notes.append(f"evidence.refs is not a list ({type(refs).__name__})")
+                result = DVResult.REJECT
+                continue
+            for ref in refs:
+                if not isinstance(ref, str):
+                    notes.append(f"evidence ref is not a string ({type(ref).__name__})")
+                    result = DVResult.REJECT
+                    continue
                 status, intended = resolve_ref(ref, input_bundle)
                 if status == "unresolved":
                     notes.append(f"unresolvable ref: {ref!r}")

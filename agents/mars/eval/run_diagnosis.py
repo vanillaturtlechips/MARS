@@ -17,7 +17,10 @@ Use --limit N to smoke-test on a few first.
 from __future__ import annotations
 
 import argparse
+import os
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -26,11 +29,13 @@ import yaml
 
 import mars.blackboard.queries as Q
 from mars.blackboard.db import connect
+from mars.config import DB_DSN
 from mars.config import EMBEDDING_DIM
 from mars.llm.client import get_investigator_client, get_embedder, MockEmbedder
 from mars.agents.tools import InvestigatorTools
 from mars.agents.failure_analysis import FailureAnalysisAgent
 from mars.validators.decision_validator import validate_diagnosis
+from eval.baselines import rule_baseline
 
 RESET_TABLES = ["failures", "incident_embeddings", "policies",
                 "diagnoses", "outcomes"]
@@ -104,19 +109,65 @@ _INCENTIVES = {
 }
 
 
-def run_mode(cases, rag_on: bool, limit: int, attack: str = "none", seed: int = 0):
-    conn = connect(autocommit=False)
+def _worker_dsn(base: str, i: int) -> str:
+    """DSN for worker i's own database.
+
+    Cases are independent but every one truncates and re-seeds the blackboard, so
+    they cannot share it. Each worker gets a clone of the schema instead, which is
+    what allows the run to go wide — the wall clock here is API round-trips, and
+    those parallelise perfectly.
+    """
+    head, _, db = base.rpartition("/")
+    return f"{head}/{db}_w{i}"
+
+
+def _ensure_worker_dbs(base: str, n: int) -> list[str]:
+    import psycopg
+    head, _, db = base.rpartition("/")
+    dsns = []
+    with psycopg.connect(base, autocommit=True) as c, c.cursor() as cur:
+        for i in range(n):
+            name = f"{db}_w{i}"
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
+            if not cur.fetchone():
+                # TEMPLATE copies the tables, the pgvector extension and the
+                # indexes, so a worker database needs no migration of its own.
+                cur.execute(f'CREATE DATABASE "{name}" TEMPLATE "{db}"')
+                print(f"  created worker db {name}")
+            dsns.append(f"{head}/{name}")
+    return dsns
+
+
+def run_mode(cases, rag_on: bool, limit: int, attack: str = "none", seed: int = 0,
+             workers: int = 1):
     # dim must match the vector(N) column, or a RAG-off search query is rejected by pgvector
     embedder = get_embedder() if rag_on else MockEmbedder(dim=EMBEDDING_DIM)
     client = get_investigator_client()
     incentive = _INCENTIVES.get(attack, "")
-    rows = []
     sel = cases[:limit] if limit else cases
+    # One embedder shared under a lock rather than one per worker: loading the
+    # model N times would cost GB of VRAM, and embedding short strings is
+    # negligible next to an API round-trip.
+    emb_lock = threading.Lock()
+
+    class _Locked:
+        def __init__(self, inner): self._i = inner
+        def embed(self, t):
+            with emb_lock: return self._i.embed(t)
+        def embed_batch(self, ts):
+            with emb_lock: return self._i.embed_batch(ts)
+    embedder = _Locked(embedder)
+
+    dsns = _ensure_worker_dbs(DB_DSN, workers) if workers > 1 else [DB_DSN]
+    done = [0]
+    done_lock = threading.Lock()
     tag = (f"A1-{attack}_" if attack != "none" else "") + ("RAG_ON" if rag_on else "RAG_OFF")
     if seed:
         tag += f"/s{seed}"
-    for i, case in enumerate(sel, 1):
-        print(f"  [{tag} {i}/{len(sel)}] {case['case_id']} ...", flush=True)
+    def one(case, conn):
+        with done_lock:
+            done[0] += 1
+            print(f"  [{tag} {done[0]}/{len(sel)}] {case['case_id']} ...", flush=True)
         _reset(conn)
         _seed(conn, case, embedder, rag_on)
         tools = InvestigatorTools(conn, embedder)
@@ -124,13 +175,11 @@ def run_mode(cases, rag_on: bool, limit: int, attack: str = "none", seed: int = 
         try:
             dx = agent.analyze(case["trigger_event"])
         except Exception as e:  # noqa: BLE001
-            rows.append({"case": case["case_id"], "err": str(e)})
-            continue
+            return {"case": case["case_id"], "err": str(e)}
         if dx.get("_llm_error"):
             # Not a diagnosis — the model never answered. Counted as an error so
             # summarize() reports it instead of scoring the fallback as a decline.
-            rows.append({"case": case["case_id"], "err": dx["_llm_error"]})
-            continue
+            return {"case": case["case_id"], "err": dx["_llm_error"]}
         gt = case["ground_truth"]
         bundle = dx.get("_tool_transcript", {})
         verdict, notes = validate_diagnosis(dx, bundle)   # keep notes (why DEGRADE/REJECT)
@@ -159,8 +208,9 @@ def run_mode(cases, rag_on: bool, limit: int, attack: str = "none", seed: int = 
         # trust score of the RELEVANT precedent specifically (fleet/sensor 분석용)
         rel_trust = [p.get("_trust_score") for p in retrieved
                      if p.get("id") in relevant and p.get("_trust_score") is not None]
-        rows.append({
+        return {
             "case": case["case_id"], "difficulty": diff,
+            "rule_cause": rule_baseline(case),
             "cause_ok": dx.get("cause") == gt["cause"],
             "scope_ok": dx.get("scope") == gt["scope"],
             "pred_cause": dx.get("cause"), "gt_cause": gt["cause"],
@@ -181,9 +231,22 @@ def run_mode(cases, rag_on: bool, limit: int, attack: str = "none", seed: int = 
             "searches": sum(c["tool"] == "search_incidents" for c in calls),
             "searched_by_cause": [(c.get("args") or {}).get("failure_type")
                                   for c in ft_filtered],
-        })
-    conn.close()
-    return rows
+        }
+
+    def slice_worker(idx: int) -> list[dict]:
+        conn = connect(dsns[idx], autocommit=False)
+        try:
+            return [one(c, conn) for c in sel[idx::len(dsns)]]
+        finally:
+            conn.close()
+
+    if len(dsns) == 1:
+        return slice_worker(0)
+    with ThreadPoolExecutor(max_workers=len(dsns)) as ex:
+        parts = list(ex.map(slice_worker, range(len(dsns))))
+    # restore case order so results do not depend on the worker count
+    order = {c["case_id"]: i for i, c in enumerate(sel)}
+    return sorted([r for part in parts for r in part], key=lambda r: order[r["case"]])
 
 
 def summarize(tag, rows):
@@ -209,6 +272,28 @@ def summarize(tag, rows):
         if d in bydiff:
             c, s, t = bydiff[d]
             print(f"    {d:7s} cause {c}/{t} ({100*c/t:.0f}%)  scope {s}/{t} ({100*s/t:.0f}%)")
+    # Floors. An accuracy figure means nothing without them, and both have already
+    # moved the reading of the same number — see eval/baselines.py.
+    with_rule = [r for r in ok if "rule_cause" in r]
+    if with_rule:
+        rb = sum(r["rule_cause"] == r["gt_cause"] for r in with_rule)
+        model = sum(r["cause_ok"] for r in with_rule)
+        fixed = {"low_battery", "unknown", "zone_blocked"}
+        sep = sum(1 for r in with_rule
+                  if r["rule_cause"] in fixed and r["rule_cause"] == r["gt_cause"])
+        print(f"  rule baseline (structured fields only, no text/model): "
+              f"{rb}/{len(with_rule)} ({100*rb/len(with_rule):.0f}%) vs model "
+              f"{model}/{len(with_rule)} ({100*model/len(with_rule):.0f}%) "
+              f"— margin {100*(model-rb)/len(with_rule):+.0f}pp")
+        print(f"    {sep}/{len(with_rule)} cases a threshold decides outright "
+              f"(tagged easy: {sum(r.get('difficulty')=='easy' for r in with_rule)}) "
+              f"— the margin lives in the rest")
+        # where the model actually beats the rule
+        beats = Counter(r["gt_cause"] for r in with_rule
+                        if r["cause_ok"] and r["rule_cause"] != r["gt_cause"])
+        if beats:
+            print(f"    model beats the rule on: {dict(beats)}")
+
     # Leak canary. If a dataset or tool change ever hands the answer back to the
     # agent again, this number jumps and the accuracy figure stops meaning what it
     # says. Kept as a standing metric rather than a one-off check.
@@ -295,6 +380,11 @@ def main():
                     help="dev = tune prompts; test = report headline (no overfit)")
     ap.add_argument("--limit", type=int, default=0, help="0 = all cases")
     ap.add_argument("--tag", default="", help="suffix for result file (e.g. model name)")
+    ap.add_argument("--workers", type=int, default=1,
+                    help="parallel cases. Each worker gets its own clone of the "
+                         "blackboard (created once as <db>_wN), because every case "
+                         "truncates and re-seeds it. Wall clock is API round-trips, "
+                         "so this scales close to linearly.")
     ap.add_argument("--seed", type=int, default=0,
                     help="repeat id. The API is not seedable, so this labels an "
                          "independent repeat of the same condition (RAL_PLAN: 3 "
@@ -317,21 +407,36 @@ def main():
     print(f"loaded {len(cases)} diagnosis cases (split={a.split}){f' [A1-{a.attack}]' if a.attack != 'none' else ''}")
 
     import json
-    out = {}
-    if a.rag in ("on", "both"):
-        rows = run_mode(cases, True, a.limit, attack=a.attack, seed=a.seed); out["rag_on"] = rows
-        summarize("RAG ON" + (f" A1-{a.attack}" if a.attack != "none" else ""), rows)
-    if a.rag in ("off", "both"):
-        rows = run_mode(cases, False, a.limit, attack=a.attack, seed=a.seed); out["rag_off"] = rows
-        summarize("RAG OFF" + (f" A1-{a.attack}" if a.attack != "none" else ""), rows)
-    out["_meta"] = {"split": a.split, "seed": a.seed, "attack": a.attack,
-                    "n_cases": len(cases), "model": a.tag or None}
     suffix = f"_{a.tag}" if a.tag else ""
     if a.attack != "none":
         suffix += f"_a1-{a.attack}"
     if a.seed:
         suffix += f"_s{a.seed}"
     dump = Path(__file__).parent / f"results_{a.split}{suffix}.json"
+    out: dict = {}
+
+    def flush():
+        """Write what exists so far.
+
+        A run is tens of minutes and a few dollars of API calls; the file used to
+        be written only after every condition finished, so one exception in the
+        second condition discarded the first one's per-case data entirely. That
+        happened: a diagnosis came back with a malformed `evidence` item, the
+        validator raised, and 100 completed RAG-on cases were lost with it.
+        """
+        out["_meta"] = {"split": a.split, "seed": a.seed, "attack": a.attack,
+                        "n_cases": len(cases), "model": a.tag or None,
+                        "complete": False}
+        dump.write_text(json.dumps(out, indent=2))
+    if a.rag in ("on", "both"):
+        rows = run_mode(cases, True, a.limit, attack=a.attack, seed=a.seed, workers=a.workers)
+        out["rag_on"] = rows; flush()
+        summarize("RAG ON" + (f" A1-{a.attack}" if a.attack != "none" else ""), rows)
+    if a.rag in ("off", "both"):
+        rows = run_mode(cases, False, a.limit, attack=a.attack, seed=a.seed, workers=a.workers)
+        out["rag_off"] = rows; flush()
+        summarize("RAG OFF" + (f" A1-{a.attack}" if a.attack != "none" else ""), rows)
+    out["_meta"]["complete"] = True
     dump.write_text(json.dumps(out, indent=2))
     print(f"\nsaved per-case results -> {dump}")
 

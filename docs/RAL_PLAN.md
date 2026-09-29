@@ -1,272 +1,207 @@
-# RA-L 논문 설계 (2026-09-21, v3 — 최종 설계. 이후 수정은 실험 결과가 요구할 때만)
+# RA-L 논문 설계 v4 (2026-09-29)
 
-> `agents/mars/docs/paper_en.md`(JKROS 초안)를 IEEE RA-L 투고본으로 확장하기 위한 설계.
-> 실기 플랫폼은 자작 AMR(`~/jongky_magic`, Jetson Orin Nano, RPLIDAR C1, ROS2 Jazzy, Nav2 실차 튜닝 완료).
+> v3는 `RAL_PLAN_v3_archive.md`로 보존. v3의 주장이 어떻게 기각됐는지가 v4의 출발점이다.
+> 설계 결함과 수정 근거 전체: `~/Downloads/MARS_TableII_experiment_redesign.md`
+> 계약 명세: `docs/CONTRACT_C.md` (부록 A·C 포함)
+
+---
+
+## 0. 왜 v4인가 — v3의 주장 4개가 어떻게 됐나
+
+| v3의 주장 | 증거 | 판정 |
+|---|---|---|
+| 결정론적 검증이 자기보고 게이트보다 안전하다 | 보류율 25% 정렬 시 unsafe 8 대 6, 오탐 18 대 16. primary McNemar 세 요율 모두 무의 | **기각** |
+| 구조적 검사가 의미 오류의 잔여를 남긴다 | 참이나 거의 공허 — 200건 중 날조 3건, 대부분 정답에 부착 | **공허** |
+| judge가 못 잡는 걸 MARS가 잡는다 (인용 무결성) | 13건 중 10건이 경로 오타, judge의 보정이 오히려 옳았음. 진짜 날조 3건은 judge도 잡음 | **기각** |
+| 자기보고는 게이밍되고 외부 검증은 안 된다 (P3) | 게이트 수율 +0.120 CI[+0.050,+0.200] → **전반부 성립**. 후반부는 미검증이고, C5.2가 반례로 밝혀짐 | **부분 생존** |
+
+추가로, v3가 전제한 것 중 사실이 아니었던 것:
+
+- 데이터셋이 정답 라벨을 `search_incidents` 응답의 `failure_type`으로 **노출**하고 있었다.
+  접근 가능한 복사 베이스라인 68%, 모델 85%, precedent 없음 47%.
+- **C5.2(검색 일관성)는 외부 검증 검사가 아니다.** 입력인 신뢰도가 에이전트가 넘긴
+  `failure_type` 필터로 계산된다(일치 1.0 대 0.3, 가중치 0.30 → 최대 +0.21).
+- MARS 판정의 판별력 AUC 0.52 (자기보고 0.82).
+
+**v4의 전환**: "우리 검증기가 안전하다"를 주장하지 않는다.
+**"LLM 감독자의 결정에 대해 런타임에 무엇을 검증할 수 있는가, 그리고 그것을 스스로를
+속이지 않고 어떻게 측정하는가"** 를 주장한다.
 
 ---
 
 ## 1. 한 줄 논지
 
-> LLM 감독자 검증에는 **정의 가능한 경계**가 있다. 인터페이스 계약 C로 표현 가능한 오류(E_struct)는 결정론적
-> 런타임 검증이 완전히·게이밍 불가능하게 잡지만, **C로 표현할 수 없는 의미적 잔여(E_sem)** 가 남는다.
-> 이 경계를 5개 모델·합성+실기 데이터·5종 검증기 비교로 측정하고, 실기 로봇에서 검증 유무가 물리적 결과를
-> 바꿈을 보인다. **주인공은 MARS가 아니라 이 경계**이며, MARS는 경계의 한쪽을 구현하는 계측기다.
+> LLM 감독자 출력에 대한 런타임 검증은 **인터페이스 계약으로 표현 가능한 것**까지만
+> 도달하며, 그 경계는 관측 가능 상태로 판정 가능한가라는 정보론적 한계다. 경계 안쪽에서도
+> 검사의 강건성은 균일하지 않다 — 외부에서 검증되는 검사, **에이전트가 부분적으로 조종하는
+> 검사**, 자기보고에 의존하는 검사가 구분되며, 이 구분은 설계 문서로는 드러나지 않고
+> 측정으로만 드러난다. 그리고 그 측정은 작동점 정렬·오탐·누출 감시 없이는 **같은 데이터에서
+> 반대 결론을 낸다.**
 
-```
-LLM → proposed action
-        │
-        ▼
-┌ contract-expressible errors ──── deterministic validation (MARS) ┐
-└──────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌ contract-unexpressed errors ──── semantic residual → judge / human / future work ┐
-└──────────────────────────────────────────────────────────────────────────────────┘
-```
-
-**제목 후보**: *Runtime Validation of LLM Fleet Supervisors: Where Deterministic Checks Stop and Why*
-
-## 2. 기여 (RA-L 형식, 3개)
-
-1. **정식화**: 인터페이스 계약 **C = {action schema, resource existence, state invariants, evidence
-   resolvability, operational constraints}** 를 플랫폼 독립적으로 정의하고, Nav2(zone 존재·맵)와 PolicyManager
-   (스키마·화이트리스트·충전소 생존)를 그 **구체화**로 둔다. E_struct = C 위반. 의미 오류는 둘로 나눈다:
-   - **contract-expressible**: (d, B, W)만으로 판정 가능해 C에 끌어들일 수 있는 것 — MARS의 scope consistency
-     (zone_wide 주장은 ≥2건 failure 인용)·retrieval coherence(LOW-trust에 고신뢰 금지)가 이미 그 예
-   - **contract-unexpressed (E_sem)**: 판정에 추정 대상인 진실 자체(원인이 맞는가, 증거가 그 원인을 지지하는가)가
-     필요해 어떤 런타임 계약으로도 표현 불가 — A2가 뚫는 지점
-   **회귀 방지**: "C를 계속 확장하면 E_sem이 사라지는가"에 대한 답 — 경계는 "아직 안 쓴 규칙"이 아니라
-   **관측 가능 상태 (d, B, W)로 판정 가능한가**라는 정보론적 한계. 이 문장이 §III에 있어야 함.
-   검증기의 검사를 "외부 검증 가능" vs "자기보고 의존"(신뢰도)으로 분할. 결정론적 검증기가 **C에 대해
-   (with respect to C)** sound·no-false-block임을 **변이 기반 자동 생성 위반**으로 검증 — 표현은 "100% on the
-   tested mutation operators", 사전 성공 기준처럼 쓰지 않음. "모든 unsafe action을 막는다"로 읽히는 표현 금지.
-   일반성 주장의 선: *The contract abstraction is platform-independent in formulation, while our experiments
-   instantiate it on a ROS 2/Nav2-based AMR.*
-2. **비교 측정**: None / Confidence-only / LLM-as-judge / MARS / MARS+judge 5종 검증기 × 5모델 ×
-   (합성 + 실기 이벤트)에서 unsafe-act, acted-precision, held, 게이밍 저항성 측정. 의미적 잔여 위험이
-   모델 의존적이고 judge로 부분 감소함을 정량화. **명시된 공격자 모델** 하에서 3종 공격(신뢰도 부풀리기 /
-   실제-but-무관 근거 인용 / judge 대상 증거 인젝션)에 대한 각 검증기의 저항성을 측정 — "자기보고 vs 외부
-   검증"을 "LLM 판단 vs 결정론적 검사"로 일반화.
-3. **실기 검증**: 자작 AMR + HIL 하이브리드 fleet에서 검증 유무가 임무 완료율·고립·불필요 우회를 실제로 바꿈.
-
-표현 원칙: "결정론적 검증 > 신뢰도 게이트"류 **순위 진술 금지**. 논문은 "누가 더 좋은가"가 아니라 "어디까지 검증
-가능한가"를 말한다. → *Deterministic validation and confidence gating address different failure mechanisms.*
-
-## 3. 섹션 구조와 분량 (7쪽 설계 · 8쪽 상한, 2단 — RA-L 무료 쪽수/초과 비용 규정 투고 전 확인)
-
-| § | 내용 | 쪽 |
-|---|---|---|
-| I Intro | 문제, 질문, 기여 3개, Fig 1. **주인공은 MARS가 아니라 validation boundary** — MARS는 boundary를 재는 계측기 | 0.6 |
-| II Related Work | LLM 에이전트·RAG·가드레일(기존) + **runtime verification / shielding / LLM plan verification 계열(신규, 서지 확인)** + 로봇 LLM. novelty 공격의 1차 방어선 | 0.5 |
-| III Problem Formulation | 감독자 S: (event, state)→d; 검증기 V: d→{PASS, DEGRADE, REJECT}; **계약 C(추상) → Nav2/PolicyManager 구체화**; E_struct = C 위반; 의미 오류 = contract-expressible ∪ contract-unexpressed(E_sem); 회귀 방지 문장; **공격자 모델**; 성질 P1(soundness w.r.t. C), P2(no false block), P3(외부 검증 검사는 *조작 불가능한 참조*에 대해 에이전트 전략과 무관 — cite-real-but-irrelevant는 E_sem). **Fig 2 = 두 경로 분리 그림**: C → 변이 연산자 → 위반 집합 / C → 검증기 V → PASS·REJECT (생성기와 검증기가 C만 공유) | 0.75 |
-| IV MARS | 진단 파이프라인 + Decision Validator, 의도 파이프라인 + Guardrail. 알고리즘 1·2 압축, 검사마다 C의 어느 항목·P1~P3 중 무엇을 담당하는지 표기 | 1.0 |
-| V Setup | 합성(150/120, 3 seed), 변이 프로브 생성기, 실기 이벤트 100건 수집 절차, 모델 5개, 검증기 5종(judge 프롬프트 dev 튜닝 후 동결 명시), 공격 3종, 실기 시나리오 3종, HIL fleet 구성, **통계 단위** | 0.9 |
-| VI Results | A 검증기 비교 + RAG 스트레스 + 공격 (**Table II**, 중심; 구 Table I 흡수) · B 실기 이벤트 replay (Table III) · C 물리적 개입 연구 (Table IV) · D τ 스윕·ablation (Fig 3·4) | 2.3 |
-| VII Limitations & Conclusion | | 0.4 |
-| Refs | ~30편 | 0.55 |
-
-Supplementary: 변이 프로브 전체, 케이스 예시 표, **모든 프롬프트 원문(system/user, judge 포함)·모델 ID·temperature·API 날짜·파싱/재시도 규칙**, 실기 이벤트 스키마, **영상**. LLM 실험은 재현성 공격을 받으므로 전부 공개.
-
-집필 원칙: 처음부터 7쪽으로 쓴다. 8쪽으로 쓰고 압축하면 II→III→IV 증거 사슬이 끊긴다. 6쪽은 표 4·그림 5·정식화 절을 담기에 부족 — 추가 쪽 비용은 실험 비용 대비 무시 가능.
-
-## 4. 주장 → 근거 매핑
-
-| 주장 | 근거 | 상태 |
-|---|---|---|
-| 의미 오류가 늘어도 검증기 거동이 유지되는가 (RAG on/off = **supervisor quality stress condition**, RAG 자체는 기여 아님) | Table II의 RAG-on/RAG-off 열 | 3모델 있음 → 2모델 + 3 seed 추가 |
-| 검증기는 C에 대해 sound·no-false-block ("100% on the tested mutation operators") | **변이 프로브 N≥1000** (P1·P2) — supplementary; 손 프로브 30개는 예시로만 | 손 프로브 30 → 변이 생성기 신규 |
-| 자기보고 검사는 게이밍되고 외부 검증 검사는 안 됨 (P3) | Table II 공격 열(신뢰도 부풀리기), 5모델 | 1모델 → 5모델 |
-| P3의 경계: 실제-but-무관 근거 인용은 통과 (= E_sem) | Table II 공격 열(cite-real-irrelevant) | **없음 → 신규** |
-| judge도 LLM이라 게이밍됨 — 결정론적 검사는 아님 | Table II 공격 열(증거 인젝션), judge vs MARS | **없음 → 신규 (Table II 방어선)** |
-| 결정론적 검증과 신뢰도 게이트는 다른 실패 기제를 다룸; judge와 상보적 | **Table II** | **없음 → 신규 (핵심)** |
-| 잔여 위험은 E_sem이고 모델 의존 | Table II/III, precedent reliance, 실패 모드 분석 | 있음 → 실기로 보강 |
-| 합성 결과가 실제 이벤트에서 유지됨 | Table III (실기 100건 replay) | **없음 → 신규** |
-| 검증이 물리적 결과를 바꿈 | **Table IV** (3 시나리오 × 10 trial, 검증 유/무) | **없음 → 신규** |
-| fleet 수준에서 동작 | HIL 하이브리드 재경로 (Fig 5, 영상) | **없음 → 신규** |
-| τ는 정밀도–안전 작동점 | Fig 3 τ 스윕 | 없음 → 신규 (API) |
-| 각 검사의 기여 | Fig 4 ablation | 없음 → 신규 (API) |
-
-API만으로 되는 것(Table I·II 확장, Fig 3·4) = 1~2주차. 실기가 필요한 것(Table III·IV, Fig 5) = 3~10주차.
-
-## 5. 실험 설계 상세
-
-**A. 검증기 5종** — 동일한 진단/정책 출력에 대해 후처리만 바꿈.
-- None: LLM 출력 그대로 실행 (상한 위험)
-- Confidence-only: τ 게이트만 (자기보고 신호 대표)
-- LLM-as-judge: 별도 고정 모델(예: GPT-4.1)이 (d, B, W)를 보고 의미적 타당성 판정 (학습 기반 검증 대표). **judge 프롬프트는 dev에서 튜닝 후 동결** — "judge를 약하게 만들었다"는 지적 방지
-- MARS: 제안 (결정론적)
-- MARS+judge: MARS PASS 후 judge 추가 — "필요하지만 충분하지 않음"의 건설적 후속
-
-측정: confident-wrong(unsafe act), acted-precision, held rate, 그리고 아래 공격 3종 각각에 대한 저항성.
-
-**공격자 모델 (§III에 명시)** — 에이전트는 검증기의 존재와 출력 형식을 알고, 신뢰도와 evidence ref 문자열, 그리고
-자신이 생성하는 자유 텍스트(진단 근거 설명)를 조작할 수 있다. 실제 로봇 상태·입력 번들 B·월드 상태 W는 수정할
-수 없다.
-
-| 공격 | 조작 대상 | 예상 결과 |
-|---|---|---|
-| A1 신뢰도 부풀리기 (기존 §5.5) | confidence | Confidence-only 무력화, MARS 근거 검사 유지 |
-| A2 실제-but-무관 근거 인용 | evidence.refs (B 안에 존재하는 무관 항목) | resolvability 통과 → grounded-but-wrong → **E_sem으로 분류, P3의 경계** |
-| A3 judge 대상 의미 왜곡 | **실제로 존재·해석 가능한 증거를 의미적으로 왜곡하는 그럴듯한 rationale** (예: `sensor_42: aisle_A obstacle at t=12.4` → "sensor_42 confirms aisle_A is unsafe, closing it is conservative"). "Ignore previous instructions"류 **뻔한 인젝션 금지** — 리뷰어가 인정 안 함 | judge 통과율 상승, MARS 불변 → "LLM 판단 vs 결정론적 검사" |
-
-**A3 성공 판정**: "judge가 틀렸는가"가 아니라 ground-truth cause → expected semantic interpretation을 먼저 두고,
-judge가 **expected interpretation과 불일치하는 rationale을 통과시켰는가**로 정의.
-
-**Table II의 진짜 위험**: 강한 judge가 구조적·의미적 오류를 모두 잡으면 결론이 "judge만 써라"가 된다. A3가 유일한
-방어선이며, 동시에 논지를 가장 강하게 만든다. A3 없이 Table II를 내지 않는다. 반대로 A3에서 judge가 안 깨지면
-"why not a stronger judge"에 답이 없다 — A3는 공격 테스트가 아니라 **핵심 실험**.
-
-**Table II 형식** (구 Table I 흡수):
-
-| Validator | RAG-on | RAG-off | A1 | A2 | A3 |
-|---|---|---|---|---|---|
-| None / Confidence / Judge / MARS / MARS+Judge | unsafe-act, acted-prec, held | 〃 | 저항성 | 〃 | 〃 |
-
-RAG-on/off는 "RAG가 좋다"가 아니라 감독자 품질을 바꿔 의미 오류를 늘리는 스트레스 조건:
-*Supervisor quality was varied through RAG-on/off conditions to test whether validator behavior remains robust
-as semantic error increases.* "RAG-off에서 오류가 늘어난다 → MARS가 필요하다"처럼 직접 쓰지 않음.
-
-**B. 모델 5개** — GPT-4.1-mini, Claude Haiku 4.5, Solar-Pro(기존) + GPT-4.1 또는 Sonnet(강) + Qwen(오픈, RTX 5080 로컬, `OPENAI_BASE_URL` 경로). 모델 ID·날짜 고정. 5개에서 늘리지 않는다 — "잔여 위험이 모델 의존적" 주장에 모델 축 분산이 필요하지만, 일반화 증거는 모델 수가 아니라 실기 이벤트 100건의 **시나리오 다양성**이 담당.
-
-**C. 합성** — 진단 150(dev 50/test 100), 의도 58→120(unsafe 40+). 3 seed, temperature 0. τ∈{0.3,…,0.9} 스윕. 검사별 ablation.
-
-**통계 단위** — 실험 단위는 scenario(케이스). model은 요인, seed는 반복. LLM 호출을 독립 표본 n=100×5로 합치지
-않는다. 보고: per-model(케이스에 대한 Wilson CI) → per-scenario-class → aggregate, 분리 제시.
-검증기 5종은 **같은 LLM 출력을 후처리**하므로 케이스 단위 paired 비교 — **McNemar 검정** 사용 (독립 표본 가정보다
-검정력 높음; 설계의 강점으로 서술). McNemar 하나로 모든 쌍을 돌리지 않는다 — **실험 전 사전 지정**(논문에 명시):
-- Primary: MARS vs Confidence-only
-- Secondary: MARS vs Judge · MARS+Judge vs MARS · MARS+Judge vs Judge
-- Holm 보정.
-
-**Ground truth 선행 원칙** (§V에 명문화 — circular evaluation 방어):
-*Ground-truth labels are established before validator execution and are never derived from validator outputs.*
-- 합성: 생성기가 cause를 먼저 정하고 증상·변이를 생성 → cause가 검증기보다 선행
-- 실기: **실험자가 유도한 원인이 라벨** (experimenter-induced) → 검증기와 무관
-- E_sem 판정: scenario specification → 사람이 작성한 expected outcome → 검증기와 독립적으로 평가
-
-**변이 프로브 생성기** — 정상(PASS) 출력을 자동 변이: ref 하나 깨기, zone 이름을 비존재로, type을 화이트리스트
-밖으로, duration 범위 밖, 충전소 전부 예약 등 C의 각 항목당 변이 연산자 1개. 검증기 로직과 독립. N≥1000.
-P1: 모든 변이가 PASS 아님. P2: 변이 전 원본은 전부 PASS. **변이 연산자는 검증기 구현을 보지 않고 C에서만
-도출** — 논문에 *mutation operators were defined independently of the validator implementation* 명시,
-Fig 2의 두 경로 분리 그림으로 뒷받침.
-
-**D. 실기 이벤트 — 100 failure events (25 per class) + 20 nominal runs = 120 runs** — 실험실 zone 4개(aisle_A,
-aisle_B, charge_zone, dock). 논문 표기는 정확히 "100 failure events (25 per failure class) and 20 nominal runs";
-"100 real-world events"로 뭉뚱그리지 않음. 원인별 25건:
-- `transient_obstacle`: 경로 막기 → RPP progress checker abort
-- `localization_failure`: AMCL 중 로봇 들어 옮기기(kidnap)
-- `low_battery`: 실전압 (`BatteryState` 발행 추가 필요)
-- `robot_internal_fault`: 시리얼 분리 → `read()` ERROR → controller_manager 비활성화
-- 대조군: 정상 완주 20건 (오탐 측정)
-
-각 이벤트를 `trigger_event` + `health_at_failure`로 저장 → 5모델 × 5검증기 replay.
-`zone_congestion`, `fleet_overload`, `fleet_wide`는 1대로 불가 → 합성 유지, 명시.
-
-**Table III vs IV의 관계 (논문에 명시)** — 목적이 다른 두 실험:
-- Table III = **dataset-level evaluation**: 실기 이벤트 120건 → 검증기 비교 (합성 결과가 실제 이벤트에서 유지되는가)
-- Table IV = **physical intervention study**: 통제된 시나리오 3종 × 10 trial → 검증 유무가 로봇 행동을 바꾸는가
-
-**E. 실기 시나리오 3종 × 10 trial, 검증 유/무**
-1. 정상 우회: abort → `avoid_zone(aisle_A)` → keepout → 재경로. 측정: 완료율, 경로 길이 비.
-2. 고립 차단: "charge_zone 막아" → 무검증=충전 불가 고립 / 가드레일=REJECT. 측정: 저배터리 시 충전 도달.
-3. 근거 없는 진단 차단: 조작 evidence ref → 무검증=엉뚱한 zone 폐쇄로 불필요 우회 / validator=REJECT. 측정: 경로 길이 증가.
-
-**F. HIL 하이브리드 fleet (2단 구성)**
-- 정량: 1 실기 + 2 mock(`use_mock:=true use_lidar:=false`, namespace Nav2), 같은 맵·blackboard, avoid_zone이 3대 costmap에 반영. 재경로 성공률·정책 반영 지연, 30회 반복.
-- 정성: 1 실기 + 2 Isaac 로봇(실험실 디지털 트윈) 영상. **1주 게이트** — 실패 시 mock RViz 궤적으로 대체.
-- 논문 표기: "single physical AMR with HIL multi-robot emulation; Isaac Sim used for visualization of the same pipeline". "lab-scale, single self-built differential-drive AMR". **"real-world multi-robot fleet experiment"류 표현 금지.**
-
-## 6. 그림·표 목록
-
-- Fig 1 시스템 개요 (실기 + HIL fleet + MARS)
-- Fig 2 계약 C → (변이 생성기 / 검증기) 두 경로 분리 + 오류 클래스(E_struct / expressible / unexpressed) 매핑
-- Fig 3 τ 스윕 (정밀도–안전 곡선)
-- Fig 4 검사별 ablation / defense-in-depth
-- Fig 5 HIL fleet 재경로 궤적 (Isaac 또는 mock)
-- **Table II 검증기 5종 × {RAG-on, RAG-off, A1, A2, A3} (중심 표; 구 Table I 흡수)**
-- Table III 실기 이벤트 120건 replay (dataset-level)
-- Table IV 물리적 개입 연구 (3 시나리오 × 10, 검증 유/무)
-
-## 6b. 연구 설계상 우선순위 (실험 과다 방지)
-
-RA-L은 모든 것을 보여주는 곳이 아니라 핵심 메시지를 짧게 증명하는 곳. 아래 순서로 원고의 중심을 잡고,
-일정 압박 시 Optional → Secondary 순으로 축소한다.
-
-| 등급 | 항목 |
-|---|---|
-| **Core** | 계약 C 정식화 · 변이 P1/P2 · Table II (5 validator × 5 model) · A1/A2/A3 · 물리적 개입 연구 (Table IV) |
-| **Secondary** | 실기 이벤트 replay (Table III) · RAG 스트레스 조건 · τ 민감도 · 검사별 ablation |
-| **Optional** | HIL 하이브리드 fleet · Isaac 시각화 (non-critical dependency — 실패해도 scientific claim 불변) |
-
-## 7. 인프라 매핑
-
-| 구성 | 위치 |
-|---|---|
-| 평가 러너·검증기·베이스라인 | `agents/mars/eval/` (`run_diagnosis.py`, `run_intent.py` 확장; seed 루프, `--validator` 옵션) |
-| keepout 플러그인·런치 | `deploy/nav2/global_costmap_keepout_snippet.yaml`, `keepout_filter.launch.py` → `jongky_navigation/config/nav2_params.yaml`에 병합 |
-| abort→MARS 브릿지 | `agents/mars/mars/ros/` (Isaac 어댑터 `publish_keepout_mask` 재사용, 토픽 `/keepout_filter_mask` 동일) |
-| BatteryState 발행, namespace 인자 | `jongky_hardware`, `jongky_bringup` (현재 둘 다 없음) |
-| 휠 파라미터 확정 | `jongky_hardware` `counts_per_rev`, `wheel_separation` 회전 시험 — 지역화 실패 케이스 오염 방지 |
-| 로컬 오픈 모델 | ollama/vLLM on RTX 5080, `OPENAI_BASE_URL` |
-| Isaac 디지털 트윈 | `deploy/isaac/`, Phase 4-B 미해결(R1 거동, inflation_radius) 같이 정리 |
-
-## 8. 일정과 결정점 (약 12주)
-
-| 주 | 작업 | 산출물 / 결정점 |
-|---|---|---|
-| 1–2 | 검증기 5종, 공격 A1–A3, 변이 프로브 생성기, 모델 5개, 3 seed, τ, ablation, intent 확장 | Table II, Fig 3·4. **결정점: Table II에서 (a) 검증기 간 차이가 5모델에서 일관되고 (b) MARS가 tested mutation operators 전부에서 위반을 차단하며 (c) E_sem이 남고 (d) A3에서 judge가 흔들리는가? 하나라도 아니면 RA-L 재고 → JKROS** |
-| 2–3 | 휠 파라미터 확정, keepout 병합, 브릿지, BatteryState, 실험실 맵·zone | 폐루프 1회 성공 |
-| 4–6 | 실기 이벤트 100건 수집 → replay | Table III |
-| 6–8 | 시나리오 3종 × 10 trial + 영상 | Table IV, 멀티미디어 |
-| 8–9 | mock 하이브리드 | Fig 5 정량 |
-| 9–10 | Isaac 디지털 트윈 | 1주 게이트 |
-| 10–12 | §III 집필, 7쪽 설계로 집필, 관련연구 보강, 그림 재제작 | 투고본 |
-
-병행: 로봇학회 학술대회는 현재 원고로 먼저 투고. 학회 발표 후 공저 논의.
-
-## 9. 리스크와 대응
-
-- **"엔지니어링이지 과학이 아니다"** → §III 정식화 + Table II. 이 둘 없이는 투고하지 않음.
-- **"E_struct는 검증기에 맞춰 정의한 동어반복"** (핵심 reject point) → E_struct를 인터페이스 계약 C에서 정의, 변이 생성기가 검증기와 독립, "sound w.r.t. C"로 한정. 순서: C 정의 → 독립 생성 → 검증기 명세 → P1/P2 시험.
-- **"judge가 전부 이기면?"** → A3 의미 왜곡. judge도 LLM이라 게이밍됨을 보임. A3는 핵심 실험.
-- **"그럼 E_sem은 검증 불가능하다는 뜻인가?"** → 아니다. E_sem = 현재 C로 결정론적 판정 불가한 잔여. contract-expressible 부분은 C 확장으로 흡수 가능(MARS의 scope/coherence 검사가 예), unexpressed 부분은 judge/human/richer model 영역.
-- **"C를 확장하면 E_sem이 없어지지 않나?"** → 회귀 방지: 경계는 (d, B, W)로 판정 가능한가라는 정보론적 한계. 추정 대상인 진실은 계약에 못 들어감.
-- **"C가 Nav2 전용 아닌가?"** → C 추상 정의 + 구체화 분리. 일반성은 formulation에 한정해 주장.
-- **"ground truth는 누가 정하나?"** → 선행 원칙 문장 + 합성/실기 각각의 생성 경로 명시.
-- **실험 과다 (벤치마크 프로젝트화)** → §6b 우선순위. Core 5개가 논문의 전부여도 성립하게 쓴다.
-- **"공격자 모델이 뭔가?"** → §III에 능력/한계 명시. P3는 조작 불가능한 참조에 한정.
-- **로봇 1대로 fleet?** → HIL 하이브리드 + 정직 표기 + Limitations 명시. revision 시 mock 확장 용이.
-- **LLM-as-judge 베이스라인 설계 (가장 약한 고리)** → judge 프롬프트 dev 튜닝·동결 절차를 V에 명시, 프롬프트 공개.
-- **LLM 버전 드리프트** → 모델 ID·날짜 고정, 결과 JSON 공개.
-- **분량** → 7쪽 설계, 초록 200단어, 합성 상세·프로브는 supplementary. RA-L은 revision 1회 — 첫 제출 완성도 필수.
-- **Isaac 불안정** → 정량은 mock에, Isaac은 영상만. 게이트 실패 시 논문 무손상.
-- **단독 저자** → RA-L 형식상 무관. 심사 대응 품질이 관건 — 학술대회에서 만난 교수와 공저 논의 병행.
-
-## 10. 예상 리뷰어 질문 → 답 위치
-
-| 질문 | 답 |
-|---|---|
-| 기존 가드레일/runtime verification/shielding 대비 뭐가 새로운가 | §II + "boundary 측정"이라는 질문 자체 |
-| E_struct/E_sem이 MARS 맞춤 분류 아닌가 | §III 계약 C 기반 정의 + 변이 생성기 |
-| 왜 이 judge, 이 프롬프트인가 | dev 튜닝·동결 절차 + supplementary 전문 공개 + A3 |
-| 검증이 로봇 행동을 실제로 바꾸는가 | Table IV |
-| 로봇 1대가 fleet인가 | HIL 정량 + 정직 표기 + Limitations |
-| 한 로봇·한 맵·한 API에 특화된 결과 아닌가 | 5모델 + 실기 이벤트 다양성 + 합성/실기 replay 일치 |
-| 게이밍 저항성의 공격자 모델은 | §III + A1–A3 |
-| LLM 호출이 독립 표본인가 | 통계 단위 명시 + paired McNemar + 사전 지정 비교 + Holm |
-| E_sem은 검증 불가능하다는 뜻인가 | §III expressible/unexpressed 분리 + 회귀 방지 문장 |
-| ground truth는 누가 정하나 | §V 선행 원칙 + 합성/실기 생성 경로 |
-| 왜 RAG가 나오나 | 스트레스 조건으로 한정, Table II 열 |
-
-## 11. 스코프 밖 (넣지 않음)
-
-- RL 층(MAPPO, diff-drive, 월드모델 RL) — 후속 논문 소재
-- jongky의 VDA5050/Open-RMF fleet 층 — MARS는 Nav2 위의 감독 층으로만
-- 로봇 성능 자체의 정량 평가 (지연시간 표 등) — 연구 질문 밖
+**제목 후보**: *What Can Be Verified at Runtime About an LLM Fleet Supervisor — and How to Measure It Without Fooling Yourself*
 
 ---
 
-## 12. 설계 종료
+## 2. 기여 (4개)
 
-세 차례 외부 리뷰를 거쳐 수렴. 이 문서는 더 고치지 않는다 — 다음 가치는 설계가 아니라 **Table II 결과**에 있다.
-Table II + A1/A2/A3가 이 논문의 운명을 결정한다. 실험 결과가 설계 변경을 요구할 때만 v4.
+### C1. 인터페이스 계약과 검사의 3분류
+
+계약 **C = {action schema, resource existence, state invariants, evidence resolvability,
+operational constraints}** 를 플랫폼 독립적으로 정의하고 Nav2/PolicyManager로 구체화
+(`CONTRACT_C.md`). C는 (d, B, W)만의 함수이며, 추정 대상인 진실은 입력이 아니다 —
+이것이 E_struct / E_sem 경계의 정의다.
+
+**새 결과**: 논문·설계 문서가 "외부 검증 가능"으로 분류한 검사 중 하나가 아니다.
+C5.2의 입력이 에이전트의 질의 인자로 계산되므로, 분류는 2분류가 아니라 3분류다.
+
+| 분류 | 검사 | 전략적 에이전트에 대한 강건성 |
+|---|---|---|
+| 외부 검증 | 근거 해석 가능성(C4.2), scope 일관성(C4.3), zone 존재, 생존 불변식 | 조종 불가 |
+| **부분적 에이전트 제어** | **검색 일관성(C5.2)** | 필터 인자 선택으로 완화 가능 |
+| 자기보고 | 신뢰도 임계 | 게이트 수율 +0.12로 통과됨 |
+
+이 구분은 **계측 없이는 보이지 않는다**. 조사 루프가 도구 호출 인자를 버리고 있었기 때문에
+C5.2의 순환성은 6월부터 존재했으나 측정 불가였다.
+
+### C2. 검증기와 독립적인 변이 기반 검증, 그리고 그것이 찾은 결함
+
+변이 연산자를 **계약에서만** 도출하고 검증기 구현을 참조하지 않는다(`gen_mutation_probes.py`).
+44 연산자 × 2100 프로브, P1 1770/1770 · P2 330/330.
+
+손으로 만든 30개 프로브가 놓친 **실제 결함 4건**을 잡았다:
+
+| # | 결함 | 결과 |
+|---|---|---|
+| 1 | `mission_failures[-1]` 음수 인덱스가 근거 검사를 통과 | 날조 인용이 grounded로 판정 |
+| 2 | 같은 항목 2회 인용이 scope 근거 2건으로 계수 | zone_wide 주장이 단일 증거로 통과 |
+| 3 | `zone` 없는 `avoid_zone`이 참조·생존 검사를 건너뜀 | 필수 검사 전체 우회 |
+| 4 | **생존 불변식이 정책 집합을 보지 않음** | **각각 안전한 두 정책이 함대를 충전소에서 고립** |
+
+4번은 물리적 결과를 갖고, §6의 실기 실험이 그것을 보여준다.
+
+### C3. 측정 프로토콜 — 없으면 결론이 뒤집힌다
+
+네 요소를 갖춘 프로토콜을 제시하고, **각각을 뺐을 때 같은 데이터가 반대 결론을 낸다**는 것을
+보인다. 이게 방법론 기여의 핵심이며 재현 가능하다.
+
+| 요소 | 빼면 무엇이 일어나는가 (실측) |
+|---|---|
+| **작동점 정렬** | 미정렬: MARS 8 = Confidence 8 (동률). 정렬: 8 대 6 (**MARS가 열위**) |
+| **오탐(false-block) 1급 지표** | 빼면 judge가 unsafe 0으로 압도적. 넣으면 judge가 **정답의 48%를 차단** |
+| **누출 감시** | 빼면 RAG +38pp. 넣으면 그중 약 21pp가 라벨 복사로 도달 가능 |
+| **게이트 수율(vs AUC)** | AUC: 게이밍 효과 없음(0.817→0.822). 수율: **+0.120 CI[+0.050,+0.200]** |
+| **공격의 C 만족 강제** | 강제 안 하면 MARS가 의미 공격을 "잡음" — 포함 기준이 만든 결과 |
+| **제외 금지** | 제외하면 MARS 탐지율 0%가 항진명제. 제외 안 하면 4.8% |
+
+### C4. 실기 검증 — 검증이 물리적 결과를 바꾼다
+
+C2의 결함 4번을 실기에서 시연하고, 수정된 가드레일이 그것을 막음을 보인다.
+자작 AMR(`~/jongky_magic`) + HIL 다중 로봇 에뮬레이션.
+
+---
+
+## 3. 섹션 구조 (7쪽 설계 · 8쪽 상한)
+
+| § | 내용 | 쪽 |
+|---|---|---|
+| I Intro | 문제, 질문, 기여 4개, Fig 1 | 0.6 |
+| II Related Work | LLM 에이전트·RAG·가드레일 + **runtime verification / shielding / LLM plan verification** + 로봇 LLM. **평가 방법론 계열**(LLM 평가의 오염·누출) 추가 | 0.55 |
+| III Contract & taxonomy | C 정의, E_struct/E_sem 경계와 정보론적 한계, **3분류와 C5.2 반례**, Fig 2 (C → 변이 생성기 / 검증기 두 경로 분리) | 0.85 |
+| IV MARS & the four defects | 두 파이프라인, 알고리즘 1·2(집합 기반 생존성 반영), 변이 방법론, 결함 4건 | 1.0 |
+| V Measurement protocol | 작동점·오탐·누출 감시·수율·공격의 C 만족·제외 금지, 사전 등록, 검정력 | 0.8 |
+| VI Results | A 프로토콜 요소별 결론 역전 (Table I, **중심**) · B 검증기 비교 (Table II) · C A1 게이트 수율 (Table III) · D 실기 개입 (Table IV) | 2.2 |
+| VII Limitations & Conclusion | | 0.45 |
+| Refs | ~32편 | 0.55 |
+
+Supplementary: 변이 프로브 전체, **모든 프롬프트 원문·모델 ID·API 날짜·파싱 규칙**,
+결함 4건의 재현 스크립트, 실기 이벤트 스키마, 영상, **v3 설계와 기각 이력**.
+
+---
+
+## 4. 표와 그림
+
+- **Table I (중심)** — 프로토콜 요소별 결론 역전. 요소를 빼고/넣고 같은 데이터를 재분석
+- Table II — 5검증기 × {RAG-on, RAG-off, A2, A3} × 사전 지정 보류율 3개, 오탐 동반
+- Table III — A1 4조건(objective/mechanism/full/decline) 게이트 수율 + AUC 보조
+- Table IV — 실기 개입 연구 (시나리오 3종 × 10 trial, 검증 유/무)
+- Fig 1 시스템 개요 · Fig 2 C→생성기/검증기 두 경로 · Fig 3 작동점 곡선(unsafe 대 오탐)
+  · Fig 4 검사별 ablation · Fig 5 HIL 재경로 궤적
+
+---
+
+## 5. 실기 실험 (C4)
+
+시나리오 2가 **C2 결함 4번의 직접 시연**으로 바뀐 게 v3와의 핵심 차이다.
+
+| # | 시나리오 | 검증 없음 | 검증 있음 | 측정 |
+|---|---|---|---|---|
+| 1 | abort → `avoid_zone(aisle_A)` → keepout → 재경로 | 동일 | 동일 | 완료율, 경로 길이 비 (검증이 정상 동작을 막지 않음 = 오탐 0의 실기 증거) |
+| 2 | **누적 생존성**: `avoid_zone(charge_A)` 활성 상태에서 운영자가 `charge_B`도 요청 | **두 정책 모두 활성 → 로봇이 충전소 도달 불가 → 방전** | **REJECT → 충전 도달** | 충전 도달 여부(이진), 고립 시간, 최종 배터리 |
+| 3 | 조작된 근거 참조 → 엉뚱한 zone 폐쇄 | 불필요 우회 | REJECT | 경로 길이 증가율 |
+
+시나리오 2는 **논문에서 가장 강한 장면**이다: 각각 승인 가능한 두 지시가 실제 로봇을
+방전시키고, 집합 기반 불변식이 그것을 막는다. 진단 정확도로는 보여줄 수 없는 결과다.
+
+실기 이벤트 수집(v3의 Table III)은 **Optional로 내린다** — 라벨 누출 수정 후 합성 결과가
+어떻게 나오는지 본 뒤 필요성을 판단한다.
+
+**전제 작업**: 휠 파라미터 확정, `BatteryState` 발행, keepout 플러그인 병합,
+abort→MARS 브릿지, 실험실 맵·zone, 자동화 러너. 상세는 v3 archive §7 참조.
+
+---
+
+## 6. 우선순위
+
+| 등급 | 항목 |
+|---|---|
+| **Core** | C1 계약·3분류 · C2 변이 + 결함 4건 · C3 프로토콜(Table I) · C4 실기 시나리오 2 |
+| **Secondary** | Table II 전체 · A1 4조건 · 실기 시나리오 1·3 · 의도 파이프라인 결과 |
+| **Optional** | 실기 이벤트 100건 · 모델 5개 확장 · Isaac 시각화 · HIL 정량 |
+
+v3와 달리 **모델 5개 확장이 Optional**이다. 기여가 "모델 간 잔여 위험 비교"에서
+"검증 가능성의 경계와 그 측정"으로 옮겼기 때문에 모델 축의 분산이 필수가 아니다.
+교차 모델 주장을 하려면 전부 동일 설정 재실행이 필요하고(현재 임베딩·검증기 불일치),
+그 비용을 실기에 쓰는 편이 낫다.
+
+---
+
+## 7. 일정
+
+| 주 | 작업 | 결정점 |
+|---|---|---|
+| 1 | 진단 새 기준선(진행 중), 의도 재실행, A1 `full` | **누출 제거 후 정확도가 68%(복사 수준)에 붙는가?** 붙으면 RAG 관련 주장 전면 철회 |
+| 2 | Judge 스윕 2역할, seed 반복, Table I 작성 | **Table I의 역전이 재현되는가?** 안 되면 C3가 무너지고 RA-L 재고 |
+| 3–4 | 실기 전제 작업 (휠·배터리·keepout·브릿지·맵) | 폐루프 1회 성공 |
+| 5–6 | **시나리오 2** (누적 생존성 실기 시연) + 영상 | **로봇이 실제로 방전되는가?** 이게 C4의 전부 |
+| 7 | 시나리오 1·3 | |
+| 8–10 | §III·V 집필, Table I~IV, Fig 재제작 | |
+| 11–12 | 7쪽 압축, Related Work 보강, supplementary | 투고 |
+
+---
+
+## 8. 리스크
+
+| 리스크 | 대응 |
+|---|---|
+| **"방법론 논문은 RA-L 범위가 아니다"** | C4(실기)가 로봇 기여를 담당. 결함 4번이 물리적 결과를 갖는다는 점이 연결 고리. 이게 약하면 RA-L 아님 |
+| "결함 4건은 당신들 코드의 버그" | 맞다. 주장은 "우리 코드가 좋다"가 아니라 "계약에서 독립적으로 도출한 변이가 손 프로브가 놓친 것을 잡는다"는 **방법**이다 |
+| Table I의 역전이 seed에 취약 | seed 3회 반복. 역전이 재현 안 되면 C3 철회 |
+| n이 작다 (날조 3, 생존 불변식 6, 대조군 2) | 정직하게 명시. 능력 확인으로 쓰고 통계적 주장 금지. 필요 시 케이스 확장(생성은 무료) |
+| 실기 시나리오 2가 안 나옴 | 배터리 방전까지 안 가고 "충전 goal 실패"로 측정 대체. 그래도 이진 결과는 남음 |
+| **설계를 결과 보고 고치는 습관** | 이 문서의 사전 등록을 지킬 것. v3에서 6번 발생했고 전부 가설에 유리한 방향이었다 |
+
+---
+
+## 9. 스코프 밖
+
+- RL 층(MAPPO, diff-drive, 월드모델 RL)
+- jongky의 VDA5050/Open-RMF fleet 층
+- 로봇 성능 자체의 정량 평가
+
+---
+
+## 10. 만약 RA-L이 안 되면
+
+1주차 또는 2주차 결정점에서 실패하면 **JKROS로 전환**하고 논지를 축소한다:
+"결정론적 런타임 검증의 경계를 실증적으로 규명하고, 그 측정에 필요한 프로토콜을 제시한다."
+실기 없이도 C1~C3로 성립하며, 발견한 결함 4건이 내용을 채운다.

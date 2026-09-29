@@ -187,6 +187,21 @@ def _unique_leaves(bundle) -> dict[str, str]:
             and "." in sorted(set(v))[0]}
 
 
+def d_c1_4b(d, b, t, rng):
+    """C1.4: an evidence ITEM that is not an object. The existing C1.4 operators
+    only dropped fields INSIDE an item, so this shape was never generated — and a
+    real run produced it, crashing the validator. The runtime does not enforce the
+    output schema, so this is reachable in production, not only in mutation."""
+    c = rng.choice(["item_str", "evidence_str", "refs_int"])
+    if c == "item_str":
+        d["evidence"][0] = "the robot ran out of battery"
+    elif c == "evidence_str":
+        d["evidence"] = "battery depleted"
+    else:
+        d["evidence"][0]["refs"] = [123]
+    return d, b, t
+
+
 def d_c4_2p(d, b, t, rng):
     """C4.2p: a real field name at the wrong depth. The referent is unique, so the
     citation identifies a real datum imprecisely rather than inventing one — it
@@ -245,7 +260,7 @@ DX_OPS = {
     "D-C1.4": (d_c1_4, "C1.4"), "D-C4.1": (d_c4_1, "C4.1"),
     "D-C4.2a": (d_c4_2a, "C4.2"), "D-C4.2b": (d_c4_2b, "C4.2"), "D-C4.2c": (d_c4_2c, "C4.2"),
     "D-C4.2d": (d_c4_2d, "C4.2"), "D-C4.2e": (d_c4_2e, "C4.2"),
-    "D-C4.2p": (d_c4_2p, "C4.2p"),
+    "D-C4.2p": (d_c4_2p, "C4.2p"), "D-C1.4b": (d_c1_4b, "C1.4"),
     "D-C4.3": (d_c4_3, "C4.3"), "D-C5.1": (d_c5_1, "C5.1"), "D-C5.2": (d_c5_2, "C5.2"),
 }
 # composites: pairs whose effects do not cancel (schema ops excluded: they mask everything)

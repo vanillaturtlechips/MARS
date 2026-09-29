@@ -43,6 +43,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -144,6 +146,7 @@ class Judge:
             self._cache = json.loads(_CACHE_PATH.read_text())
         self.calls = 0
         self.hits = 0
+        self._lock = threading.Lock()
 
     def _get_client(self):
         """Build the client, honouring JUDGE_MODEL.
@@ -179,7 +182,8 @@ class Judge:
         user = (f"DIAGNOSIS\n{json.dumps(seen, indent=2, ensure_ascii=False, default=str)}\n\n"
                 f"EVIDENCE BUNDLE\n{json.dumps(bundle, indent=2, ensure_ascii=False, default=str)}")
         out = self._get_client().complete_structured(ROLES[self.role], user, _SCHEMA)
-        self.calls += 1
+        with self._lock:
+            self.calls += 1
 
         # Parsing rule (stated in the supplementary): an unparseable reply scores
         # 0, so a malformed judge holds the diagnosis rather than releasing it.
@@ -190,12 +194,27 @@ class Judge:
             support = 0.0
         reason = (out or {}).get("reason") or ""
         if self._use_cache:
-            self._cache[k] = {"support": support, "reason": reason}
-            # Flush periodically: a sweep is several hundred paid calls and a
-            # crash near the end used to discard all of them.
-            if self.calls % 25 == 0:
-                self.save()
+            with self._lock:
+                self._cache[k] = {"support": support, "reason": reason}
+                # Flush periodically: a sweep is several hundred paid calls and a
+                # crash near the end used to discard all of them.
+                if self.calls % 25 == 0:
+                    self.save()
         return support, reason
+
+    def score_many(self, items: list[tuple[dict, dict]], workers: int = 8
+                   ) -> list[tuple[float, str]]:
+        """Score many (diagnosis, bundle) pairs at once.
+
+        A Table II pass is several hundred judge calls at a couple of seconds
+        each; serially that is most of the run's wall clock, and none of it is
+        compute — it is waiting on HTTP. Cache hits return without a call, so a
+        re-run stays instant.
+        """
+        if not items:
+            return []
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            return list(ex.map(lambda it: self.score(*it), items))
 
     def save(self) -> None:
         if self._use_cache and self._cache:

@@ -1,8 +1,15 @@
 """P1/P2 mutation test: run eval/mutation_probes.json through the runtime validator V.
 
 V is the whole runtime gate, not just the Python validator:
-  diagnosis: V_dx = schema(_OUTPUT_SCHEMA, enforced by the API's structured output at
-             runtime, reproduced here with jsonschema) ∘ validate_diagnosis
+  diagnosis: V_dx = schema(_OUTPUT_SCHEMA, reproduced here with jsonschema)
+             ∘ validate_diagnosis
+
+  CAVEAT, found the hard way: the runtime does NOT enforce that schema. The
+  Anthropic structured-output path returns the forced tool's input unvalidated, so
+  a malformed diagnosis reaches validate_diagnosis directly — a real run produced
+  an `evidence` item that was a bare string and crashed it. P1 measured here is
+  therefore against a gate STRONGER than the deployed one, unless validate_diagnosis
+  itself rejects the malformed shape. It now does, and D-C1.4b covers it.
   policy:    V_pol = schema(policy item) ∘ guardrail.check
 
 Reports, per operator: non-accept rate (P1 for `expect: non_accept`), accept rate
