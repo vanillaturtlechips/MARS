@@ -176,6 +176,31 @@ def d_c4_2c(d, b, t, rng):
                             "mission_failures[0].battery_pct", "trigger_event.health_at_failure.temp"]))
     return d, b, t
 
+def _unique_leaves(bundle) -> dict[str, str]:
+    """{leaf name: its single path} for leaves that occur exactly once in B."""
+    import re as _re
+    seen: dict[str, list[str]] = {}
+    for path in enumerate_paths(bundle):
+        norm = _re.sub(r"\[\d+\]$", "", path)
+        seen.setdefault(norm.split(".")[-1].split("[")[0], []).append(norm)
+    return {k: sorted(set(v))[0] for k, v in seen.items() if len(set(v)) == 1
+            and "." in sorted(set(v))[0]}
+
+
+def d_c4_2p(d, b, t, rng):
+    """C4.2p: a real field name at the wrong depth. The referent is unique, so the
+    citation identifies a real datum imprecisely rather than inventing one — it
+    must still not be accepted, but for provenance, not fabrication."""
+    uniq = _unique_leaves(b)
+    if not uniq:
+        _set_ref(d, "trigger_event.nowhere_at_all")
+        return d, b, t
+    leaf, real = rng.choice(sorted(uniq.items()))
+    # Same leaf, deliberately wrong depth: one segment fewer than the real path.
+    head = real.split(".")[0]
+    _set_ref(d, f"{head}.{leaf}" if f"{head}.{leaf}" != real else leaf)
+    return d, b, t
+
 def d_c4_2d(d, b, t, rng):
     _set_ref(d, rng.choice(["mission_failures[].zone", "mission_failures[x].zone", "mission_failures[-1].zone"]))
     return d, b, t
@@ -220,6 +245,7 @@ DX_OPS = {
     "D-C1.4": (d_c1_4, "C1.4"), "D-C4.1": (d_c4_1, "C4.1"),
     "D-C4.2a": (d_c4_2a, "C4.2"), "D-C4.2b": (d_c4_2b, "C4.2"), "D-C4.2c": (d_c4_2c, "C4.2"),
     "D-C4.2d": (d_c4_2d, "C4.2"), "D-C4.2e": (d_c4_2e, "C4.2"),
+    "D-C4.2p": (d_c4_2p, "C4.2p"),
     "D-C4.3": (d_c4_3, "C4.3"), "D-C5.1": (d_c5_1, "C5.1"), "D-C5.2": (d_c5_2, "C5.2"),
 }
 # composites: pairs whose effects do not cancel (schema ops excluded: they mask everything)
@@ -248,8 +274,12 @@ def b_dx_3(d, b, t, rng):
     return d, b, t
 
 def b_dx_4(d, b, t, rng):
+    # A null value IS verifiable evidence (C4.2: the path exists). APPEND the ref
+    # rather than replace one: replacing could drop the second distinct
+    # mission_failures entry a zone_wide claim needs (C4.3), so a probe built to
+    # be valid would fail P2 for an unrelated reason.
     b["mission_failures"][0]["fault_flag"] = None
-    _set_ref(d, "mission_failures[0].fault_flag")
+    d["evidence"][0].setdefault("refs", []).append("mission_failures[0].fault_flag")
     return d, b, t
 
 def b_dx_5(d, b, t, rng):
@@ -395,8 +425,19 @@ def b_pol_4(p, a, w, l, rng):
     l[p["type"]] = POLICY_COOLDOWN_SEC; return p, a, w, l   # exactly at cooldown (seconds ago)
 
 def b_pol_5(p, a, w, l, rng):
-    p["type"] = "avoid_zone"; p["params"] = {"zone": w["_open"][0]}
-    a.append({"policy_id": "P-other", "type": "avoid_zone", "params": {"zone": w["_open"][1]}}); return p, a, w, l
+    # An active policy of the same type on a DIFFERENT zone must not read as a
+    # duplicate. Guard the zone ids explicitly: when _open[0] == _open[1] the
+    # probe built an exact duplicate and failed P2 for the wrong reason.
+    # The base builder may already have an active avoid_zone (P-old). Pick a zone
+    # no active policy holds, or this probe duplicates one and is rejected for a
+    # reason it was not built to test.
+    taken = {x.get("params", {}).get("zone") for x in a}
+    free = [z for z in w["_open"] if z not in taken]
+    if len(free) < 2:
+        return p, a, w, l
+    p["type"] = "avoid_zone"; p["params"] = {"zone": free[0]}
+    a.append({"policy_id": "P-other", "type": "avoid_zone", "params": {"zone": free[1]}})
+    return p, a, w, l
 
 POL_BOUNDARY = {"B-pol-1": b_pol_1, "B-pol-2": b_pol_2, "B-pol-3": b_pol_3,
                 "B-pol-4": b_pol_4, "B-pol-5": b_pol_5}

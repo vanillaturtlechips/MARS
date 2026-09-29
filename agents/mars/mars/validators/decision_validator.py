@@ -46,22 +46,14 @@ class DVResult(str, Enum):
 
 _MISSING = object()  # sentinel: field does not exist
 _MISSION_ENTRY_RE = re.compile(r"^mission_failures\[(\d+)\]")
+_TRAILING_INDEX = re.compile(r"\[\d+\]$")
 
 
-def _resolve_ref(ref: str, bundle: dict[str, Any]) -> bool:
-    """
-    Walk a JSON-path-style ref string against the bundle dict.
+def _walk(ref: str, bundle: dict[str, Any]) -> bool:
+    """True when `ref` walks exactly against the bundle.
 
-    Supports:
-      "field_name"
-      "field_name.subfield"
-      "list_field[0]"
-      "list_field[0].subfield"
-
-    Returns True when the path EXISTS in the bundle, regardless of whether the
-    value is None — a null field IS verifiable evidence (e.g. fault_flag=null
-    means no fault was detected).  Returns False only when the path cannot be
-    walked (field does not exist, list index out of range, etc.).
+    A path whose value is None still resolves — a null field IS verifiable
+    evidence (fault_flag=null means no fault was detected).
     """
     parts = []
     for segment in ref.split("."):
@@ -69,10 +61,9 @@ def _resolve_ref(ref: str, bundle: dict[str, Any]) -> bool:
             name, rest = segment.split("[", 1)
             idx_str = rest.rstrip("]")
             if not idx_str.isdigit():
-                # Malformed index ("field[]", "field[x]", "field[-1]") — the
-                # contract grammar (CONTRACT_C.md C4.2) only admits key[i], i >= 0.
-                # Python-style negative indices would silently resolve, so they
-                # are rejected here rather than crashing or passing.
+                # Malformed index ("field[]", "field[x]", "field[-1]"). The
+                # grammar (CONTRACT_C.md C4.2) admits key[i], i >= 0 only;
+                # Python-style negative indices would otherwise resolve silently.
                 return False
             parts.append((name, int(idx_str)))
         else:
@@ -84,12 +75,73 @@ def _resolve_ref(ref: str, bundle: dict[str, Any]) -> bool:
             return False
         current = current.get(name, _MISSING)
         if current is _MISSING:
-            return False          # field does not exist → unresolvable
+            return False
         if idx is not None:
             if not isinstance(current, list) or idx >= len(current):
                 return False
             current = current[idx]
-    return True                   # path exists; value may be None
+    return True
+
+
+def _enumerate(obj: Any, prefix: str = "") -> list[str]:
+    """Every path in the bundle, so a near-miss citation can be looked up."""
+    out: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            p = f"{prefix}.{k}" if prefix else k
+            out.append(p)
+            out += _enumerate(v, p)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            p = f"{prefix}[{i}]"
+            out.append(p)
+            out += _enumerate(v, p)
+    return out
+
+
+def _leaf(ref: str) -> str:
+    return ref.split(".")[-1].split("[")[0]
+
+
+def resolve_ref(ref: str, bundle: dict[str, Any]) -> tuple[str, str | None]:
+    """Resolve a citation. Returns (status, intended_path).
+
+    status is one of:
+      "exact"      the path walks as written
+      "imprecise"  it does not, but the field it names occurs EXACTLY ONCE in the
+                   bundle, so the citation identifies a real datum by the wrong
+                   path — a provenance defect, not an invention
+      "unresolved" no such datum, or the name is ambiguous so the citation does
+                   not identify anything
+
+    The three-way split exists because the two-way one was wrong in practice. Of
+    13 rejected citations in a 100-case run, 10 were a real field named at the
+    wrong depth ("trigger_event.fault_codes" for
+    "trigger_event.health_at_failure.fault_codes"), and the diagnoses carrying
+    them were mostly CORRECT. Treating a mis-typed path as a fabricated one spent
+    the validator's harshest verdict on right answers while catching no wrong
+    ones. An invented field ("mission_failures[0].fault_code", which exists
+    nowhere) is still unresolved and still rejected.
+
+    Ambiguity is not repaired: if the field name occurs in several places the
+    citation does not pick out an observation, which is the thing being checked.
+    """
+    if _walk(ref, bundle):
+        return "exact", ref
+    leaf = _leaf(ref)
+    # A list and its elements share a leaf name ("fault_codes" and
+    # "fault_codes[0]"), which counted as two candidates and made every such
+    # citation look ambiguous. Normalise the trailing index away first.
+    hits = sorted({_TRAILING_INDEX.sub("", p)
+                   for p in _enumerate(bundle) if _leaf(p) == leaf})
+    if len(hits) == 1:
+        return "imprecise", hits[0]
+    return "unresolved", None
+
+
+def _resolve_ref(ref: str, bundle: dict[str, Any]) -> bool:
+    """Back-compat: True when the citation identifies a real datum at all."""
+    return resolve_ref(ref, bundle)[0] != "unresolved"
 
 
 def _tau_for_diagnosis() -> float:
@@ -130,7 +182,11 @@ def validate_diagnosis(
         notes.append(f"confidence {confidence:.2f} < tau {tau:.2f}")
         result = DVResult.DEGRADE
 
-    # 2. Evidence grounding — every ref must resolve
+    # 2. Evidence grounding — every ref must identify a real datum.
+    #    A citation that names a real field at the wrong depth is a provenance
+    #    defect (DEGRADE: the decision is held, and the note says what was meant),
+    #    not a fabrication (REJECT). Collapsing the two spent REJECT on correct
+    #    diagnoses with a mis-typed path — see resolve_ref().
     evidence = agent_output.get("evidence", [])
     if not evidence:
         notes.append("evidence is empty")
@@ -138,9 +194,14 @@ def validate_diagnosis(
     else:
         for item in evidence:
             for ref in item.get("refs", []):
-                if not _resolve_ref(ref, input_bundle):
+                status, intended = resolve_ref(ref, input_bundle)
+                if status == "unresolved":
                     notes.append(f"unresolvable ref: {ref!r}")
                     result = DVResult.REJECT
+                elif status == "imprecise":
+                    notes.append(f"imprecise ref: {ref!r} -> {intended!r}")
+                    if result is not DVResult.REJECT:
+                        result = DVResult.DEGRADE
 
     # 3. Consistency: zone_wide/fleet_wide scope should reference multiple robots
     scope = agent_output.get("scope", "")

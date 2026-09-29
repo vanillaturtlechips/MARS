@@ -65,7 +65,8 @@ the specific input datum… never invent"; §1 hooks "claims zone_wide → evide
 | id | 술어 | 적용 |
 |---|---|---|
 | C4.1 | `evidence` 비어 있지 않음 | dx |
-| C4.2 | 모든 `evidence[*].refs[*]`가 B에서 **경로로 해석**된다 — 경로 문법: `key`, `key.sub`, `key[i]`, `key[i].sub` (**i는 음이 아닌 정수**); 값이 null이어도 경로가 존재하면 해석됨 | dx |
+| C4.2 | 모든 `evidence[*].refs[*]`가 B의 **실제 데이터를 지목**한다 — (a) 경로가 그대로 해석되거나, (b) 경로는 틀렸지만 그 **필드명이 B에 정확히 한 번** 등장해 지목 대상이 유일하게 결정된다. 경로 문법: `key`, `key.sub`, `key[i]`, `key[i].sub` (**i는 음이 아닌 정수**); 값이 null이어도 경로가 존재하면 해석됨. 어디에도 없거나 **모호하면** 위반 | dx |
+| C4.2p | (b)에 해당하는 인용은 **출처 정밀성** 위반이다 — 지목 대상은 실재하므로 날조가 아니고, 경로가 틀렸으므로 근거를 기계적으로 재구성할 수 없다. C4.2 위반보다 약한 처분을 받는다 | dx |
 | C4.3 | `scope ∈ {zone_wide, fleet_wide}` ⇒ refs가 가리키는 **서로 다른** `mission_failures[i]` 항목이 ≥ 2 (같은 항목 2회 인용·리스트 전체 인용은 1개로 세지 않음) | dx |
 
 ### C5 — Operational constraints
@@ -115,6 +116,7 @@ P1·P2는 **변이 시험**으로 검증한다: 표현은 항상 "100% on the te
 | D-C4.2a | C4.2 | 한 ref의 최상위 키를 미존재 키로 |
 | D-C4.2b | C4.2 | 한 ref의 리스트 인덱스를 길이 이상으로 |
 | D-C4.2c | C4.2 | 한 ref의 하위 필드를 미존재 필드로 |
+| D-C4.2p | C4.2p | 한 ref를 **실재하는 필드명 + 틀린 깊이**로 (지목 대상은 유일) |
 | D-C4.2d | C4.2 | 한 ref의 인덱스 문법을 깨뜨림 (`[]`, `[x]`) |
 | D-C4.2e | C4.2 | 모든 ref를 미존재로 |
 | D-C4.3 | C4.3 | scope := zone_wide/fleet_wide 로 바꾸고 mission_failures ref를 ≤1로 |
@@ -181,3 +183,31 @@ P1·P2는 **변이 시험**으로 검증한다: 표현은 항상 "100% on the te
 수정 후: **P1 1,710/1,710, P2 330/330, 원본 2,040/2,040 accept** (`eval/run_mutations.py`). 기존 단위 테스트 139개 통과.
 논문 표기: "100% on the tested mutation operators (24 single, 9 composite, 11 boundary)"; 1차 실행의 검증기 결함 3건은
 **독립 도출의 효과**로 §V 또는 supplementary에 기록한다 (계약을 검증기에서 도출했다면 발견되지 않았을 것).
+
+---
+
+## 부록 A — C4.2의 2항 분할 (2026-09-29)
+
+초판 C4.2는 "경로가 그대로 해석되는가"만 물었고, 실패는 전부 `REJECT`(날조)로 처분했다.
+Haiku 100건 실행에서 그 처분을 받은 인용 13건을 분해한 결과:
+
+| 횟수 | 인용 | 그 필드가 실재하는 위치 |
+|---|---|---|
+| 5 | `trigger_event.fault_codes` | `trigger_event.health_at_failure.fault_codes` |
+| 4 | `distribution.per_zone_robot_spread` | `trigger_event.distribution.per_zone_robot_spread` |
+| 1 | `trigger_event.fault_codes[0]` | `trigger_event.health_at_failure.fault_codes[0]` |
+| 3 | `mission_failures[0].fault_code(s)` | **없음** |
+
+**13건 중 10건이 실재하는 필드를 잘못된 깊이로 가리킨 것**이었고, 그 진단들은 대부분
+cause가 **정답**이었다. 즉 계약의 최고 처분이 오타를 문 채 정답을 막고 있었고,
+틀린 진단은 하나도 잡지 못했다.
+
+날조와 오타는 검증 가능성이 다르다. 전자는 지목 대상이 없어 근거를 확인할 길이 없고,
+후자는 대상이 실재하므로 확인은 되지만 경로가 틀려 **기계적 재구성이 불가**하다.
+그래서 C4.2를 지목 가능성(resolvability)과 출처 정밀성(C4.2p)으로 나눴다.
+모호한 경우(필드명이 여러 곳에 등장)는 지목 대상이 결정되지 않으므로 C4.2 위반으로 남긴다.
+
+적용 후: `REJECT`가 RAG-on 6→1건, RAG-off 7→2건으로 줄고, 남은 RAG-off 2건은 **둘 다 오답**이다.
+`PASS` 집합은 변하지 않는다(오타 인용은 이전에도 통과하지 못했다) — 따라서 작동점과
+unsafe-act 수치는 그대로이고, 바뀐 것은 **처분의 의미**다.
+변이 테스트는 계속 통과한다: 복구 가능한 인용도 `DEGRADE`로 수락되지 않으므로 P1이 유지된다.

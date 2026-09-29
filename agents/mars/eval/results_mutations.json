@@ -59,7 +59,8 @@
   "n": 60,
   "ok": 60,
   "verdicts": {
-   "REJECT": 60
+   "REJECT": 59,
+   "DEGRADE": 1
   },
   "fails": []
  },
@@ -76,6 +77,14 @@
   "ok": 60,
   "verdicts": {
    "REJECT": 60
+  },
+  "fails": []
+ },
+ "D-C4.2p": {
+  "n": 60,
+  "ok": 60,
+  "verdicts": {
+   "DEGRADE": 60
   },
   "fails": []
  },
@@ -131,8 +140,8 @@
   "n": 30,
   "ok": 30,
   "verdicts": {
-   "DEGRADE": 15,
-   "REJECT": 15
+   "DEGRADE": 13,
+   "REJECT": 17
   },
   "fails": []
  },
@@ -204,9 +213,9 @@
   "n": 60,
   "ok": 60,
   "verdicts": {
-   "SCHEMA_REJECT": 23,
-   "MODIFY": 23,
-   "REJECT": 14
+   "MODIFY": 27,
+   "REJECT": 11,
+   "SCHEMA_REJECT": 22
   },
   "fails": []
  },
