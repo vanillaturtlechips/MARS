@@ -212,6 +212,15 @@ class FailureAnalysisAgent:
         # ------------------------------------------------------------------
         converged = False
         llm_error: str | None = None
+        # Tool CALLS, not just their results. The loop kept only the most recent
+        # result per tool name and discarded the arguments entirely, so it was
+        # impossible to tell what the agent actually asked for — which made two
+        # things unmeasurable: whether it filtered search_incidents by a guessed
+        # failure_type (that filter feeds the trust score the validator reads, so
+        # part of a supposedly external check is agent-chosen), and whether
+        # "precedent utilisation" is anything more than the agent's own
+        # relied_on_precedents self-report.
+        tool_calls_log: list[dict[str, Any]] = []
         for _iteration in range(INVESTIGATOR_MAX_ITERATIONS):
             if time.monotonic() > deadline:
                 log.warning("[investigator] timeout after %d tool calls", tool_count)
@@ -259,9 +268,15 @@ class FailureAnalysisAgent:
                     # Store most-recent result per tool name (last call wins)
                     tool_results[tc.name] = result
                     log.debug("[investigator] tool=%s args=%s", tc.name, tc.arguments)
+                    tool_calls_log.append({
+                        "tool": tc.name, "args": tc.arguments,
+                        "n_results": len(result) if isinstance(result, list) else None,
+                    })
                 except Exception:
                     log.exception("[investigator] tool dispatch failed: %s", tc.name)
                     result = {"error": "tool execution failed"}
+                    tool_calls_log.append({"tool": tc.name, "args": tc.arguments,
+                                           "error": True})
                 # Append tool result
                 messages.append({
                     "role":         "tool",
@@ -319,6 +334,9 @@ class FailureAnalysisAgent:
 
         # Attach transcript (same key conventions as old _input_bundle)
         diagnosis["_tool_transcript"] = transcript
+        # Under a private key so it is not part of the contract surface: the
+        # validator must keep judging the bundle, not the call history.
+        diagnosis["_tool_calls"] = tool_calls_log
         if llm_error:
             # Surfaced so an evaluation can refuse to score a run whose model
             # never answered. Without it a dead API key produces a full set of

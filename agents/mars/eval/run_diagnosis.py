@@ -145,7 +145,17 @@ def run_mode(cases, rag_on: bool, limit: int, attack: str = "none", seed: int = 
         # SAME output with five validators, and the A2/A3 attacks are transforms of
         # it, so both must be on disk or every validator would need its own API run
         # (and the comparison would stop being paired).
-        dx_raw = {k: v for k, v in dx.items() if k != "_tool_transcript"}
+        dx_raw = {k: v for k, v in dx.items()
+                  if k not in ("_tool_transcript", "_tool_calls")}
+        calls = dx.get("_tool_calls") or []
+        # Did the agent narrow the precedent search by a cause it had guessed?
+        # That filter raises the trust score of matching precedents, and the
+        # validator's retrieval-coherence check reads that score — so this is the
+        # measurement that tells us how much of a supposedly external check the
+        # agent is steering.
+        ft_filtered = [c for c in calls
+                       if c["tool"] == "search_incidents"
+                       and (c.get("args") or {}).get("failure_type")]
         # trust score of the RELEVANT precedent specifically (fleet/sensor 분석용)
         rel_trust = [p.get("_trust_score") for p in retrieved
                      if p.get("id") in relevant and p.get("_trust_score") is not None]
@@ -166,6 +176,11 @@ def run_mode(cases, rag_on: bool, limit: int, attack: str = "none", seed: int = 
             "relevant_trust": max(rel_trust) if rel_trust else None,
             "dx": dx_raw,
             "bundle": bundle,
+            "tool_calls": calls,
+            "n_tool_calls": len(calls),
+            "searches": sum(c["tool"] == "search_incidents" for c in calls),
+            "searched_by_cause": [(c.get("args") or {}).get("failure_type")
+                                  for c in ft_filtered],
         })
     conn.close()
     return rows
@@ -194,6 +209,34 @@ def summarize(tag, rows):
         if d in bydiff:
             c, s, t = bydiff[d]
             print(f"    {d:7s} cause {c}/{t} ({100*c/t:.0f}%)  scope {s}/{t} ({100*s/t:.0f}%)")
+    # Leak canary. If a dataset or tool change ever hands the answer back to the
+    # agent again, this number jumps and the accuracy figure stops meaning what it
+    # says. Kept as a standing metric rather than a one-off check.
+    withp = [r for r in ok if (r.get("bundle") or {}).get("retrieved_precedents")]
+    if withp:
+        def top_label(r):
+            return ((r.get("bundle") or {}).get("retrieved_precedents") or [{}])[0].get("failure_type")
+        copyable = sum(top_label(r) is not None for r in withp)
+        copy_acc = sum((top_label(r) or "unknown") == r["gt_cause"] for r in ok)
+        print(f"  leak canary: top precedent exposes a cause label in {copyable}/{len(withp)} "
+              f"cases; 'copy it, else unknown' would score {copy_acc}/{len(ok)} "
+              f"({100*copy_acc/len(ok):.0f}%) vs the model's "
+              f"{sum(r['cause_ok'] for r in ok)}/{len(ok)}")
+
+    # Instrumentation of what the agent ASKED for, not only what it reported.
+    calls = [r for r in ok if "n_tool_calls" in r]
+    if calls:
+        byc = [r for r in calls if r.get("searched_by_cause")]
+        print(f"  tool calls: mean {sum(r['n_tool_calls'] for r in calls)/len(calls):.1f}/case, "
+              f"searches {sum(r['searches'] for r in calls)}")
+        print(f"    searched with a guessed failure_type filter: {len(byc)}/{len(calls)} cases"
+              + (f" — that filter raises matching precedents' trust, which the "
+                 f"validator's coherence check then reads" if byc else ""))
+        if byc:
+            guessed_eq_pred = sum(r["pred_cause"] in r["searched_by_cause"] for r in byc)
+            print(f"    of those, the guess it filtered by became its answer: "
+                  f"{guessed_eq_pred}/{len(byc)}")
+
     # B: retrieval instrumentation (only meaningful when precedents exist)
     rel = [r for r in ok if r.get("has_relevant")]
     if rel:

@@ -151,7 +151,16 @@ def acted_rate(rows: list[dict], validator: str, t: float) -> float:
             # agent cannot satisfy by sounding more certain. MARS contains the
             # gate, so without this row whole-MARS yield would track the gate's
             # and hide exactly what A1 is testing.
-            ok = validate_diagnosis(r["dx"], r.get("bundle") or {}, tau=0.0)[0].value == "PASS"
+            #
+            # CAVEAT (CONTRACT_C.md appendix C): tau=0 still leaves C5.2, whose
+            # input (retrieval trust) is computed from the failure_type the AGENT
+            # passed to search_incidents — so it is partly agent-steered and does
+            # not belong in a "cannot be talked past" row. Passing no
+            # retrieval_trust makes the check inert, leaving evidence
+            # resolvability and scope consistency: the two that really are
+            # external.
+            ok = validate_diagnosis(r["dx"], r.get("bundle") or {},
+                                    retrieval_trust=None, tau=0.0)[0].value == "PASS"
         else:
             raise ValueError(validator)
         n += ok

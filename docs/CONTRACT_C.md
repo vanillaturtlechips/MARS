@@ -76,7 +76,7 @@ the specific input datum… never invent"; §1 hooks "claims zone_wide → evide
 | id | 술어 | 파라미터 | 적용 |
 |---|---|---|---|
 | C5.1 | `confidence ≥ τ_dx` | τ_dx = DV_TAU_DIAGNOSIS = 0.5 | dx |
-| C5.2 | `relied_on_precedents ≠ ∅ ∧ W.retrieval_trust = LOW ⇒ confidence ≤ ceil(LOW)` | ceil(LOW) = 0.7 | dx |
+| C5.2 | `relied_on_precedents ≠ ∅ ∧ W.retrieval_trust = LOW ⇒ confidence ≤ ceil(LOW)` | ceil(LOW) = 0.7 | dx | **⚠ 부분적 자기보고 — 부록 C 참조** |
 | C5.3 | `POLICY_MIN_DURATION_SEC ≤ duration_sec ≤ POLICY_MAX_DURATION_SEC` | [60, 7200] | pol |
 | C5.4 | `now − last_applied[type] ≥ POLICY_COOLDOWN_SEC` | 120 s | pol |
 
@@ -211,3 +211,41 @@ cause가 **정답**이었다. 즉 계약의 최고 처분이 오타를 문 채 �
 `PASS` 집합은 변하지 않는다(오타 인용은 이전에도 통과하지 못했다) — 따라서 작동점과
 unsafe-act 수치는 그대로이고, 바뀐 것은 **처분의 의미**다.
 변이 테스트는 계속 통과한다: 복구 가능한 인용도 `DEGRADE`로 수락되지 않으므로 P1이 유지된다.
+
+---
+
+## 부록 C — C5.2는 외부 검증 검사가 아니다 (2026-09-29)
+
+§0은 계약 C를 "(d, B, W)만의 함수"로 정의하고, 논문 §III는 검사를
+**외부 검증 가능**(근거 해석, 화이트리스트, zone 존재, 생존 불변식)과
+**자기보고 의존**(신뢰도)으로 나눈다. C5.2(검색 일관성)는 전자로 분류돼 있었다.
+틀렸다.
+
+`W.retrieval_trust`는 `score_precedent(precedent, zone, current_failure_type, scope)`로
+계산되고, `current_failure_type`은 **에이전트가 `search_incidents`에 넘긴 인자**다.
+점수 구성:
+
+```
+failure_type 일치 → metadata_match 1.0,  불일치 → 0.3      (가중치 w_meta = 0.30)
+```
+
+따라서 에이전트가 **자기 추측을 필터로 넘기면** 그에 맞는 precedent의 신뢰도가
+최대 **+0.21** 올라가고, 그 값이 집합 수준(HIGH/MEDIUM/LOW)으로 집계돼 C5.2의 입력이 된다.
+즉 W의 이 성분은 함대가 만든 관측이 아니라 **에이전트의 질의가 만든 값**이다.
+
+결과:
+
+- C5.2는 P3("외부 검증 가능한 검사는 에이전트 전략과 무관")의 **반례**다.
+  전략적 에이전트는 필터 인자 선택만으로 이 검사를 느슨하게 만들 수 있다.
+- 논문 §III의 2분류를 3분류로 고쳐야 한다: 외부 검증 / **부분적 에이전트 제어** / 자기보고.
+- A1의 게이트 수율 측정에서 `MARS-structural`(τ=0)은 C5.2를 **포함**하므로,
+  "구조적 검사는 말로 통과할 수 없다"는 주장에 이 검사는 넣을 수 없다.
+  C5.2를 뺀 조건(근거 해석 + scope 일관성만)을 따로 재야 한다.
+
+**계측 부재였던 이유**: 조사 루프가 도구 **결과만** 보관하고 호출 인자를 버렸기 때문에,
+필터가 실제로 쓰였는지 측정할 방법이 없었다. 이번에 `_tool_calls`로 기록하도록 고쳤고,
+`run_diagnosis`가 "추측한 원인으로 검색한 케이스 수"와 "그 추측이 최종 답이 된 비율"을
+보고한다. 크기는 다음 실행에서 확정된다.
+
+관련: 같은 이유로 "precedent 활용 85%"는 `relied_on_precedents` **자기보고**이며,
+호출 기록이 없던 동안에는 교차 검증이 불가능했다.

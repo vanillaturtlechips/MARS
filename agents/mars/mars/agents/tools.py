@@ -278,7 +278,17 @@ class InvestigatorTools:
                 "source_type":  r.get("source_type", ""),
                 "summary":      r.get("summary", ""),
                 "zone":         r.get("zone"),
-                "failure_type": r.get("failure_type"),
+                # `failure_type` is deliberately NOT returned. The stored value is
+                # the labelled cause of that past incident, and for a relevant
+                # precedent that is the answer to the case in front of the agent —
+                # 70 of 78 test cases had a relevant precedent whose label equalled
+                # the ground truth. Copying the top-trust precedent's label scored
+                # 68% against the model's 85%, so a fifth of the measured RAG gain
+                # was available without reading anything. The precedent still
+                # carries its `summary`, which is the text the agent is supposed to
+                # reason over ("the e-stop latched only AFTER the pack dropped
+                # below the cutoff"). The field remains in the store and in the
+                # trust scorer; it just no longer goes back to the agent.
                 "scope":        r.get("scope"),
                 "outcome_label": r.get("outcome_label"),
                 "_trust_score": round(trust, 3),
