@@ -265,8 +265,22 @@ class FailureAnalysisAgent:
                 try:
                     result = self._tools.dispatch(tc.name, tc.arguments)
                     tool_count += 1
-                    # Store most-recent result per tool name (last call wins)
-                    tool_results[tc.name] = result
+                    # ACCUMULATE list results instead of letting the last call win.
+                    # Overwriting discarded evidence the agent had already read: the
+                    # final structured call and the validator both see this
+                    # transcript, so nothing was ever rejected for it, but the
+                    # record of what the agent looked at was incomplete. A
+                    # conclusion drawn from a discarded first search could only be
+                    # cited against whatever survived — the citation resolves, the
+                    # audit trail does not hold. Duplicates are dropped by id so a
+                    # repeated search does not inflate any count-based check.
+                    prev = tool_results.get(tc.name)
+                    if isinstance(result, list) and isinstance(prev, list):
+                        seen = {_row_key(r) for r in prev}
+                        tool_results[tc.name] = prev + [
+                            r for r in result if _row_key(r) not in seen]
+                    else:
+                        tool_results[tc.name] = result
                     log.debug("[investigator] tool=%s args=%s", tc.name, tc.arguments)
                     tool_calls_log.append({
                         "tool": tc.name, "args": tc.arguments,
@@ -348,6 +362,16 @@ class FailureAnalysisAgent:
 # ---------------------------------------------------------------------------
 # Transcript builder — maps tool results to the keys the DV resolves against
 # ---------------------------------------------------------------------------
+
+def _row_key(row: Any) -> str:
+    """Identity of a tool-result row, for de-duplicating across repeated calls."""
+    if isinstance(row, dict):
+        for k in ("id", "source_id", "failure_id", "mission_id", "policy_id"):
+            if row.get(k) is not None:
+                return f"{k}={row[k]}"
+        return json.dumps(row, sort_keys=True, default=str)
+    return str(row)
+
 
 def _build_transcript(
     trigger_event: dict[str, Any],

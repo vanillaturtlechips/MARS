@@ -237,6 +237,33 @@ def summarize(tag, rows):
             print(f"    of those, the guess it filtered by became its answer: "
                   f"{guessed_eq_pred}/{len(byc)}")
 
+        # Is the loop actually iterating, or calling each tool once and stopping?
+        # It matters twice over. The paper calls this a bounded ReAct reason-act
+        # loop; one pass over every tool, regardless of what comes back, is
+        # parallel collection and should not be described as reasoning between
+        # actions. And "last call wins" in the transcript only loses evidence when
+        # a tool IS called twice — the hazard is dormant while this stays at 1, and
+        # wakes silently if a prompt change makes the agent re-search, because a
+        # citation into the discarded first result set would then fail to resolve
+        # and be rejected as fabricated.
+        repeats = [r for r in calls if r["n_tool_calls"] > len(
+            {c["tool"] for c in (r.get("tool_calls") or [])})]
+        multi_search = [r for r in calls if r["searches"] > 1]
+        print(f"    iteration: {len(repeats)}/{len(calls)} cases called any tool more than "
+              f"once; {len(multi_search)} searched more than once"
+              + ("" if multi_search else
+                 "  (so the transcript's last-call-wins never dropped evidence here "
+                 "— dormant, not fixed)"))
+        bydiff = defaultdict(lambda: [0, 0, 0])   # diff -> [calls, searches, n]
+        for r in calls:
+            v = bydiff[r.get("difficulty", "?")]
+            v[0] += r["n_tool_calls"]; v[1] += r["searches"]; v[2] += 1
+        print("    by difficulty (calls / searches per case):")
+        for dd in ("easy", "medium", "hard", "?"):
+            if dd in bydiff:
+                c_, s_, t_ = bydiff[dd]
+                print(f"      {dd:7s} {c_/t_:.1f} calls  {s_/t_:.2f} searches  (n={t_})")
+
     # B: retrieval instrumentation (only meaningful when precedents exist)
     rel = [r for r in ok if r.get("has_relevant")]
     if rel:
