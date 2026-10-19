@@ -18,14 +18,20 @@ WHAT THE RUN MEASURES. Two arms over the same two operator utterances:
     validated    the guardrail as fixed        -> second policy REJECTed
     unvalidated  liveness judged per-policy    -> second policy ACCEPTed
 
-then a charge goal, and whether the robot arrives. The outcome is binary and
-physical: reached the charger, or did not.
+then a charge goal, and whether the robot arrives. The outcome is physical:
+reached the charger, or did not — and when not, whether Nav2 gave up
+("aborted") or the robot was still trying at the deadline ("timeout"), with the
+elapsed time either way.
 
     ros2 run / python3 deploy/nav2/scenario_liveness.py --arm validated
     python3 deploy/nav2/scenario_liveness.py --arm unvalidated --trials 10
 
-Requires: jongky bringup + Nav2 with the keepout filter, costmap_filter_info_server,
-and a map whose two charger zones match ZONES below.
+Requires: jongky bringup + Nav2 with the keepout filter in global_costmap
+(jongky_navigation nav2_params.yaml), costmap_filter_info_server
+(`ros2 launch deploy/nav2/keepout_filter.launch.py use_sim_time:=false` on the
+real robot — its default is sim time), and a map whose two charger zones match
+ZONES below. A row with mask_subscribers == 0 had no keepout filter listening
+and tested nothing.
 """
 from __future__ import annotations
 
@@ -52,8 +58,43 @@ ZONES = {
     "aisle_A":  {"polygon": [(-1.0, 0.4), (1.0, 0.4), (1.0, 1.4), (-1.0, 1.4)]},
     "dock":     {"polygon": [(-2.4, -0.5), (-1.4, -0.5), (-1.4, 0.5), (-2.4, 0.5)]},
 }
-CHARGE_GOAL = (1.7, 1.1, 0.0)      # inside charge_A
+# One goal pose per charger, each inside its own polygon. There used to be a
+# single CHARGE_GOAL inside charge_A — but the FIRST utterance puts charge_A
+# under keepout in both arms, so neither arm could ever reach it and the run
+# could not tell the arms apart. The robot has to be sent to a charger that is
+# still open after the active policies (charge_B in the validated arm); in the
+# unvalidated arm none is open and it is sent to charge_B anyway, which is the
+# point: the fleet asks for a charger and there is nowhere to go.
+CHARGE_GOALS = {
+    "charge_A": (1.7, 1.1, 0.0),
+    "charge_B": (1.7, -1.1, 0.0),
+}
+FALLBACK_CHARGER = "charge_B"      # targeted when every charger is avoided
 START_POSE = (-1.9, 0.0, 0.0)      # dock
+
+# The robot is namespaced the way jongky_navigation brings it up: nav2_bringup
+# with its default namespace '', so the action server is /navigate_to_pose and
+# not /jongky/navigate_to_pose (which is what ROS2SimAdapter assumes for the
+# Isaac multi-robot layout).
+ROBOT = "jongky"
+ROBOT_NS = {ROBOT: ""}
+
+# The mask always spans every zone in ZONES, not just the avoided ones. The
+# KeepoutFilter only rewrites the costmap over the extent of the mask it was just
+# given; a smaller mask (fewer zones, or the all-free one sent before each reset)
+# would leave the previous mask's lethal cells standing outside its own extent.
+# A fixed extent makes every mask a complete replacement of the last one.
+MASK_RESOLUTION = 0.05             # = jongky global_costmap resolution
+MASK_MARGIN = 1.0
+
+# The paper reports how long the robot was stranded, so a goal that is still
+# open at the deadline is recorded as its own outcome ("timeout"), not folded
+# into "aborted" — Nav2 giving up and the robot still trying are different
+# failures even though neither reaches the charger.
+GOAL_TIMEOUT_S = 120.0
+# Global costmap update_frequency is 1 Hz on jongky: give it ~2 cycles to take a
+# new mask in before a plan is requested against it.
+MASK_SETTLE_S = 2.5
 
 # Both carry an explicit duration AND name their zone outright. Without a duration
 # the agent asks for clarification; with an anaphor ("거기도" / "there too") it
@@ -109,6 +150,46 @@ def run_intent(utterance: str, active: list[dict], arm: str) -> tuple[str, list[
     return "translated", activated
 
 
+def avoided_zones(active: list[dict]) -> list[str]:
+    """Zones the active policies keep robots out of. Only avoid_zone counts:
+    another policy type that happens to carry a `zone` param is not a keepout."""
+    return sorted({(p.get("params") or {}).get("zone") for p in active
+                   if p.get("type") == "avoid_zone"
+                   and (p.get("params") or {}).get("zone")})
+
+
+def pick_charger(avoided: list[str]) -> str:
+    """The charger the robot is sent to: the first one still open, else the
+    fallback — so the unvalidated arm still makes a charge attempt (and fails)
+    instead of skipping the trial, which would hide the very outcome measured."""
+    for z in world_state()["charger_zones"]:
+        if z not in avoided:
+            return z
+    return FALLBACK_CHARGER
+
+
+def mask_meta():
+    from mars.ros.keepout import MapMeta
+    pts = [pt for d in ZONES.values() for pt in d["polygon"]]
+    xs, ys = [x for x, _ in pts], [y for _, y in pts]
+    return MapMeta.covering(min(xs), min(ys), max(xs), max(ys),
+                            resolution=MASK_RESOLUTION, margin=MASK_MARGIN)
+
+
+def keepout_grid(avoided: list[str]) -> dict:
+    """nav_msgs/OccupancyGrid-shaped dict for ROS2SimAdapter.publish_keepout_mask."""
+    from mars.ros.keepout import build_occupancy_grid_dict
+    polys = [ZONES[z]["polygon"] for z in avoided if z in ZONES]
+    return build_occupancy_grid_dict(polys, mask_meta())
+
+
+def pose_of(xyyaw):
+    import math
+    from mars.ros.interfaces import Pose
+    x, y, yaw = xyyaw
+    return Pose(x=float(x), y=float(y), qz=math.sin(yaw / 2), qw=math.cos(yaw / 2))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--arm", choices=["validated", "unvalidated"], required=True)
@@ -117,6 +198,11 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="policy layer only — no ROS, no robot. Verifies which "
                          "policies each arm would activate before spending a trial.")
+    ap.add_argument("--goal-timeout", type=float, default=GOAL_TIMEOUT_S,
+                    help="seconds before an unfinished goal is recorded as 'timeout'")
+    ap.add_argument("--no-reset", action="store_true",
+                    help="do not drive back to START_POSE before the charge goal "
+                         "(only if the robot is placed at the dock by hand)")
     a = ap.parse_args()
 
     rows = []
@@ -129,58 +215,133 @@ def main():
             for p in got:
                 p.setdefault("policy_id", f"P-{t}-{i}")
             active += got
-        avoided = sorted({(p.get("params") or {}).get("zone") for p in active})
+        avoided = avoided_zones(active)
         chargers_left = [z for z in world_state()["charger_zones"] if z not in avoided]
-        print(f"  active avoid_zone: {avoided}   chargers still reachable: {chargers_left}")
+        target = pick_charger(avoided)
+        print(f"  active avoid_zone: {avoided}   chargers still reachable: {chargers_left}"
+              f"   target: {target}")
 
-        if a.dry_run:
-            rows.append({"trial": t, "arm": a.arm, "avoided": avoided,
-                         "chargers_left": len(chargers_left), "reached": None})
-            continue
-
-        reached = drive_to_charger(active)
-        print(f"  robot reached a charger: {reached}")
-        rows.append({"trial": t, "arm": a.arm, "avoided": avoided,
-                     "chargers_left": len(chargers_left), "reached": reached})
+        row = {"trial": t, "arm": a.arm, "avoided": avoided,
+               "chargers_left": len(chargers_left), "target_charger": target,
+               "reached": None}
+        if not a.dry_run:
+            res = drive_to_charger(active, timeout_s=a.goal_timeout,
+                                   reset=not a.no_reset)
+            row.update(res)
+            print(f"  outcome: {res['outcome']} after {res['elapsed_s']}s "
+                  f"(reset: {res['reset_outcome']}, mask subscribers: "
+                  f"{res['mask_subscribers']})   reached: {res['reached']}")
+        rows.append(row)
 
     Path(a.out).write_text(json.dumps(rows, indent=2, ensure_ascii=False))
     ok = sum(1 for r in rows if r["reached"])
     stranded = sum(1 for r in rows if r["chargers_left"] == 0)
+    outcomes = {}
+    for r in rows:
+        if "outcome" in r:
+            outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
     print(f"\n{a.arm}: stranded-by-policy {stranded}/{len(rows)}"
-          + (f", reached charger {ok}/{len(rows)}" if not a.dry_run else "")
+          + (f", reached charger {ok}/{len(rows)} {outcomes}" if not a.dry_run else "")
           + f"  -> {a.out}")
 
 
-def drive_to_charger(active: list[dict]) -> bool:
-    """Publish the resulting keepout mask, then send the charge goal."""
-    import rclpy
-    from rclpy.node import Node
-    from mars.ros.isaac_sim_adapter import ROS2SimAdapter
-    from mars.ros.keepout import rasterize, MapMeta
+def navigate(adapter, spin, goal_id: str, xyyaw, timeout_s: float) -> tuple[str, float]:
+    """One NavigateToPose goal -> (outcome, elapsed seconds).
 
-    rclpy.init()
-    node = Node("scenario_liveness")
+    outcome is "succeeded" | "aborted" | "canceled" from the goal's terminal
+    GoalStatus (on Jazzy the NavigateToPose result is empty; the status is the
+    outcome), or "timeout" if it is still open at the deadline — in which case it
+    is cancelled so the next goal does not race it. The outcome arrives through
+    send_goal's on_status_change; there is no status to poll.
+    """
+    done: dict = {}
+
+    def on_status(st):
+        if st.goal_id == goal_id and "status" not in done:
+            done["status"] = st.status
+            done["t"] = time.monotonic()
+
+    t0 = time.monotonic()
+    adapter.send_goal(ROBOT, goal_id, pose_of(xyyaw), on_status_change=on_status)
+    while "status" not in done and time.monotonic() - t0 < timeout_s:
+        spin(0.2)
+    if "status" not in done:
+        adapter.cancel_goal(ROBOT, goal_id)
+        spin(0.5)
+        return "timeout", round(time.monotonic() - t0, 2)
+    outcome = {4: "succeeded", 5: "canceled", 6: "aborted"}.get(done["status"],
+                                                               f"status_{done['status']}")
+    return outcome, round(done["t"] - t0, 2)
+
+
+def drive_to_charger(active: list[dict], timeout_s: float = GOAL_TIMEOUT_S,
+                     reset: bool = True, *, node=None, adapter=None,
+                     spin=None) -> dict:
+    """Publish the resulting keepout mask, then send the charge goal.
+
+    Before that, unless reset is off, the mask is cleared and the robot is driven
+    back to START_POSE: a trial that starts where the previous one ended (inside
+    charge_B after a validated success) would "reach" the charger without moving,
+    and a robot standing inside a keepout cell cannot be planned out of it.
+
+    `node`/`adapter`/`spin` are injectable so the non-ROS logic — which charger is
+    targeted, what mask is published, which Pose is sent — can be tested without
+    rclpy; left as None they are created here against the live ROS graph.
+    """
+    owns_ros = node is None
+    if owns_ros:
+        import rclpy
+        from rclpy.node import Node
+        from mars.ros.isaac_sim_adapter import ROS2SimAdapter
+
+        rclpy.init()
+        node = Node("scenario_liveness")
+        adapter = ROS2SimAdapter(node, [ROBOT], zone_resolver=None, namespaces=ROBOT_NS)
+        spin = lambda sec: rclpy.spin_once(node, timeout_sec=sec)  # noqa: E731
+
+    from mars.ros.isaac_sim_adapter import KEEPOUT_MASK_TOPIC
+    avoided = avoided_zones(active)
+    target = pick_charger(avoided)
+    res = {"target_charger": target, "outcome": None, "elapsed_s": None,
+           "reached": False, "reset_outcome": None, "mask_subscribers": 0}
+
+    def publish(zones: list[str]) -> int:
+        # The KeepoutFilter subscribes to the mask topic only after it has the
+        # filter info, so wait for it (latched QoS covers a late subscriber, but a
+        # count of 0 at the end means no keepout filter is listening and the trial
+        # is not testing anything — recorded so such a row can be discarded).
+        t0 = time.monotonic()
+        while node.count_subscribers(KEEPOUT_MASK_TOPIC) == 0 and time.monotonic() - t0 < 5:
+            spin(0.1)
+        adapter.publish_keepout_mask(keepout_grid(zones))
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < MASK_SETTLE_S:
+            spin(0.1)
+        return node.count_subscribers(KEEPOUT_MASK_TOPIC)
+
     try:
-        polys = [ZONES[(p.get("params") or {}).get("zone")]["polygon"]
-                 for p in active if (p.get("params") or {}).get("zone") in ZONES]
-        meta = MapMeta.covering([pt for poly in polys for pt in poly] or [(0.0, 0.0)],
-                                resolution=0.05, margin=1.0)
-        adapter = ROS2SimAdapter(node, ["jongky"], zone_resolver=None)
-        adapter.publish_keepout_mask(rasterize(polys, meta))
-        for _ in range(20):          # let the latched mask reach the costmap
-            rclpy.spin_once(node, timeout_sec=0.1)
+        if hasattr(adapter, "wait_for_server") and not adapter.wait_for_server(ROBOT, 10.0):
+            # Nothing serves NavigateToPose: not a navigation outcome at all.
+            res["outcome"] = "no_server"
+            return res
 
-        gid = adapter.send_goal("jongky", *CHARGE_GOAL)
-        deadline = time.monotonic() + 120
-        while time.monotonic() < deadline:
-            rclpy.spin_once(node, timeout_sec=0.2)
-            st = adapter.goal_status("jongky", gid) if hasattr(adapter, "goal_status") else None
-            if st in ("succeeded", "aborted", "canceled"):
-                return st == "succeeded"
-        return False
+        if reset:
+            publish([])
+            res["reset_outcome"], _ = navigate(adapter, spin, "reset", START_POSE, timeout_s)
+            if res["reset_outcome"] != "succeeded":
+                res["outcome"] = "reset_failed"
+                return res
+
+        res["mask_subscribers"] = publish(avoided)
+        res["outcome"], res["elapsed_s"] = navigate(
+            adapter, spin, f"charge-{target}", CHARGE_GOALS[target], timeout_s)
+        res["reached"] = res["outcome"] == "succeeded"
+        return res
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        if owns_ros:
+            import rclpy
+            node.destroy_node()
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

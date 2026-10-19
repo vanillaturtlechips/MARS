@@ -78,12 +78,21 @@ class ROS2SimAdapter:
                       by the caller)
       robot_ids     — list of robot IDs whose topics to subscribe
       zone_resolver — ZoneResolver instance for TF → zone mapping
+      namespaces    — optional {robot_id: ros_namespace}.  Default is
+                      "/<robot_id>" (the Isaac multi-robot layout).  A robot
+                      whose Nav2 runs un-namespaced — a single physical robot
+                      brought up with nav2_bringup's default namespace '', e.g.
+                      jongky — must map to "" so the action client targets
+                      /navigate_to_pose.  Without this the client waits forever
+                      on /<robot_id>/navigate_to_pose, which nothing serves.
     """
 
-    def __init__(self, node, robot_ids: list[str], zone_resolver):
+    def __init__(self, node, robot_ids: list[str], zone_resolver,
+                 namespaces: dict[str, str] | None = None):
         self._node          = node
         self._robot_ids     = robot_ids
         self._zone_resolver = zone_resolver
+        self._namespaces    = dict(namespaces or {})
         self._lock          = threading.Lock()
 
         # Callback registries (mirrors MockSim's API)
@@ -155,10 +164,26 @@ class ROS2SimAdapter:
 
         send_future = ac.send_goal_async(
             goal_msg,
-            feedback_callback=lambda fb: self._on_feedback(robot_id, goal_id, fb),
+            # _on_nav_feedback, not the never-defined _on_feedback: the old name
+            # raised AttributeError inside the executor on the first feedback
+            # message, killing the caller's spin mid-goal.
+            feedback_callback=lambda fb: self._on_nav_feedback(robot_id, fb),
         )
         send_future.add_done_callback(_goal_response)
         log.info("[ros2_adapter] goal sent robot=%s goal_id=%s", robot_id, goal_id)
+
+    def wait_for_server(self, robot_id: str, timeout_sec: float) -> bool:
+        """
+        True once robot_id's NavigateToPose server is discoverable.  send_goal
+        does not wait: rclpy's send_goal_async to an absent server returns a
+        future that never completes, so a caller that does not check first sees
+        a goal that silently never ends — indistinguishable from a robot stuck
+        on the way.  Not part of NavigationInterface (MockSim has no server).
+        """
+        ac = self._action_clients.get(robot_id)
+        if ac is None:
+            return False
+        return bool(ac.wait_for_server(timeout_sec=timeout_sec))
 
     def cancel_goal(self, robot_id: str, goal_id: str) -> None:
         with self._lock:
@@ -249,15 +274,25 @@ class ROS2SimAdapter:
                     "mars_msgs.msg"
                 ).RobotHealth
             except Exception:
-                log.warning("[ros2_adapter] mars_msgs not compiled — using Python shim")
-                from mars.mars_msgs import RobotHealth  # Python shim
+                # The shim is a plain dataclass, not a ROS message type: rclpy
+                # raises on create_subscription with it, which used to take the
+                # whole adapter down (no action client, no keepout publisher) on
+                # any machine without ros2_ws built — the jongky robot included.
+                # Without mars_msgs nothing can publish RobotHealth anyway, so the
+                # subscription is skipped instead.
+                log.warning("[ros2_adapter] mars_msgs not compiled — "
+                            "robot_health subscription skipped")
+                RobotHealth = None
 
         except ImportError as exc:
             log.error("[ros2_adapter] rclpy not available: %s — adapter is a no-op", exc)
             return
 
         for robot_id in self._robot_ids:
-            ns = f"/{robot_id}"
+            ns = self._namespaces.get(robot_id, f"/{robot_id}")
+            if ns and not ns.startswith("/"):
+                ns = "/" + ns
+            ns = ns.rstrip("/")          # "" (root) -> "/navigate_to_pose"
 
             # Nav2 action status (source of truth for goal outcomes on Jazzy)
             self._subs.append(
@@ -290,14 +325,15 @@ class ROS2SimAdapter:
             )
 
             # Robot health (self-published; maps to fault_flag)
-            self._subs.append(
-                self._node.create_subscription(
-                    RobotHealth,
-                    f"{ns}/robot_health",
-                    lambda msg, rid=robot_id: self._on_robot_health(rid, msg),
-                    qos_profile=10,
+            if RobotHealth is not None:
+                self._subs.append(
+                    self._node.create_subscription(
+                        RobotHealth,
+                        f"{ns}/robot_health",
+                        lambda msg, rid=robot_id: self._on_robot_health(rid, msg),
+                        qos_profile=10,
+                    )
                 )
-            )
 
             # Odometry (Isaac Sim; backup pose + velocity)
             self._subs.append(
@@ -406,7 +442,8 @@ class ROS2SimAdapter:
 
             # Remove from active goals if terminal
             with self._lock:
-                self._active_goals.pop(matched_gid, None)
+                entry = self._active_goals.pop(matched_gid, None)
+            self._fire_goal_cb(entry, nav_status)
 
     def _on_result(self, robot_id: str, goal_id: str, future) -> None:
         """
@@ -445,7 +482,28 @@ class ROS2SimAdapter:
                 log.exception("[ros2_adapter] nav_status callback error (result path)")
 
         with self._lock:
-            self._active_goals.pop(goal_id, None)
+            entry = self._active_goals.pop(goal_id, None)
+        self._fire_goal_cb(entry, nav_status)
+
+    @staticmethod
+    def _fire_goal_cb(entry, nav_status) -> None:
+        """
+        Deliver the terminal status to the on_status_change passed to send_goal.
+        It used to be stored in _active_goals and never called, so a caller that
+        relied on the interface contract (NavigationInterface.send_goal) rather
+        than subscribe_nav_status never learned how its goal ended.  Called only
+        by whichever path (result or status array) pops the entry first, so it
+        fires exactly once per goal.
+        """
+        if entry is None:
+            return
+        cb = entry[2]
+        if cb is None:
+            return
+        try:
+            cb(nav_status)
+        except Exception:
+            log.exception("[ros2_adapter] on_status_change callback error")
 
     def _on_nav_feedback(self, robot_id: str, feedback_msg) -> None:
         """
