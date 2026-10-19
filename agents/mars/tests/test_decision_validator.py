@@ -13,6 +13,7 @@ import pytest
 from mars.validators.decision_validator import (
     DVResult,
     _resolve_ref,
+    resolve_ref,
     validate_diagnosis,
     validate_strategy,
 )
@@ -40,9 +41,27 @@ class TestResolveRef:
         bundle = {"mission_failures": [{"robot_id": "R1"}]}
         assert _resolve_ref("mission_failures[0].robot_id", bundle) is True
 
-    def test_out_of_bounds_index(self):
+    def test_out_of_bounds_index_is_imprecise_not_exact(self):
+        # Past the end (or negative) the path does not walk, but the list it names
+        # exists exactly once, so this is a provenance defect, not an invention
+        # (0235da9). It must still never count as exact grounding.
         bundle = {"mission_failures": [{"robot_id": "R1"}]}
-        assert _resolve_ref("mission_failures[5]", bundle) is False
+        assert resolve_ref("mission_failures[5]", bundle)[0] == "imprecise"
+        assert resolve_ref("mission_failures[-1]", bundle)[0] == "imprecise"
+
+    def test_out_of_bounds_index_does_not_pass(self):
+        output = {
+            "cause": "zone_congestion",
+            "scope": "isolated",
+            "persistence": "persistent",
+            "confidence": 0.9,
+            "evidence": [{"observation": "test", "refs": ["mission_failures[5]"]}],
+            "relied_on_precedents": [],
+        }
+        bundle = {"mission_failures": [{"robot_id": "R1"}]}
+        result, notes = validate_diagnosis(output, bundle)
+        assert result == DVResult.DEGRADE
+        assert "imprecise ref" in notes
 
     def test_missing_field(self):
         bundle = {"trigger_event": {"robot_id": "R1"}}
