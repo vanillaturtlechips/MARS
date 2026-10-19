@@ -112,7 +112,13 @@ def _real_refs(bundle: dict[str, Any], limit: int = 8) -> list[str]:
 
 
 def _cited(dx: dict[str, Any]) -> set[str]:
-    return {r for item in dx.get("evidence") or [] for r in item.get("refs") or []}
+    # Malformed evidence (a string, or non-object items) cites nothing; the
+    # validator REJECTs such output on its own, this only must not crash on it.
+    ev = dx.get("evidence")
+    return {r for item in (ev if isinstance(ev, list) else [])
+            if isinstance(item, dict)
+            for r in (item.get("refs") if isinstance(item.get("refs"), list) else [])
+            if isinstance(r, str)}
 
 
 def _same_entry(a: str, b: str) -> bool:
